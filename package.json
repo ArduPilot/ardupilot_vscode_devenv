@@ -1,0 +1,76 @@
+{
+  "name": "ardupilot-devenv",
+  "displayName": "ardupilot-devenv",
+  "description": "VS Code Developer environment creator for ardupilot project",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.52.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:workbench.action.tasks.runTask"
+  ],
+  "main": "./out/extension",
+  "contributes": {
+    "taskDefinitions": [
+      {
+        "type": "ardupilot",
+        "required": [
+          "configure",
+          "target"
+        ],
+        "properties": {
+          "configure": {
+            "type": "string",
+            "description": "Ardupilot board configuration"
+          },
+          "target": {
+            "type": "string",
+            "description": "Ardupilot binary target(s)"
+          },
+          "configureOptions": {
+            "type": "string",
+            "description": "waf configure option"
+          },
+          "buildOptions": {
+            "type": "string",
+            "description": "waf build option"
+          },
+          "waffile": {
+            "type": "string",
+            "description": "waf file location that can be omitted"
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack --config ./build/node-extension.webpack.config.js",
+    "watch": "webpack --watch --config ./build/node-extension.webpack.config.js",
+    "package": "webpack --mode production --devtool hidden-source-map --config ./build/node-extension.webpack.config.js",
+    "test-compile": "tsc -p ./",
+    "test-watch": "tsc -watch -p ./",
+    "pretest": "npm run test-compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^7.1.3",
+    "@types/mocha": "^8.0.4",
+    "@types/node": "^12.11.7",
+    "@types/vscode": "^1.52.0",
+    "@typescript-eslint/eslint-plugin": "^4.9.0",
+    "@typescript-eslint/parser": "^4.9.0",
+    "eslint": "^7.15.0",
+    "glob": "^7.1.6",
+    "mocha": "^8.1.3",
+    "ts-loader": "^8.0.11",
+    "typescript": "^4.1.2",
+    "vscode-test": "^1.4.1",
+    "webpack": "^5.10.0",
+    "webpack-cli": "^4.2.0"
+  }
+}
