@@ -44,6 +44,25 @@
           }
         }
       }
+    ],
+    "problemMatchers": [
+      {
+        "name": "apgcc",
+        "source": "apgcc",
+        "owner": "ardupilot-devenv",
+        "fileLocation": [
+          "relative",
+          "${workspaceFolder}"
+        ],
+        "pattern": {
+          "regexp": "^\\W*(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      }
     ]
   },
   "scripts": {
@@ -70,7 +89,7 @@
     "ts-loader": "^8.0.11",
     "typescript": "^4.1.2",
     "vscode-test": "^1.4.1",
-    "webpack": "^5.10.0",
+    "webpack": "^5.11.1",
     "webpack-cli": "^4.2.0"
   }
 }

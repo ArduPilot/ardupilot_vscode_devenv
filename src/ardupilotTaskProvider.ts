@@ -159,10 +159,9 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 							target: buildtask,
 							buildOptions: buildOptions,
 							configureOptions: configureOptions,
-							problemMatcher: ["$gcc"]
 						};
 						let task_name = boardtask.configure + '-' + buildtask
-						const task = new vscode.Task(kind, workspaceFolder, task_name, 'ardupilot', new vscode.ShellExecution(`${waf} configure --board=${boardtask.configure} ${configureOptions} && ${waf} ${buildtask} ${buildOptions}`));
+						const task = new vscode.Task(kind, workspaceFolder, task_name, 'ardupilot', new vscode.ShellExecution(`${waf} configure --board=${boardtask.configure} ${configureOptions} && ${waf} ${buildtask} ${buildOptions}`),'$apgcc');
 						result.push(task);
 					}
 				}
