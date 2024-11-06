@@ -11,13 +11,16 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+
+   Copyright (c) 2024 Siddharth Purohit, CubePilot Global Pty Ltd.
+*/
+
 import * as path from 'path';
 import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as vscode from 'vscode';
 
-export class ArdupilotTaskProvider implements vscode.TaskProvider {
+export class APTaskProvider implements vscode.TaskProvider {
 	static ardupilotTaskType = "ardupilot";
     private ardupilotPromise: Thenable<vscode.Task[]> | undefined = undefined;
     
@@ -35,19 +38,32 @@ export class ArdupilotTaskProvider implements vscode.TaskProvider {
 		}
 		return this.ardupilotPromise;
     }
-    
+
+	static createTask(definition: ArdupilotTaskDefinition): vscode.Task {
+		const kind: ArdupilotTaskDefinition = {
+			type: 'ardupilot',
+			configure: definition.configure,
+			target: definition.target,
+			buildOptions: definition.buildOptions,
+			configureOptions: definition.configureOptions,
+		};
+		const task_name = definition.configure + '-' + definition.target;
+		const task = new vscode.Task(kind, vscode.TaskScope.Workspace, task_name, 'ardupilot', new vscode.ShellExecution(`. ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && . ${definition.waffile} ${definition.target} ${definition.buildOptions}`));
+		return task;
+	}
+
 	public resolveTask(_task: vscode.Task): vscode.Task | undefined {
 		const task = _task.definition.task;
 		if (task) {
 			// resolveTask requires that the same definition object be used.
             const definition: ArdupilotTaskDefinition = <any>_task.definition;
-			return new vscode.Task(definition, _task.scope ?? vscode.TaskScope.Workspace, definition.task, 'ardupilot', new vscode.ShellExecution(`. ${definition.waffile} configure --board=${definition.configure} ${definition.configure_options} && ./waf ${definition.target} ${definition.build_options}`));
+			return APTaskProvider.createTask(definition);
 		}
 		return undefined;
 	}
 }
 
-interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
+export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	/**
 	 * configure boardname
 	 */
@@ -145,13 +161,13 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 				const tasklist = JSON.parse(stdout.split('\n')[0]) as Tasklist[];
 				for (const boardtask of tasklist) {
 					for (const buildtask of boardtask.targets) {
-						let buildOptions = ''
+						let buildOptions = '';
 						if (boardtask.buildOptions) {
-							buildOptions = boardtask.buildOptions
+							buildOptions = boardtask.buildOptions;
 						}
-						let configureOptions = ''
+						let configureOptions = '';
 						if (boardtask.configureOptions) {
-							configureOptions = boardtask.configureOptions
+							configureOptions = boardtask.configureOptions;
 						}
 						const kind: ArdupilotTaskDefinition = {
 							type: 'ardupilot',
@@ -160,13 +176,13 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 							buildOptions: buildOptions,
 							configureOptions: configureOptions,
 						};
-						let task_name = boardtask.configure + '-' + buildtask
+						const task_name = boardtask.configure + '-' + buildtask;
 						const task = new vscode.Task(kind, workspaceFolder, task_name, 'ardupilot', new vscode.ShellExecution(`${waf} configure --board=${boardtask.configure} ${configureOptions} && ${waf} ${buildtask} ${buildOptions}`),'$apgcc');
 						result.push(task);
 					}
 				}
 			}
-        } catch (err) {
+        } catch (err:any) {
 			const channel = getOutputChannel();
 			if (err.stderr) {
 				channel.appendLine(err.stderr);
