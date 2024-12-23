@@ -38,8 +38,9 @@ export class apBuildConfigPanel {
 	private readonly _panel: vscode.WebviewPanel;
 	private readonly _extensionUri: vscode.Uri;
 	private _disposables: vscode.Disposable[] = [];
-	private _target: string | undefined;
-	
+	private _currentTask: vscode.Task | undefined;
+	private _currentFeaturesList: string[] = [];
+
 	private fileUri = (fp: string) => {
 		const fragments = fp.split('/');
 
@@ -48,16 +49,15 @@ export class apBuildConfigPanel {
 		);
 	};
 
-	public static createOrShow(extensionUri: vscode.Uri, target?: string) {
+	public static createOrShow(extensionUri: vscode.Uri, currentTask?: vscode.Task) {
 		const column = vscode.window.activeTextEditor
 			? vscode.window.activeTextEditor.viewColumn
 			: undefined;
 
-		if (target === undefined) {
-			// dispose the current panel and create a fresh one
-			if (apBuildConfigPanel.currentPanel) {
-				apBuildConfigPanel.currentPanel.dispose();
-			}
+		// dispose the current panel and create a fresh one
+		if (currentTask !== undefined && apBuildConfigPanel.currentPanel) {
+			apBuildConfigPanel.currentPanel.dispose();
+			apBuildConfigPanel.currentPanel = undefined;
 		}
 
 		// If we already have a panel, show it.
@@ -76,17 +76,34 @@ export class apBuildConfigPanel {
 			}
 		);
 
-		apBuildConfigPanel.currentPanel = new apBuildConfigPanel(panel, extensionUri, target);
+		apBuildConfigPanel.currentPanel = new apBuildConfigPanel(panel, extensionUri, currentTask);
 	}
 
-	public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, target?: string) {
-		apBuildConfigPanel.currentPanel = new apBuildConfigPanel(panel, extensionUri, target);
+	public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, currentTask?: vscode.Task) {
+		apBuildConfigPanel.currentPanel = new apBuildConfigPanel(panel, extensionUri, currentTask);
 	}
 
-	private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, target?: string) {
+	private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, currentTask?: vscode.Task) {
 		this._panel = panel;
 		this._extensionUri = extensionUri;
-		this._target = target;
+		this._currentTask = currentTask;
+
+		// load features.txt from build/<board> directory
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			throw new Error('No workspace folder is open.');
+		} else if (currentTask) {
+			const featuresPath = path.join(workspaceRoot, 'build', currentTask.definition.configure, 'features.txt');
+			if (fs.existsSync(featuresPath)) {
+				const features = fs.readFileSync(featuresPath, 'utf8').split('\n');
+				for (const feature of features) {
+					// if feature starts with '! ', it is disabled
+					if (!feature.startsWith('!')) {
+						this._currentFeaturesList.push(feature);
+					}
+				}
+			}
+		}
 
 		// Listen for when the panel is disposed
 		// This happens when the user closes the panel or when the panel is closed programmatically
@@ -166,7 +183,14 @@ export class apBuildConfigPanel {
 		apBuildConfigPanel.log.log(`Added task ${taskName} to ${tasksPath}`);
 		// execute the task
 		if (currentTaskDef) {
-			vscode.tasks.executeTask(APTaskProvider.createTask(currentTaskDef));
+			const task = APTaskProvider.createTask(currentTaskDef);
+			vscode.tasks.executeTask(task).then((execution) => {
+				vscode.tasks.onDidEndTaskProcess((e) => {
+					if (e.execution == execution) {
+						apBuildConfigPanel.createOrShow(this._extensionUri, task);
+					}
+				});
+			});
 		}
 	}
 
@@ -252,24 +276,53 @@ export class apBuildConfigPanel {
 			}
 			featureCategories[feature.category].push(feature);
 		}
+
+		const indeterminateList: string[] = [];
+		const selectedList: string[] = [];
+		// if all features in a category are selected, set the category checkbox to checked
+		// if some features are selected, set the category checkbox to indeterminate
+
+		Object.keys(featureCategories).map((category: string) => {
+			let selected = 0;
+			featureCategories[category].forEach((feature: any) => {
+				if (this._currentFeaturesList.includes(feature.define)) {
+					selected++;
+				}
+			});
+			if (selected === featureCategories[category].length) {
+				// all features selected
+				selectedList.push(category);
+			} else if (selected > 0) {
+				// some features selected
+				indeterminateList.push(category);
+			}
+		});
+
+		apBuildConfigPanel.log.log(`Feature categories: ${JSON.stringify(featureCategories)}`);
+		apBuildConfigPanel.log.log(`Current features: ${this._currentFeaturesList}`);
 		// create a block of html for each category with vscode-checkbox for categories and vscode-multi-select for features under each category
 		const featureHtml = Object.keys(featureCategories).map((category: string) => `
 			<vscode-form-group>
 				<vscode-label for="${category}">${category}:</vscode-label>
-				<vscode-checkbox id="${category}_cb" onChange="(function() {
+				<vscode-checkbox ${selectedList.includes(category)?'checked':''}
+				${indeterminateList.includes(category)?'indeterminate':''}
+				id="${category}_cb" onChange="(function() {
 					const featureList = document.getElementById('${category}');
 					const checkbox = document.getElementById('${category}_cb');
-					featureList.disabled = !checkbox.checked;
 					if (checkbox.checked) {
 						featureList.focus();
 					}
-					if (featureList.disabled) {
+					if (!checkbox.checked) {
 						// clear the selected features
 						featureList.value = [];
 					}
 				})()"></vscode-checkbox>
-				<vscode-multi-select id="${category}" combobox disabled>
-					${featureCategories[category].map((feature: any) => `<vscode-option value="${feature.label}">${feature.label}</vscode-option>`).join('')}
+				<vscode-multi-select id="${category}" ${this._currentFeaturesList.length?'':'disabled'}>
+					${featureCategories[category].map((feature: any) => 
+						`<vscode-option ${this._currentFeaturesList.includes(feature.define)?'selected':''}
+						value="${feature.define}">
+						${feature.label}
+						</vscode-option>`).join('')}
 				</vscode-multi-select>
 			</vscode-form-group>
 		`).join('');

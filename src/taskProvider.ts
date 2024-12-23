@@ -47,8 +47,41 @@ export class APTaskProvider implements vscode.TaskProvider {
 			buildOptions: definition.buildOptions,
 			configureOptions: definition.configureOptions,
 		};
+		if (definition.waffile === undefined) {
+			// use the waf file from the workspace
+			definition.waffile = vscode.workspace.workspaceFolders![0].uri.fsPath + '/waf';
+		}
+		if (definition.nm === undefined) {
+			definition.nm = 'arm-none-eabi-nm';
+		}
+		// switch case
+		switch (definition.target) {
+			case 'plane':
+				definition.target_output = 'bin/arduplane';
+				break;
+			case 'copter':
+				definition.target_output = 'bin/arducopter';
+				break;
+			case 'rover':
+				definition.target_output = 'bin/ardurover';
+				break;
+			case 'sub':
+				definition.target_output = 'bin/ardusub';
+				break;
+			case 'heli':
+				definition.target_output = 'bin/arducopter-heli';
+				break;
+			case 'antennatracker':
+				definition.target_output = 'bin/antennatracker';
+				break;
+			case 'bootloader':
+				definition.target_output = 'bootloader/AP_Bootloader';
+				break;
+		}
+		const target_dir = `${vscode.workspace.workspaceFolders![0].uri.fsPath}/build/${definition.configure}`;
+		const target_binary = `${target_dir}/${definition.target_output}`;
 		const task_name = definition.configure + '-' + definition.target;
-		const task = new vscode.Task(kind, vscode.TaskScope.Workspace, task_name, 'ardupilot', new vscode.ShellExecution(`. ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && . ${definition.waffile} ${definition.target} ${definition.buildOptions}`));
+		const task = new vscode.Task(kind, vscode.TaskScope.Workspace, task_name, 'ardupilot', new vscode.ShellExecution(`python3 ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions} && rm ${target_dir}/features.txt && python3 Tools/scripts/extract_features.py ${target_binary} -nm ${definition.nm} >> ${target_dir}/features.txt`),'$apgcc');
 		return task;
 	}
 
@@ -69,9 +102,13 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	 */
 	configure: string;
 	/**
-	 * target binary name
+	 * target
 	 */
 	target: string;
+	/**
+	 * target output binary
+	 */
+	target_output?: string;
 	/**
 	 * configure options
 	 */
