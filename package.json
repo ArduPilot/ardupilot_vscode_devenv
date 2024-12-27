@@ -147,19 +147,19 @@
         {
           "command": "apBuildConfig.editEntry",
           "when": "view == apBuildConfig",
-          "group": "navigation"
+          "group": "inline"
         },
         {
           "command": "apBuildConfig.deleteEntry",
           "when": "view == apBuildConfig",
-          "group": "navigation"
+          "group": "inline"
         }
       ]
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -b",
+    "compile": "cd webview-ui && npm run build && cd .. && tsc -b",
     "watch": "tsc -b -w"
   },
   "devDependencies": {
