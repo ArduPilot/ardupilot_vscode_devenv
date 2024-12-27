@@ -20,7 +20,7 @@
 import * as vscode from 'vscode';
 
 import { APTaskProvider } from './taskProvider';
-import { apBuildConfigProvider } from './apBuildConfig';
+import { apBuildConfig, apBuildConfigProvider } from './apBuildConfig';
 import { apLog } from './apLog';
 import { apWelcomeProvider } from './apWelcome';
 
@@ -51,6 +51,8 @@ export function activate(_context: vscode.ExtensionContext): void {
   vscode.window.registerTreeDataProvider('apBuildConfig', apBuildConfigProviderInstance);
   vscode.commands.registerCommand('apBuildConfig.refreshEntry', () => apBuildConfigProviderInstance.refresh());
 	vscode.commands.registerCommand('apBuildConfig.addEntry', () => apBuildConfigProviderInstance.add());
+  vscode.commands.registerCommand('apBuildConfig.editEntry', (item: apBuildConfig) => item.edit());
+  vscode.commands.registerCommand('apBuildConfig.deleteEntry', (item: apBuildConfig) => item.delete());
 }
 
 // this method is called when your extension is deactivated

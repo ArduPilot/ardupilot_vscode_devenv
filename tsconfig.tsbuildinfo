@@ -1,0 +1,1 @@
+{"root":["./src/apBuildConfig.ts","./src/apBuildConfigPanel.ts","./src/apBuildEnvSetup.ts","./src/apLog.ts","./src/apUIHooks.ts","./src/apWelcome.ts","./src/extension.ts","./src/taskProvider.ts"],"version":"5.7.2"}

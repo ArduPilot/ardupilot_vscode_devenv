@@ -20,23 +20,58 @@ import { apLog } from './apLog';
 import { log } from 'console';
 import * as fs from 'fs';
 import { apBuildConfigPanel } from './apBuildConfigPanel';
+import { APTaskProvider } from './taskProvider';
+
+export const binToTarget : { [target: string]: string} = {
+	"bin/arducopter": "copter",
+	"bin/arducopter-heli": "heli",
+	"bin/antennatracker": "antennatracker",
+	"bin/arduplane": "plane",
+	"bin/ardurover": "rover",
+	"bin/ardusub": "sub",
+	"bin/blimp": "blimp",
+	"bin/AP_Periph": "AP_Periph",
+};
 
 export class apBuildConfig extends vscode.TreeItem {
+	private static log = new apLog('apBuildConfig').log;
+
 	constructor(
+		private _buildProvider: apBuildConfigProvider,
 		public readonly label: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState
+		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+		public readonly task?: vscode.Task,
 	) {
 		super(label, collapsibleState);
+	}
+
+	edit() {
+		apBuildConfig.log(`edit ${this.label}`);
+		if (this.task) {
+			apBuildConfigPanel.createOrShow(this._buildProvider.context.extensionUri, this.task);
+		}
+	}
+
+	delete() {
+		// delete the folder
+		apBuildConfig.log(`delete ${this.label}`);
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		fs.rmdirSync(workspaceRoot + '/build/' + this.label, { recursive: true });
+		// also remove c4che/{board}_cache.py
+		fs.unlinkSync(workspaceRoot + '/build/c4che/' + this.label + '_cache.py');
+		vscode.commands.executeCommand('apBuildConfig.refreshEntry');
+		// also delete the task from tasks.json
+		APTaskProvider.delete(this.label);
 	}
 }
 
 export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildConfig> {
 	private _onDidChangeTreeData: vscode.EventEmitter<apBuildConfig | undefined> = new vscode.EventEmitter<apBuildConfig | undefined>();
 	readonly onDidChangeTreeData: vscode.Event<apBuildConfig | undefined> = this._onDidChangeTreeData.event;
-	static log = new apLog('buildConfig');
+	static log = new apLog('buildConfig').log;
 
-	constructor(private workspaceRoot: string | undefined, private _context: vscode.ExtensionContext) {
-		apBuildConfigProvider.log.log('apBuildConfigProvider constructor');
+	constructor(private workspaceRoot: string | undefined, public context: vscode.ExtensionContext) {
+		apBuildConfigProvider.log('apBuildConfigProvider constructor');
 	}
 
 	getTreeItem(element: apBuildConfig): vscode.TreeItem {
@@ -44,18 +79,18 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 	}
 
 	refresh(): void {
-		apBuildConfigProvider.log.log('refresh');
+		apBuildConfigProvider.log('refresh');
 		this._onDidChangeTreeData.fire(undefined);
 	}
 
 	// add option
 	add(): void {
-		apBuildConfigProvider.log.log('addOption');
-		apBuildConfigPanel.createOrShow(this._context.extensionUri);
+		apBuildConfigProvider.log('addOption');
+		apBuildConfigPanel.createOrShow(this.context.extensionUri);
 	}
 
 	getChildren(element?: apBuildConfig): Thenable<apBuildConfig[]> {
-		apBuildConfigProvider.log.log('getChildren');
+		apBuildConfigProvider.log('getChildren');
 		// check folders inside the workspace/build directory
 		if (!this.workspaceRoot) {
 			return Promise.resolve([]);
@@ -69,12 +104,29 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 
 		// get the list of folders inside the build directory
 		// create a list of apBuildConfig objects for each folder containing ap_config.h file
-		const buildConfigList: apBuildConfig[] = [];
+		let buildConfigList: apBuildConfig[] = [];
 		fs.readdirSync(buildDir.fsPath).forEach(file => {
 			if (fs.lstatSync(buildDir.fsPath + '/' + file).isDirectory() && fs.existsSync(buildDir.fsPath + '/' + file + '/ap_config.h')) {
-				buildConfigList.push(new apBuildConfig(file, vscode.TreeItemCollapsibleState.None));
+				// get current task from target_list in the folder
+				try {
+					const data = fs.readFileSync(buildDir.fsPath + '/' + file + '/target_list', 'utf8');
+					// split the data by comma
+					const targetList:string[] = data.split(',');
+					let target: string;
+					if (binToTarget[targetList[0]] !== undefined) {
+						target = binToTarget[targetList[0]];
+					} else {
+						target = targetList[0].split('/')[1];
+					}
+					const task = APTaskProvider.getOrCreateBuildConfig(file, target);
+					apBuildConfigProvider.log(`getOrCreateBuildConfig ${file} ${target}`);
+					buildConfigList = [new apBuildConfig(this, file, vscode.TreeItemCollapsibleState.None, task), ...buildConfigList];
+				} catch (err) {
+					apBuildConfigProvider.log(`Error reading target_list file ${err}`);
+				}
 			}
 		});
+		console.log(buildConfigList);
 		return Promise.resolve(buildConfigList);
 	}
 }
