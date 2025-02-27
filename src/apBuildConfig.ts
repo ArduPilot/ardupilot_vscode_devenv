@@ -33,6 +33,11 @@ export const binToTarget : { [target: string]: string} = {
 	"bin/AP_Periph": "AP_Periph",
 };
 
+export const targetToBin : { [target: string]: string} = {};
+Object.keys(binToTarget).forEach(key => {
+	targetToBin[binToTarget[key]] = key;
+});
+
 export class apBuildConfig extends vscode.TreeItem {
 	private static log = new apLog('apBuildConfig').log;
 

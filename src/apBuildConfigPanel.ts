@@ -122,11 +122,10 @@ export class apBuildConfigPanel {
 			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(message.board, message.target, message.configureOptions, message.features);
 			// execute the task
 			if (currentTaskDef) {
-				const task = currentTaskDef;
-				vscode.tasks.executeTask(task).then((execution) => {
+				vscode.tasks.executeTask(currentTaskDef).then((execution) => {
 					vscode.tasks.onDidEndTaskProcess((e) => {
 						if (e.execution == execution) {
-							apBuildConfigPanel.createOrShow(this._extensionUri, task);
+							apBuildConfigPanel.createOrShow(this._extensionUri, currentTaskDef);
 							vscode.commands.executeCommand('apBuildConfig.refreshEntry');
 						}
 					});

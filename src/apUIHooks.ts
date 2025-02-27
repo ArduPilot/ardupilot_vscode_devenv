@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as cp from 'child_process';
 import { apLog } from './apLog';
+import { getFeaturesList } from './taskProvider';
 
 export class UIHooks {
 	_panel: vscode.WebviewPanel;
@@ -65,26 +66,7 @@ export class UIHooks {
 	}
 
 	public getFeaturesList() {
-		// run resources/featureLoader.py on workspaceRoot/Tools/scripts/build_options.py
-		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		if (workspaceRoot === undefined) {
-			this._panel.webview.postMessage({ command: 'getFeaturesList', features: undefined });
-			return;
-		}
-		const buildOptionsPath = path.join(workspaceRoot, 'Tools', 'scripts', 'build_options.py');
-		if (!fs.existsSync(buildOptionsPath)) {
-			throw new Error('build_options.py not found');
-		}
-		// run python script resources/featureLoader.py
-		const featureLoaderPath = path.join(this._extensionUri.path, 'resources', 'featureLoader.py');
-		const featureLoader = cp.spawnSync('python3', [featureLoaderPath, buildOptionsPath]);
-		UIHooks.log('Running featureLoader.py');
-		if (featureLoader.status !== 0) {
-			UIHooks.log(featureLoader.stderr.toString());
-			throw new Error('featureLoader.py failed with exit code ' + featureLoader.status);
-		}
-		const features = JSON.parse(featureLoader.stdout.toString());
-		this._panel.webview.postMessage({ command: 'getFeaturesList', featuresList: features });
+		this._panel.webview.postMessage({ command: 'getFeaturesList', featuresList: getFeaturesList(this._extensionUri) });
 	}
 
 	public on(event: string, listener: (...args: any[]) => void) {

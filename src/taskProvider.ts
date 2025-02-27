@@ -20,19 +20,23 @@ import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
+import {binToTarget, targetToBin} from './apBuildConfig';
 
 export class APTaskProvider implements vscode.TaskProvider {
 	static ardupilotTaskType = "ardupilot";
     private ardupilotPromise: Thenable<vscode.Task[]> | undefined = undefined;
 	private static log = new apLog('apBuildConfigPanel');
+	private static _extensionUri: vscode.Uri;
 	private log = APTaskProvider.log.log;
+	private static featureDetails: any;
 
-    constructor(workspaceRoot: string) {
+    constructor(workspaceRoot: string, extensionUri: vscode.Uri) {
 		const pattern = path.join(workspaceRoot, 'tasklist.json');
 		const fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
 		fileWatcher.onDidChange(() => this.ardupilotPromise = undefined);
 		fileWatcher.onDidCreate(() => this.ardupilotPromise = undefined);
 		fileWatcher.onDidDelete(() => this.ardupilotPromise = undefined);
+		APTaskProvider._extensionUri = extensionUri;
 	}
 
     public provideTasks(): Thenable<vscode.Task[]> | undefined {
@@ -57,80 +61,62 @@ export class APTaskProvider implements vscode.TaskProvider {
 		}
 		const tasks = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
 		const taskName = `${board}-${target}`;
-		APTaskProvider.log.log(`Creating task ${JSON.stringify(tasks)}`);
-		// check through the tasks.json file matching board and target
-		let taskExists = false;
-		let taskDef:ArdupilotTaskDefinition | undefined = undefined;
-		for (const task of tasks.tasks) {
-			if (task.configure === board && task.target === target) {
-				task.configureOptions = configureOptions === undefined ? '' : configureOptions;
-				task.buildOptions = "";
-				taskExists = true;
-				taskDef = task;
-			}
-		}
-		if (!taskExists) {
-			// create a new task definition with link to waf file in workspaceRoot/waf
-			taskDef = {
-				type: 'ardupilot',
-				configure: board,
-				target: target,
-				configureOptions: configureOptions === undefined ? '' : configureOptions,
-				buildOptions: '',
-				features: features === undefined ? [] : features,
-			};
-			tasks.tasks.push(taskDef);
-		}
+		const taskDef: ArdupilotTaskDefinition = {
+			type: 'ardupilot',
+			configure: board,
+			target: target,
+			configureOptions: configureOptions === undefined ? '' : configureOptions,
+			buildOptions: '',
+			features: features === undefined ? [] : features,
+		};
+		tasks.tasks = tasks.tasks.filter((task: ArdupilotTaskDefinition) => task.configure !== board);
+		tasks.tasks.push(taskDef);
 
 		fs.writeFileSync(tasksPath, JSON.stringify(tasks, null, 4), 'utf8');
 		APTaskProvider.log.log(`Added task ${taskName} to ${tasksPath}`);
 		return taskDef? this.createTask(taskDef) : undefined;
 	}
 
+	static updateFeaturesList() {
+		this.featureDetails = getFeaturesList(APTaskProvider._extensionUri);
+	}
 
-	static createTask(definition: ArdupilotTaskDefinition): vscode.Task {
-		const kind: ArdupilotTaskDefinition = {
-			type: 'ardupilot',
-			configure: definition.configure,
-			target: definition.target,
-			buildOptions: definition.buildOptions,
-			configureOptions: definition.configureOptions,
-		};
+	static updateFeaturesDat(buildFolder: string ,features: string[]) {
+		// open extra_hwdef.dat and update features
+		const extra_hwdef = path.join(buildFolder, 'extra_hwdef.dat');
+		let feature_define = '';
+		for (let feature of features) {
+			feature = feature.replace(/\s/g, '');
+			if (feature.startsWith('!')) {
+				feature_define += `undef ${feature.slice(1)}\ndefine ${feature.slice(1)} 0\n`;
+			} else if (feature.length > 0) {
+				feature_define += `undef ${feature}\ndefine ${feature} 1\n`;
+			}
+		}
+		fs.writeFileSync(extra_hwdef, feature_define, 'utf8');
+		return `--extra-hwdef=${buildFolder}/extra_hwdef.dat`;
+	}
+
+	static createTask(definition: ArdupilotTaskDefinition): vscode.Task | undefined {
+		const workspaceRoot = vscode.workspace.workspaceFolders![0];
+		if (!workspaceRoot) {
+			return undefined;
+		}
 		if (definition.waffile === undefined) {
 			// use the waf file from the workspace
-			definition.waffile = vscode.workspace.workspaceFolders![0].uri.fsPath + '/waf';
+			definition.waffile = workspaceRoot.uri.fsPath + '/waf';
 		}
 		if (definition.nm === undefined) {
 			definition.nm = 'arm-none-eabi-nm';
 		}
-		// switch case
-		switch (definition.target) {
-			case 'plane':
-				definition.target_output = 'bin/arduplane';
-				break;
-			case 'copter':
-				definition.target_output = 'bin/arducopter';
-				break;
-			case 'rover':
-				definition.target_output = 'bin/ardurover';
-				break;
-			case 'sub':
-				definition.target_output = 'bin/ardusub';
-				break;
-			case 'heli':
-				definition.target_output = 'bin/arducopter-heli';
-				break;
-			case 'antennatracker':
-				definition.target_output = 'bin/antennatracker';
-				break;
-			case 'bootloader':
-				definition.target_output = 'bootloader/AP_Bootloader';
-				break;
-		}
+		// convert target to binary
+		definition.target_output = targetToBin[definition.target];
 		const target_dir = `${vscode.workspace.workspaceFolders![0].uri.fsPath}/build/${definition.configure}`;
 		const target_binary = `${target_dir}/${definition.target_output}`;
 		const task_name = definition.configure + '-' + definition.target;
-		const task = new vscode.Task(kind, vscode.TaskScope.Workspace, task_name, 'ardupilot', new vscode.ShellExecution(`python3 ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions} && rm -f ${target_dir}/features.txt && python3 Tools/scripts/extract_features.py ${target_binary} -nm ${definition.nm} >> ${target_dir}/features.txt`),'$apgcc');
+		const featureOptions = APTaskProvider.updateFeaturesDat(target_dir , definition.features ? definition.features : []);
+
+		const task = new vscode.Task(definition, vscode.TaskScope.Workspace, task_name, 'ardupilot', new vscode.ShellExecution(`python3 ${definition.waffile} configure --board=${definition.configure} ${featureOptions} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions} && rm -f ${target_dir}/features.txt && python3 Tools/scripts/extract_features.py ${target_binary} -nm ${definition.nm} >> ${target_dir}/features.txt`),'$apgcc');
 		return task;
 	}
 
@@ -221,23 +207,24 @@ function exec(command: string, options: cp.ExecOptions): Promise<{ stdout: strin
 	});
 }
 
-interface Tasklist {
-	/**
-	 * configure boardname
-	 */
-	configure: string;
-	/**
-	 * target binary name
-	 */
-	targets: string[];
-	/**
-	 * configure options
-	 */
-	configureOptions?: string;
-    /**
-     * build options
-     */
-    buildOptions?: string;
+export function getFeaturesList(extensionUri: vscode.Uri): any {
+	// run resources/featureLoader.py on workspaceRoot/Tools/scripts/build_options.py
+	const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+	if (workspaceRoot === undefined) {
+		return undefined;
+	}
+	const buildOptionsPath = path.join(workspaceRoot, 'Tools', 'scripts', 'build_options.py');
+	if (!fs.existsSync(buildOptionsPath)) {
+		throw new Error('build_options.py not found');
+	}
+	// run python script resources/featureLoader.py
+	const featureLoaderPath = path.join(extensionUri.path, 'resources', 'featureLoader.py');
+	const featureLoader = cp.spawnSync('python3', [featureLoaderPath, buildOptionsPath]);
+	if (featureLoader.status !== 0) {
+		throw new Error('featureLoader.py failed with exit code ' + featureLoader.status);
+	}
+	const features = JSON.parse(featureLoader.stdout.toString());
+	return features;
 }
 
 async function getArdupilotTasks(): Promise<vscode.Task[]> {
@@ -259,16 +246,25 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 		
 		console.log('Generating Tasklist');
 		const commandLine = './waf generate_tasklist';
-        try {
-            const { stdout, stderr } = await exec(commandLine, { cwd: folderString });
+		try {
+			// update features list
+			APTaskProvider.updateFeaturesList();
+			const raw = fs.readFileSync(path.join(folderString, '.vscode', 'tasks.json'), 'utf8');
+			const tasks = JSON.parse(raw);
+			const { stdout, stderr } = await exec(commandLine, { cwd: folderString });
 			if (stderr && stderr.length > 0) {
 				getOutputChannel().appendLine(stderr);
 				getOutputChannel().show(true);
 			}
 			if (stdout) {
-				const tasklist = JSON.parse(stdout.split('\n')[0]) as Tasklist[];
+				const tasklist = JSON.parse(stdout.split('\n')[0]) as ArdupilotTaskDefinition[];
 				for (const boardtask of tasklist) {
 					for (const buildtask of boardtask.targets) {
+						// // check if task exists in tasks.json
+						const taskExists = tasks.tasks.some((task: ArdupilotTaskDefinition) => task.configure === boardtask.configure && task.target === buildtask);
+						if (taskExists) {
+							continue;
+						}
 						let buildOptions = '';
 						if (boardtask.buildOptions) {
 							buildOptions = boardtask.buildOptions;
@@ -285,7 +281,6 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 							configureOptions: configureOptions,
 						};
 						const task_name = boardtask.configure + '-' + buildtask;
-						// check if features in
 						const task = new vscode.Task(kind, workspaceFolder, task_name, 'ardupilot', new vscode.ShellExecution(`${waf} configure --board=${boardtask.configure} ${configureOptions} && ${waf} ${buildtask} ${buildOptions}`),'$apgcc');
 						result.push(task);
 					}
