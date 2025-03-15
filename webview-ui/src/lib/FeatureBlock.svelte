@@ -26,11 +26,11 @@
 				);
 				if (mainCheckbox) {
 					if (selected.length === features.length) {
-						mainCheckbox.checked = true;
+						(mainCheckbox as HTMLInputElement).checked = true;
 					} else if (selected.length === 0) {
-						mainCheckbox.checked = false;
+						(mainCheckbox as HTMLInputElement).checked = false;
 					} else {
-						mainCheckbox.indeterminate = true;
+						(mainCheckbox as HTMLInputElement).indeterminate = true;
 					}
 				}
 			});
@@ -46,13 +46,13 @@
 		}
 		// check if all features in the selected list
 		if (selectedFiltered.length === features.length) {
-			mainCheckbox.checked = true;
-			mainCheckbox.indeterminate = false;
+			(mainCheckbox as HTMLInputElement).checked = true;
+			(mainCheckbox as HTMLInputElement).indeterminate = false;
 		} else if (selectedFiltered.length === 0) {
-			mainCheckbox.checked = false;
-			mainCheckbox.indeterminate = false;
+			(mainCheckbox as HTMLInputElement).checked = false;
+			(mainCheckbox as HTMLInputElement).indeterminate = false;
 		} else {
-			mainCheckbox.indeterminate = true;
+			(mainCheckbox as HTMLInputElement).indeterminate = true;
 		}
 	}
 
