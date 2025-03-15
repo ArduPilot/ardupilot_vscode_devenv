@@ -1,6 +1,18 @@
 {
 	"extends": "@tsconfig/svelte/tsconfig.json",
-  
-	"include": ["src/**/*"],
-	"exclude": ["node_modules/*", "__sapper__/*", "public/*"]
+	"compilerOptions": {
+		"lib": [
+			"ES2015",
+			"DOM"
+		]
+	},
+	"include": [
+		"src/**/*",
+		"vite.config.ts"
+	],
+	"exclude": [
+		"node_modules/*",
+		"__sapper__/*",
+		"public/*"
+	]
 }
