@@ -30,29 +30,29 @@ let apTaskProvider: vscode.Disposable | undefined;
 // your extension is activated the very first time the command is executed
 export function activate(_context: vscode.ExtensionContext): void {
 
-  const apWelcomeProviderInstance = new apWelcomeProvider();
+	const apWelcomeProviderInstance = new apWelcomeProvider();
 
-  vscode.window.registerTreeDataProvider('apWelcome', apWelcomeProviderInstance);
+	vscode.window.registerTreeDataProvider('apWelcome', apWelcomeProviderInstance);
 
 	const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 	if (!workspaceRoot) {
 		return;
 	}
 
-  const log = new apLog('extension');
+	const log = new apLog('extension');
 
-	log.log("ardupilot-devenv extension started");
+	log.log('ardupilot-devenv extension started');
 	apTaskProvider = vscode.tasks.registerTaskProvider(APTaskProvider.ardupilotTaskType, new APTaskProvider(workspaceRoot, _context.extensionUri));
 
-  const rootPath = (vscode.workspace.workspaceFolders && (vscode.workspace.workspaceFolders.length > 0))
+	const rootPath = (vscode.workspace.workspaceFolders && (vscode.workspace.workspaceFolders.length > 0))
 		? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 
-  const apBuildConfigProviderInstance = new apBuildConfigProvider(rootPath, _context);
-  vscode.window.registerTreeDataProvider('apBuildConfig', apBuildConfigProviderInstance);
-  vscode.commands.registerCommand('apBuildConfig.refreshEntry', () => apBuildConfigProviderInstance.refresh());
+	const apBuildConfigProviderInstance = new apBuildConfigProvider(rootPath, _context);
+	vscode.window.registerTreeDataProvider('apBuildConfig', apBuildConfigProviderInstance);
+	vscode.commands.registerCommand('apBuildConfig.refreshEntry', () => apBuildConfigProviderInstance.refresh());
 	vscode.commands.registerCommand('apBuildConfig.addEntry', () => apBuildConfigProviderInstance.add());
-  vscode.commands.registerCommand('apBuildConfig.editEntry', (item: apBuildConfig) => item.edit());
-  vscode.commands.registerCommand('apBuildConfig.deleteEntry', (item: apBuildConfig) => item.delete());
+	vscode.commands.registerCommand('apBuildConfig.editEntry', (item: apBuildConfig) => item.edit());
+	vscode.commands.registerCommand('apBuildConfig.deleteEntry', (item: apBuildConfig) => item.delete());
 }
 
 // this method is called when your extension is deactivated

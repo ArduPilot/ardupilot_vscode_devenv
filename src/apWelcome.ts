@@ -18,7 +18,7 @@
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import * as fs from 'fs';
-import { simpleGit, SimpleGit, SimpleGitProgressEvent } from 'simple-git';
+import { simpleGit, SimpleGitProgressEvent } from 'simple-git';
 
 export class apWelcomeItem extends vscode.TreeItem {
 	constructor(
@@ -39,7 +39,7 @@ class cloneArdupilot extends apWelcomeItem {
 		vscode.commands.registerCommand('apClone', () => cloneArdupilot.run());
 	}
 
-	static run() {
+	static run(): void {
 		// clone the ardupilot repository
 		this.log.log('cloneArdupilot called');
 		// show open dialog box to select the directory
@@ -82,7 +82,7 @@ class cloneArdupilot extends apWelcomeItem {
 						title: 'Cloning Ardupilot',
 						cancellable: true
 					}, (prog, token) => {
-						token.onCancellationRequested((err) => {
+						token.onCancellationRequested(() => {
 							this.log.log('Clone cancelled by user');
 							abortController.abort();
 						});
@@ -100,18 +100,18 @@ class cloneArdupilot extends apWelcomeItem {
 					};
 					const git = simpleGit({ baseDir: finalUri.fsPath, progress: progController , abort: abortController.signal});
 					git.clone('https://www.github.com/ardupilot/ardupilot.git', finalUri.fsPath, ['--progress'])
-					.then(() => {
+						.then(() => {
 						// close the progress bar
-						progressFinishPromiseResolve();
-						// add the cloned repository to the workspace
-						vscode.workspace.updateWorkspaceFolders(vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders.length : 0, null, { uri : finalUri });
-					}, (reason) => {
-						progressFinishPromiseResolve();
-						if (!abortController.signal.aborted) {
+							progressFinishPromiseResolve();
+							// add the cloned repository to the workspace
+							vscode.workspace.updateWorkspaceFolders(vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders.length : 0, null, { uri : finalUri });
+						}, () => {
+							progressFinishPromiseResolve();
+							if (!abortController.signal.aborted) {
 							// show failed to clone
-							vscode.window.showErrorMessage("Failed to clone ardupilot");
-						}
-					});
+								vscode.window.showErrorMessage('Failed to clone ardupilot');
+							}
+						});
 
 					return finalUri;
 				});
@@ -148,8 +148,8 @@ export class apWelcomeProvider implements vscode.TreeDataProvider<apWelcomeItem>
 		this._onDidChangeTreeData.fire(new apWelcomeItem('Welcome', vscode.TreeItemCollapsibleState.None));
 	}
 
-	getChildren(element?: apWelcomeItem): Thenable<apWelcomeItem[]> {
-		console.log('getChildren');
+	getChildren(): Thenable<apWelcomeItem[]> {
+		// Removed unused parameter and console.log since they were causing linting warnings
 		return Promise.resolve([
 			new cloneArdupilot('Clone Ardupilot', vscode.TreeItemCollapsibleState.None)]);
 	}

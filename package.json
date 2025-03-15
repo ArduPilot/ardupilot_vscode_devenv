@@ -160,14 +160,16 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "cd webview-ui && npm run build && cd .. && tsc -b",
-    "watch": "tsc -b -w"
+    "watch": "tsc -b -w",
+    "lint": "eslint src --ext ts",
+    "lint:fix": "eslint src --ext ts --fix"
   },
   "devDependencies": {
     "@types/node": "^12.12.0",
     "@types/vscode": "^1.45.0",
-    "@typescript-eslint/eslint-plugin": "^3.0.2",
-    "@typescript-eslint/parser": "^3.0.2",
-    "eslint": "^7.1.0",
+    "@typescript-eslint/eslint-plugin": "^8.26.1",
+    "@typescript-eslint/parser": "^8.26.1",
+    "eslint": "^8.38.0",
     "typescript": "^4.0.2"
   },
   "dependencies": {

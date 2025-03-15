@@ -20,17 +20,17 @@ import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
-import {binToTarget, targetToBin} from './apBuildConfig';
+import { targetToBin } from './apBuildConfig';
 
 export class APTaskProvider implements vscode.TaskProvider {
-	static ardupilotTaskType = "ardupilot";
-    private ardupilotPromise: Thenable<vscode.Task[]> | undefined = undefined;
+	static ardupilotTaskType = 'ardupilot';
+	private ardupilotPromise: Thenable<vscode.Task[]> | undefined = undefined;
 	private static log = new apLog('apBuildConfigPanel');
 	private static _extensionUri: vscode.Uri;
 	private log = APTaskProvider.log.log;
-	private static featureDetails: any;
+	private static featureDetails: Record<string, unknown>;
 
-    constructor(workspaceRoot: string, extensionUri: vscode.Uri) {
+	constructor(workspaceRoot: string, extensionUri: vscode.Uri) {
 		const pattern = path.join(workspaceRoot, 'tasklist.json');
 		const fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
 		fileWatcher.onDidChange(() => this.ardupilotPromise = undefined);
@@ -39,14 +39,14 @@ export class APTaskProvider implements vscode.TaskProvider {
 		APTaskProvider._extensionUri = extensionUri;
 	}
 
-    public provideTasks(): Thenable<vscode.Task[]> | undefined {
+	public provideTasks(): Thenable<vscode.Task[]> | undefined {
 		if (!this.ardupilotPromise) {
 			this.ardupilotPromise = getArdupilotTasks();
 		}
 		return this.ardupilotPromise;
-    }
+	}
 
-	public static getOrCreateBuildConfig(board: string, target: string, configureOptions?: string, features?: string[]) {
+	public static getOrCreateBuildConfig(board: string, target: string, configureOptions?: string, features?: string[]): vscode.Task | undefined {
 		// create a new task definition in tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		APTaskProvider.log.log(`Creating new build configuration for ${board} ${target} @ ${workspaceRoot}`);
@@ -74,14 +74,14 @@ export class APTaskProvider implements vscode.TaskProvider {
 
 		fs.writeFileSync(tasksPath, JSON.stringify(tasks, null, 4), 'utf8');
 		APTaskProvider.log.log(`Added task ${taskName} to ${tasksPath}`);
-		return taskDef? this.createTask(taskDef) : undefined;
+		return taskDef ? this.createTask(taskDef) : undefined;
 	}
 
-	static updateFeaturesList() {
+	static updateFeaturesList(): void {
 		this.featureDetails = getFeaturesList(APTaskProvider._extensionUri);
 	}
 
-	static updateFeaturesDat(buildFolder: string ,features: string[]) {
+	static updateFeaturesDat(buildFolder: string ,features: string[]): string {
 		// open extra_hwdef.dat and update features
 		const extra_hwdef = path.join(buildFolder, 'extra_hwdef.dat');
 		let feature_define = '';
@@ -98,7 +98,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 	}
 
 	static createTask(definition: ArdupilotTaskDefinition): vscode.Task | undefined {
-		const workspaceRoot = vscode.workspace.workspaceFolders![0];
+		const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
 		if (!workspaceRoot) {
 			return undefined;
 		}
@@ -111,16 +111,24 @@ export class APTaskProvider implements vscode.TaskProvider {
 		}
 		// convert target to binary
 		definition.target_output = targetToBin[definition.target];
-		const target_dir = `${vscode.workspace.workspaceFolders![0].uri.fsPath}/build/${definition.configure}`;
+		const target_dir = `${workspaceRoot.uri.fsPath}/build/${definition.configure}`;
 		const target_binary = `${target_dir}/${definition.target_output}`;
 		const task_name = definition.configure + '-' + definition.target;
 		const featureOptions = APTaskProvider.updateFeaturesDat(target_dir , definition.features ? definition.features : []);
 
-		const task = new vscode.Task(definition, vscode.TaskScope.Workspace, task_name, 'ardupilot', new vscode.ShellExecution(`python3 ${definition.waffile} configure --board=${definition.configure} ${featureOptions} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions} && rm -f ${target_dir}/features.txt && python3 Tools/scripts/extract_features.py ${target_binary} -nm ${definition.nm} >> ${target_dir}/features.txt`),'$apgcc');
-		return task;
+		return new vscode.Task(
+			definition,
+			vscode.TaskScope.Workspace,
+			task_name,
+			'ardupilot',
+			new vscode.ShellExecution(
+				`python3 ${definition.waffile} configure --board=${definition.configure} ${featureOptions} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions} && rm -f ${target_dir}/features.txt && python3 Tools/scripts/extract_features.py ${target_binary} -nm ${definition.nm} >> ${target_dir}/features.txt`
+			),
+			'$apgcc'
+		);
 	}
 
-	public static delete(taskName: string) {
+	public static delete(taskName: string): void {
 		// delete the task from tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
@@ -138,12 +146,10 @@ export class APTaskProvider implements vscode.TaskProvider {
 		fs.writeFileSync(tasksPath, JSON.stringify(tasks, null, 4), 'utf8');
 	}
 
-	public resolveTask(_task: vscode.Task): vscode.Task | undefined {
-		const task = _task.definition.task;
-		if (task) {
-			// resolveTask requires that the same definition object be used.
-            const definition: ArdupilotTaskDefinition = <any>_task.definition;
-			return APTaskProvider.createTask(definition);
+	public resolveTask(task: vscode.Task): vscode.Task | undefined {
+		const taskDef = task.definition;
+		if (taskDef) {
+			return APTaskProvider.createTask(taskDef as ArdupilotTaskDefinition);
 		}
 		return undefined;
 	}
@@ -189,7 +195,7 @@ function getOutputChannel(): vscode.OutputChannel {
 }
 
 function exists(file: string): Promise<boolean> {
-	return new Promise<boolean>((resolve, _reject) => {
+	return new Promise<boolean>((resolve) => {
 		fs.exists(file, (value) => {
 			resolve(value);
 		});
@@ -197,7 +203,7 @@ function exists(file: string): Promise<boolean> {
 }
 
 function exec(command: string, options: cp.ExecOptions): Promise<{ stdout: string; stderr: string }> {
-	return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+	return new Promise<{ stdout: string, stderr: string }>((resolve, reject) => {
 		cp.exec(command, options, (error, stdout, stderr) => {
 			if (error) {
 				reject({ error, stdout, stderr });
@@ -207,11 +213,11 @@ function exec(command: string, options: cp.ExecOptions): Promise<{ stdout: strin
 	});
 }
 
-export function getFeaturesList(extensionUri: vscode.Uri): any {
+export function getFeaturesList(extensionUri: vscode.Uri): Record<string, unknown> {
 	// run resources/featureLoader.py on workspaceRoot/Tools/scripts/build_options.py
 	const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 	if (workspaceRoot === undefined) {
-		return undefined;
+		return {};
 	}
 	const buildOptionsPath = path.join(workspaceRoot, 'Tools', 'scripts', 'build_options.py');
 	if (!fs.existsSync(buildOptionsPath)) {
@@ -229,21 +235,21 @@ export function getFeaturesList(extensionUri: vscode.Uri): any {
 
 async function getArdupilotTasks(): Promise<vscode.Task[]> {
 	const workspaceFolders = vscode.workspace.workspaceFolders;
-    const result: vscode.Task[] = [];
+	const result: vscode.Task[] = [];
 	if (!workspaceFolders || workspaceFolders.length === 0) {
 		return result;
 	}
 
-    for (const workspaceFolder of workspaceFolders) {
-        const folderString = workspaceFolder.uri.fsPath;
+	for (const workspaceFolder of workspaceFolders) {
+		const folderString = workspaceFolder.uri.fsPath;
 		if (!folderString) {
 			continue;
-        }
+		}
 		const waf = path.join(folderString, 'waf');
 		if (!await exists(waf)) {
 			continue;
-        }
-		
+		}
+
 		console.log('Generating Tasklist');
 		const commandLine = './waf generate_tasklist';
 		try {
@@ -286,17 +292,18 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 					}
 				}
 			}
-        } catch (err:any) {
+		} catch (err: unknown) {
 			const channel = getOutputChannel();
-			if (err.stderr) {
-				channel.appendLine(err.stderr);
+			const error = err as {stderr?: string; stdout?: string};
+			if (error.stderr) {
+				channel.appendLine(error.stderr);
 			}
-			if (err.stdout) {
-				channel.appendLine(err.stdout);
+			if (error.stdout) {
+				channel.appendLine(error.stdout);
 			}
 			channel.appendLine('Auto detecting ardupilot tasks failed.');
 			channel.show(true);
 		}
-    }
-    return result;
+	}
+	return result;
 }

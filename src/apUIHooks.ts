@@ -1,14 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as cp from 'child_process';
 import { apLog } from './apLog';
 import { getFeaturesList } from './taskProvider';
 
 export class UIHooks {
 	_panel: vscode.WebviewPanel;
 	_disposables: vscode.Disposable[] = [];
-	listeners: { [event: string]: ((...args: any[]) => void)[] } = {};
+	listeners: { [event: string]: ((data: Record<string, unknown>) => void)[] } = {};
 	private static log = new apLog('uiHooks').log;
 
 	constructor(panel: vscode.WebviewPanel, private _extensionUri: vscode.Uri) {
@@ -21,36 +20,37 @@ export class UIHooks {
 			this._disposables);
 	}
 
-	dispose() {
+	dispose(): void {
 		this._panel.dispose();
 		this._disposables.forEach(d => d.dispose());
 	}
 
-	private _onMessage(message: any) {
+	private _onMessage(message: Record<string, unknown>): void {
 		// call the listeners matching message.command
-		if (this.listeners[message.command]) {
-			this.listeners[message.command].forEach(listener => {
+		const command = message.command as string;
+		if (this.listeners[command]) {
+			this.listeners[command].forEach(listener => {
 				listener(message);
 			});
 		}
-		switch (message.command) {
-			case 'getTasksList':
-				this.getTasksList();
-				break;
-			case 'build':
-				// unhandled here
-				break;
-			case 'getFeaturesList':
-				this.getFeaturesList();
-				break;
-			default:
-				// respond to unknown commands with undefined
-				this._panel.webview.postMessage({ command: message.command, response: 'Bad Request' });
-				break;
+		switch (command) {
+		case 'getTasksList':
+			this.getTasksList();
+			break;
+		case 'build':
+			// unhandled here
+			break;
+		case 'getFeaturesList':
+			this.getFeaturesList();
+			break;
+		default:
+			// respond to unknown commands with undefined
+			this._panel.webview.postMessage({ command: message.command, response: 'Bad Request' });
+			break;
 		}
 	}
 
-	private getTasksList() {
+	private getTasksList(): void {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (workspaceRoot === undefined) {
 			this._panel.webview.postMessage({ command: 'getTasksList', tasksList: undefined });
@@ -65,11 +65,11 @@ export class UIHooks {
 		this._panel.webview.postMessage({ command: 'getTasksList', tasksList: data });
 	}
 
-	public getFeaturesList() {
+	public getFeaturesList(): void {
 		this._panel.webview.postMessage({ command: 'getFeaturesList', featuresList: getFeaturesList(this._extensionUri) });
 	}
 
-	public on(event: string, listener: (...args: any[]) => void) {
+	public on(event: string, listener: (data: Record<string, unknown>) => void): void {
 		// add listener to the list
 		if (!this.listeners[event]) {
 			this.listeners[event] = [];

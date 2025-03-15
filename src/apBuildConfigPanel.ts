@@ -20,9 +20,8 @@ import { apLog } from './apLog';
 import * as path from 'path';
 import * as fs from 'fs';
 import { APTaskProvider } from './taskProvider';
-import { Uri, Webview } from "vscode";
+import { Uri, Webview } from 'vscode';
 import { UIHooks } from './apUIHooks';
-import { apBuildConfig } from './apBuildConfig';
 /**
  * Manages Build Configuration webview panels
  */
@@ -42,7 +41,7 @@ export class apBuildConfigPanel {
 	private _currentFeaturesList: string[] = [];
 	private _uiHooks: UIHooks;
 
-	private fileUri = (fp: string) => {
+	private fileUri = (fp: string): vscode.Uri => {
 		const fragments = fp.split('/');
 
 		return vscode.Uri.file(
@@ -50,7 +49,7 @@ export class apBuildConfigPanel {
 		);
 	};
 
-	public static createOrShow(extensionUri: vscode.Uri, currentTask?: vscode.Task) {
+	public static createOrShow(extensionUri: vscode.Uri, currentTask?: vscode.Task): void {
 		const column = vscode.window.activeTextEditor
 			? vscode.window.activeTextEditor.viewColumn
 			: undefined;
@@ -63,7 +62,7 @@ export class apBuildConfigPanel {
 
 		// If we already have a panel, show it.
 		if (apBuildConfigPanel.currentPanel) {
-			this.log(`Revealing existing panel`);
+			this.log('Revealing existing panel');
 			apBuildConfigPanel.currentPanel._panel.reveal(column);
 			return;
 		}
@@ -77,11 +76,11 @@ export class apBuildConfigPanel {
 				enableScripts: true,
 			}
 		);
-		this.log(`Creating new panel`);
+		this.log('Creating new panel');
 		apBuildConfigPanel.currentPanel = new apBuildConfigPanel(panel, extensionUri, currentTask);
 	}
 
-	public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, currentTask?: vscode.Task) {
+	public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, currentTask?: vscode.Task): void {
 		apBuildConfigPanel.currentPanel = new apBuildConfigPanel(panel, extensionUri, currentTask);
 	}
 
@@ -110,16 +109,16 @@ export class apBuildConfigPanel {
 			this.dispose();
 			this._uiHooks.dispose();
 		}, null, this._disposables);
-	
+
 		this._panel.title = 'New Build Configuration';
 		this._panel.webview.html = this._getWebviewContent(this._panel.webview);
 
 		// Handle messages from the webview
-		this._uiHooks.on('build', (message:any) => {
+		this._uiHooks.on('build', (message: Record<string, unknown>) => {
 			// create a new build configuration
-			apBuildConfigPanel.log(`Received message from webview: build`);
+			apBuildConfigPanel.log('Received message from webview: build');
 			console.log(message);
-			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(message.board, message.target, message.configureOptions, message.features);
+			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(message.board as string, message.target as string, message.configureOptions as string, message.features as string[]);
 			// execute the task
 			if (currentTaskDef) {
 				vscode.tasks.executeTask(currentTaskDef).then((execution) => {
@@ -134,7 +133,7 @@ export class apBuildConfigPanel {
 			return;
 		});
 
-		this._uiHooks.on('getCurrentTask', (message:any) => {
+		this._uiHooks.on('getCurrentTask', () => {
 			// send the current task to the webview
 			apBuildConfigPanel.log(`Current task: ${this._currentTask?.definition}`);
 			this._panel.webview.postMessage({ command: 'getCurrentTask', task: this._currentTask?.definition });
@@ -142,15 +141,15 @@ export class apBuildConfigPanel {
 		});
 	}
 
-	private _getWebviewContent(webview: Webview) {
+	private _getWebviewContent(webview: Webview): string {
 		// The CSS file from the Svelte build output
-		const stylesUri = getUri(webview, this._extensionUri, ["webview-ui", "dist", "index.css"]);
+		const stylesUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'index.css']);
 		// The JS file from the Svelte build output
-		const scriptUri = getUri(webview, this._extensionUri, ["webview-ui", "dist", "index.js"]);
+		const scriptUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'index.js']);
 		// get html file from the Svelte build output
-		
+
 		const nonce = getNonce();
-	
+
 		// Tip: Install the es6-string-html VS Code extension to enable code highlighting below
 		return /*html*/ `
 		  <!DOCTYPE html>
@@ -170,14 +169,13 @@ export class apBuildConfigPanel {
 		`;
 	}
 
-	
-	public doRefactor() {
+	public doRefactor(): void {
 		// Send a message to the webview webview.
 		// You can send any JSON serializable data.
 		this._panel.webview.postMessage({ command: 'refactor' });
 	}
 
-	public dispose() {
+	public dispose(): void {
 		apBuildConfigPanel.currentPanel = undefined;
 
 		// Clean up our resources
@@ -192,7 +190,7 @@ export class apBuildConfigPanel {
 	}
 }
 
-function getNonce() {
+function getNonce(): string {
 	let text = '';
 	const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 	for (let i = 0; i < 32; i++) {
@@ -201,6 +199,6 @@ function getNonce() {
 	return text;
 }
 
-function getUri(webview: Webview, extensionUri: Uri, pathList: string[]) {
+function getUri(webview: Webview, extensionUri: Uri, pathList: string[]): Uri {
 	return webview.asWebviewUri(Uri.joinPath(extensionUri, ...pathList));
 }

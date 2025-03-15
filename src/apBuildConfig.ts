@@ -17,20 +17,19 @@
 
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
-import { log } from 'console';
 import * as fs from 'fs';
 import { apBuildConfigPanel } from './apBuildConfigPanel';
 import { APTaskProvider } from './taskProvider';
 
 export const binToTarget : { [target: string]: string} = {
-	"bin/arducopter": "copter",
-	"bin/arducopter-heli": "heli",
-	"bin/antennatracker": "antennatracker",
-	"bin/arduplane": "plane",
-	"bin/ardurover": "rover",
-	"bin/ardusub": "sub",
-	"bin/blimp": "blimp",
-	"bin/AP_Periph": "AP_Periph",
+	'bin/arducopter': 'copter',
+	'bin/arducopter-heli': 'heli',
+	'bin/antennatracker': 'antennatracker',
+	'bin/arduplane': 'plane',
+	'bin/ardurover': 'rover',
+	'bin/ardusub': 'sub',
+	'bin/blimp': 'blimp',
+	'bin/AP_Periph': 'AP_Periph',
 };
 
 export const targetToBin : { [target: string]: string} = {};
@@ -50,14 +49,14 @@ export class apBuildConfig extends vscode.TreeItem {
 		super(label, collapsibleState);
 	}
 
-	edit() {
+	edit(): void {
 		apBuildConfig.log(`edit ${this.label}`);
 		if (this.task) {
 			apBuildConfigPanel.createOrShow(this._buildProvider.context.extensionUri, this.task);
 		}
 	}
 
-	delete() {
+	delete(): void {
 		// delete the folder
 		apBuildConfig.log(`delete ${this.label}`);
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
@@ -94,7 +93,7 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 		apBuildConfigPanel.createOrShow(this.context.extensionUri);
 	}
 
-	getChildren(element?: apBuildConfig): Thenable<apBuildConfig[]> {
+	getChildren(): Thenable<apBuildConfig[]> {
 		apBuildConfigProvider.log('getChildren');
 		// check folders inside the workspace/build directory
 		if (!this.workspaceRoot) {
