@@ -54,28 +54,41 @@ export class apBuildConfigPanel {
 			? vscode.window.activeTextEditor.viewColumn
 			: undefined;
 
-		// dispose the current panel and create a fresh one
 		if (currentTask !== undefined && apBuildConfigPanel.currentPanel) {
 			apBuildConfigPanel.currentPanel.dispose();
 			apBuildConfigPanel.currentPanel = undefined;
 		}
 
-		// If we already have a panel, show it.
+		// If we already have a panel but the mode has changed (editing vs creating new)
+		// dispose the current panel and create a fresh one
 		if (apBuildConfigPanel.currentPanel) {
-			this.log('Revealing existing panel');
-			apBuildConfigPanel.currentPanel._panel.reveal(column);
-			return;
+			if ((currentTask && !apBuildConfigPanel.currentPanel._currentTask) ||
+					(!currentTask && apBuildConfigPanel.currentPanel._currentTask)) {
+				apBuildConfigPanel.currentPanel.dispose();
+				apBuildConfigPanel.currentPanel = undefined;
+			} else {
+				// Mode hasn't changed, just reveal the panel
+				this.log('Revealing existing panel');
+				apBuildConfigPanel.currentPanel._panel.reveal(column);
+
+				// If we're switching to a different task in edit mode, update the current task
+				if (currentTask && apBuildConfigPanel.currentPanel._currentTask !== currentTask) {
+					apBuildConfigPanel.currentPanel.updateCurrentTask(currentTask);
+				}
+				return;
+			}
 		}
 
-		// Otherwise, create a new panel and enable js
+		// Create a new panel
 		const panel = vscode.window.createWebviewPanel(
 			apBuildConfigPanel.viewType,
-			'Create a new build configuration',
+			currentTask ? 'Edit Build Configuration' : 'Create a new build configuration',
 			vscode.ViewColumn.One,
 			{
 				enableScripts: true,
 			}
 		);
+
 		this.log('Creating new panel');
 		apBuildConfigPanel.currentPanel = new apBuildConfigPanel(panel, extensionUri, currentTask);
 	}
@@ -110,7 +123,7 @@ export class apBuildConfigPanel {
 			this._uiHooks.dispose();
 		}, null, this._disposables);
 
-		this._panel.title = 'New Build Configuration';
+		this._panel.title = currentTask ? 'Edit Build Configuration' : 'New Build Configuration';
 		this._panel.webview.html = this._getWebviewContent(this._panel.webview);
 
 		// Handle messages from the webview
@@ -139,6 +152,59 @@ export class apBuildConfigPanel {
 			this._panel.webview.postMessage({ command: 'getCurrentTask', task: this._currentTask?.definition });
 			return;
 		});
+
+		// Handle switching to add mode from the UI
+		this._uiHooks.on('switchToAddMode', () => {
+			apBuildConfigPanel.log('Switching to add mode');
+			this.switchToAddMode();
+			return;
+		});
+	}
+
+	/**
+	 * Updates the current task and refreshes the panel
+	 * @param task The new task to edit
+	 */
+	public updateCurrentTask(task: vscode.Task): void {
+		this._currentTask = task;
+		this._currentFeaturesList = [];
+
+		// Update the panel title to reflect we're in edit mode
+		this._panel.title = 'Edit Build Configuration';
+
+		// Load features for the new task
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (workspaceRoot) {
+			const featuresPath = path.join(workspaceRoot, 'build', task.definition.configure, 'features.txt');
+			if (fs.existsSync(featuresPath)) {
+				const features = fs.readFileSync(featuresPath, 'utf8').split('\n');
+				for (const feature of features) {
+					if (feature.trim()) { // Only add non-empty features
+						this._currentFeaturesList.push(feature);
+					}
+				}
+			}
+			task.definition.features = this._currentFeaturesList;
+		}
+
+		// Notify the webview about the updated task
+		this._panel.webview.postMessage({ command: 'getCurrentTask', task: this._currentTask.definition });
+
+		apBuildConfigPanel.log(`Updated current task to: ${this._currentTask.definition.configure}`);
+	}
+
+	/**
+	 * Switch to add mode (new configuration)
+	 */
+	public switchToAddMode(): void {
+		this._currentTask = undefined;
+		this._currentFeaturesList = [];
+		this._panel.title = 'New Build Configuration';
+
+		// Notify the webview that we're now in add mode
+		this._panel.webview.postMessage({ command: 'getCurrentTask', task: null });
+
+		apBuildConfigPanel.log('Switched to add mode');
 	}
 
 	private _getWebviewContent(webview: Webview): string {

@@ -14,13 +14,16 @@
   let target = $state("");
   let extraConfig = $state("");
   let features = $state([]);
+  let isEditMode = $state(false);
 
   let buildButton: any = $state(null);
+  let addNewButton: any = $state(null);
   let featuresGroups: { features: any[] }[] = [];
   let tasksList: any = $state(null);
 
   $effect(() => {
     buildButton?.addEventListener("click", sendBuildRequest);
+    addNewButton?.addEventListener("click", switchToAddMode);
   });
 
   async function loadInfo(): Promise<void> {
@@ -33,6 +36,9 @@
       target = task.target;
       extraConfig = task.configureOptions;
       features = task.features;
+      isEditMode = true;
+    } else {
+      isEditMode = false;
     }
     let response = await vscodeHooks.request("getFeaturesList");
     // group features by features.category
@@ -59,13 +65,29 @@
       features: featureOutput,
     });
   }
+
+  function switchToAddMode() {
+    // Clear all selections and switch to add mode
+    board = "";
+    target = "";
+    extraConfig = "";
+    features = [];
+    isEditMode = false;
+
+    // Notify the backend that we want to switch to add mode
+    vscodeHooks.postMessage("switchToAddMode", {});
+  }
 </script>
 
 <main>
-  <h1>Build Configuration</h1>
   {#await loadInfo()}
     <vscode-progress-ring>Loading</vscode-progress-ring>
   {:then}
+    <h1>
+      {isEditMode
+        ? "Edit Build Configuration"
+        : "Create a new build configuration"}
+    </h1>
     <BoardsList
       bind:value={board}
       boards={tasksList.getBoards()}
@@ -111,5 +133,8 @@
   }
   .feature-group {
     padding: 5px;
+  }
+  .button-container {
+    margin-bottom: 15px;
   }
 </style>
