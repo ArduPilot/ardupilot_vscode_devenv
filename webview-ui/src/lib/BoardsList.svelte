@@ -13,7 +13,7 @@
 </script>
 
 <vscode-label for={props.id}>{props.label}</vscode-label>
-<vscode-single-select bind:this={boardSelect} id={props.id}>
+<vscode-single-select bind:this={boardSelect} id={props.id} combobox>
   {#each props.boards as board}
     {#if board === value}
       <vscode-option value={board} selected>{board}</vscode-option>

@@ -7,20 +7,19 @@
 	let targetsList: any;
 
 	$effect(() => {
-		targetsList?.addEventListener('change', () => {
+		targetsList?.addEventListener("change", () => {
 			value = targetsList.value;
 		});
 	});
 </script>
 
 <vscode-label for={props.id}>{props.label}</vscode-label>
-<vscode-single-select bind:this={targetsList} id={props.id} value={value}>
-{#each props.targets as targets}
-	{#if targets === value}
-		<vscode-option value={targets} selected>{targets}</vscode-option>
-	{:else}
-		<vscode-option value={targets}>{targets}</vscode-option>
-	{/if}
-{/each}
+<vscode-single-select bind:this={targetsList} id={props.id} {value} combobox>
+	{#each props.targets as targets}
+		{#if targets === value}
+			<vscode-option value={targets} selected>{targets}</vscode-option>
+		{:else}
+			<vscode-option value={targets}>{targets}</vscode-option>
+		{/if}
+	{/each}
 </vscode-single-select>
-
