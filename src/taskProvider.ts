@@ -61,19 +61,31 @@ export class APTaskProvider implements vscode.TaskProvider {
 		}
 		const tasks = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
 		const taskName = `${board}-${target}`;
+
+		// Create task definition with features
 		const taskDef: ArdupilotTaskDefinition = {
 			type: 'ardupilot',
 			configure: board,
 			target: target,
 			configureOptions: configureOptions === undefined ? '' : configureOptions,
 			buildOptions: '',
-			features: features === undefined ? [] : features,
+			features: features || [],
 		};
-		tasks.tasks = tasks.tasks.filter((task: ArdupilotTaskDefinition) => task.configure !== board);
-		tasks.tasks.push(taskDef);
 
+		// If task already exists for this board, update it instead of adding a new one
+		const existingTaskIndex = tasks.tasks.findIndex((task: ArdupilotTaskDefinition) => task.configure === board);
+		if (existingTaskIndex !== -1) {
+			// Update existing task
+			tasks.tasks[existingTaskIndex] = taskDef;
+		} else {
+			// Add new task
+			tasks.tasks.push(taskDef);
+		}
+
+		// Write updated tasks to the tasks.json file
 		fs.writeFileSync(tasksPath, JSON.stringify(tasks, null, 4), 'utf8');
-		APTaskProvider.log.log(`Added task ${taskName} to ${tasksPath}`);
+		APTaskProvider.log.log(`Added/updated task ${taskName} to ${tasksPath}`);
+
 		return taskDef ? this.createTask(taskDef) : undefined;
 	}
 
@@ -231,6 +243,44 @@ export function getFeaturesList(extensionUri: vscode.Uri): Record<string, unknow
 	}
 	const features = JSON.parse(featureLoader.stdout.toString());
 	return features;
+}
+
+/**
+ * Creates a task to upload firmware to a connected board
+ * @param definition The task definition to use for building and uploading
+ * @returns A VS Code task or undefined if workspace not available
+ */
+export function createUploadTask(definition: ArdupilotTaskDefinition): vscode.Task | undefined {
+	const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+	if (!workspaceRoot) {
+		return undefined;
+	}
+
+	if (definition.waffile === undefined) {
+		// use the waf file from the workspace
+		definition.waffile = workspaceRoot.uri.fsPath + '/waf';
+	}
+
+	const task_name = `${definition.configure}-${definition.target}-upload`;
+
+	// ArduPilot's WAF build system requires:
+	// 1. The target in the format "target.upload"
+	// 2. The build directory to be specified with --out=build/boardname
+	const uploadCommand = `cd ${workspaceRoot.uri.fsPath} && python3 ${definition.waffile} ${definition.target} --upload`;
+
+	// Create upload task with the correct command structure
+	return new vscode.Task(
+		{
+			...definition,
+			type: 'ardupilot',
+			isUpload: true // Custom property to identify this as an upload task
+		},
+		vscode.TaskScope.Workspace,
+		task_name,
+		'ardupilot',
+		new vscode.ShellExecution(uploadCommand),
+		'$apgcc'
+	);
 }
 
 async function getArdupilotTasks(): Promise<vscode.Task[]> {

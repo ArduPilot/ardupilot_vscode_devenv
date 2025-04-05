@@ -145,10 +145,15 @@ export class apBuildConfigPanel {
 		} else if (this._currentTask) {
 			const featuresPath = path.join(workspaceRoot, 'build', this._currentTask.definition.configure, 'features.txt');
 			if (fs.existsSync(featuresPath)) {
-				const features = fs.readFileSync(featuresPath, 'utf8').split('\n');
+				const features = fs.readFileSync(featuresPath, 'utf8').split('\n')
+					.filter(feature => feature.trim()); // Filter out empty lines
 				for (const feature of features) {
 					this._currentFeaturesList.push(feature);
 				}
+			}
+			// Ensure the task definition has the features array
+			if (!this._currentTask.definition.features) {
+				this._currentTask.definition.features = [];
 			}
 			this._currentTask.definition.features = this._currentFeaturesList;
 		}
@@ -167,7 +172,21 @@ export class apBuildConfigPanel {
 			// create a new build configuration
 			apBuildConfigPanel.log('Received message from webview: build');
 			console.log(message);
-			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(message.board as string, message.target as string, message.configureOptions as string, message.features as string[]);
+			// Create a TaskDefinition with all required properties
+			const taskDefinition = {
+				type: 'ardupilot',
+				configure: message.board as string,
+				target: message.target as string,
+				configureOptions: message.configureOptions as string || '',
+				buildOptions: '',
+				features: message.features as string[] || []
+			};
+			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
+				taskDefinition.configure,
+				taskDefinition.target,
+				taskDefinition.configureOptions,
+				taskDefinition.features
+			);
 			// execute the task
 			if (currentTaskDef) {
 				vscode.tasks.executeTask(currentTaskDef).then((execution) => {
