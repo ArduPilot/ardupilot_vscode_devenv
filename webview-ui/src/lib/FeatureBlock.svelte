@@ -2,10 +2,93 @@
 <script lang="ts">
 	import "@vscode-elements/elements/dist/vscode-collapsible/index.js";
 	import "@vscode-elements/elements/dist/vscode-checkbox/index.js";
-	let { selected = $bindable(), features, ...props } = $props();
+	let {
+		selected = $bindable(),
+		featureGroups,
+		features,
+		...props
+	} = $props();
 
 	let checkbox: { [feature: string]: any } = $state({});
 	let mainCheckbox: any = $state(null);
+
+	// Tracks which features are disabled due to dependency issues
+	let disabledByDependency: { [feature: string]: boolean } = $state({});
+
+	// Helper function to check if a feature should be disabled based on its dependencies
+	function checkDependencies(feature: any): boolean {
+		if (!feature.dependency) {
+			return false;
+		}
+
+		// Parse comma-separated dependencies
+		const dependencies = feature.dependency
+			.split(",")
+			.map((d: string) => d.trim());
+
+		// Check if any dependency is disabled (has a ! prefix in the selected array)
+		console.log(
+			`Checking dependencies for ${feature.label}: ${dependencies}`,
+		);
+		// print list of all features
+		console.log("All features: ", featureGroups);
+		for (const dep of dependencies) {
+			let depFeature: any = null;
+			featureGroups.forEach((group: any) => {
+				group.features.forEach((f: any) => {
+					if (f.label === dep) {
+						depFeature = f;
+						console.log("Dependency found: ", f);
+					}
+				});
+			});
+			console.log(
+				`Checking dependency ${dep} for feature ${feature.label}: ${depFeature}`,
+			);
+			if (dep && selected.includes(`!${depFeature.define}`)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	// Function to update the disabled status of all features based on dependencies
+	function updateDisabledStatus() {
+		for (const feature of features) {
+			const featureName = feature.define;
+			const shouldBeDisabled = checkDependencies(feature);
+
+			disabledByDependency[featureName] = shouldBeDisabled;
+
+			// If checkbox exists and feature should be disabled due to dependencies
+			if (checkbox[featureName] && shouldBeDisabled) {
+				// Disable the checkbox
+				checkbox[featureName].disabled = true;
+
+				// If it was checked, uncheck it and add to the disabled list
+				if (checkbox[featureName].checked) {
+					checkbox[featureName].checked = false;
+
+					// Update selected list to reflect this feature is now disabled
+					selected = selected.filter(
+						(item: string) => item !== featureName,
+					);
+					if (!selected.includes(`!${featureName}`)) {
+						selected = [...selected, `!${featureName}`];
+					}
+				}
+			} else if (checkbox[featureName]) {
+				// Re-enable the checkbox if dependency issue is resolved
+				checkbox[featureName].disabled = shouldBeDisabled;
+			}
+		}
+	}
+
+	$effect(() => {
+		// When selected array changes, update disabled status
+		updateDisabledStatus();
+	});
 
 	$effect(() => {
 		Object.keys(checkbox).forEach((key) => {
@@ -32,6 +115,8 @@
 					} else {
 						(mainCheckbox as HTMLInputElement).indeterminate = true;
 					}
+					// Update dependency disabled status after selection changes
+					updateDisabledStatus();
 				}
 			});
 		});
@@ -74,12 +159,14 @@
 					<vscode-checkbox
 						bind:this={checkbox[feature.define]}
 						value={feature.define}
+						disabled={disabledByDependency[feature.define]}
 						checked>{feature.description}</vscode-checkbox
 					>
 				{:else}
 					<vscode-checkbox
 						bind:this={checkbox[feature.define]}
 						value={feature.define}
+						disabled={disabledByDependency[feature.define]}
 						>{feature.description}</vscode-checkbox
 					>
 				{/if}
