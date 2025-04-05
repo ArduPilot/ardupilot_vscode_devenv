@@ -93,6 +93,7 @@
       boards={tasksList.getBoards()}
       label="Select Board:"
       id="board"
+      {vscodeHooks}
     />
     <TargetsList
       bind:value={target}

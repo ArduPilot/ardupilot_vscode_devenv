@@ -2,12 +2,20 @@
   import "@vscode-elements/elements/dist/vscode-single-select/index.js";
   import "@vscode-elements/elements/dist/vscode-label/index.js";
 
-  let { value = $bindable(), ...props } = $props();
+  let { value = $bindable(), vscodeHooks, ...props } = $props();
   let boardSelect: any;
+  let previousValue = "";
 
   $effect(() => {
     boardSelect?.addEventListener("change", () => {
-      value = boardSelect.value;
+      const newValue = boardSelect.value;
+      value = newValue;
+
+      // Only notify when value actually changes to avoid unnecessary events
+      if (newValue !== previousValue && newValue && vscodeHooks) {
+        vscodeHooks.postMessage("boardSelected", { board: newValue });
+        previousValue = newValue;
+      }
     });
   });
 </script>

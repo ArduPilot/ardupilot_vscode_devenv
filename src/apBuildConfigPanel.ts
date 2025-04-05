@@ -49,6 +49,42 @@ export class apBuildConfigPanel {
 		);
 	};
 
+	/**
+	 * Looks for existing task configurations for the given board
+	 * @param board The board name to search for
+	 * @returns The task if found, undefined otherwise
+	 */
+	private findExistingTaskForBoard(board: string): vscode.Task | undefined {
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			return undefined;
+		}
+
+		const tasksPath = path.join(workspaceRoot, '.vscode', 'tasks.json');
+		if (!fs.existsSync(tasksPath)) {
+			return undefined;
+		}
+
+		try {
+			const tasksJson = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
+			const tasks = tasksJson.tasks || [];
+
+			// Find a task with the matching board name
+			const matchingTask = tasks.find((task: any) =>
+				task.type === 'ardupilot' && task.configure === board
+			);
+
+			if (matchingTask) {
+				// Convert to a proper vscode.Task
+				return APTaskProvider.createTask(matchingTask);
+			}
+		} catch (error) {
+			apBuildConfigPanel.log(`Error looking up task for board ${board}: ${error}`);
+		}
+
+		return undefined;
+	}
+
 	public static createOrShow(extensionUri: vscode.Uri, currentTask?: vscode.Task): void {
 		const column = vscode.window.activeTextEditor
 			? vscode.window.activeTextEditor.viewColumn
@@ -157,6 +193,19 @@ export class apBuildConfigPanel {
 		this._uiHooks.on('switchToAddMode', () => {
 			apBuildConfigPanel.log('Switching to add mode');
 			this.switchToAddMode();
+			return;
+		});
+
+		// Handle board selection changes
+		this._uiHooks.on('boardSelected', (data: Record<string, unknown>) => {
+			const board = data.board as string;
+			apBuildConfigPanel.log(`Board selected: ${board}`);
+			const existingTask = this.findExistingTaskForBoard(board);
+			if (existingTask) {
+				apBuildConfigPanel.createOrShow(this._extensionUri, existingTask);
+			} else {
+				this.switchToAddMode();
+			}
 			return;
 		});
 	}
