@@ -52,6 +52,10 @@
           "waffile": {
             "type": "string",
             "description": "waf file location that can be omitted"
+          },
+          "buildBeforeUpload": {
+            "type": "boolean",
+            "description": "Whether to build before uploading"
           }
         }
       }
@@ -128,6 +132,11 @@
         "command": "apBuildConfig.deleteEntry",
         "title": "Delete",
         "icon": "$(trash)"
+      },
+      {
+        "command": "apBuildConfig.uploadFirmware",
+        "title": "Upload Firmware",
+        "icon": "$(play)"
       }
     ],
     "menus": {
@@ -151,6 +160,11 @@
         },
         {
           "command": "apBuildConfig.deleteEntry",
+          "when": "view == apBuildConfig",
+          "group": "inline"
+        },
+        {
+          "command": "apBuildConfig.uploadFirmware",
           "when": "view == apBuildConfig",
           "group": "inline"
         }

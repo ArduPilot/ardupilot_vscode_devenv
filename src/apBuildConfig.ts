@@ -18,6 +18,7 @@
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import * as fs from 'fs';
+import * as path from 'path';
 import { apBuildConfigPanel } from './apBuildConfigPanel';
 import { APTaskProvider } from './taskProvider';
 
@@ -41,10 +42,10 @@ export class apBuildConfig extends vscode.TreeItem {
 	private static log = new apLog('apBuildConfig').log;
 
 	constructor(
-		private _buildProvider: apBuildConfigProvider,
-		public readonly label: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-		public readonly task?: vscode.Task,
+        private _buildProvider: apBuildConfigProvider,
+        public readonly label: string,
+        public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+        public readonly task?: vscode.Task,
 	) {
 		super(label, collapsibleState);
 	}
@@ -54,6 +55,49 @@ export class apBuildConfig extends vscode.TreeItem {
 		if (this.task) {
 			apBuildConfigPanel.createOrShow(this._buildProvider.context.extensionUri, this.task);
 		}
+	}
+
+	upload(): void {
+		apBuildConfig.log(`upload firmware for ${this.label}`);
+		if (!this.task) {
+			return;
+		}
+		// After build completes, run the upload task
+		vscode.tasks.executeTask(this.task).then(taskExecution => {
+			if (!taskExecution) {
+				return;
+			}
+
+			// Create a task execution finished listener
+			const disposable = vscode.tasks.onDidEndTaskProcess(e => {
+				if (e.execution === taskExecution) {
+					disposable.dispose();  // Clean up the listener
+
+					if (e.exitCode === 0) {
+						apBuildConfig.log(`Build successful, now uploading ${this.label}`);
+
+						// Get the task definition and create an upload task
+						const definition = this.task?.definition as import('./taskProvider').ArdupilotTaskDefinition;
+						if (definition) {
+							// Import the taskProvider module properly and access the createUploadTask function
+							import('./taskProvider').then(taskProviderModule => {
+								const uploadTask = taskProviderModule.createUploadTask(definition);
+								if (uploadTask) {
+									vscode.tasks.executeTask(uploadTask);
+								} else {
+									vscode.window.showErrorMessage(`Failed to create upload task for ${this.label}`);
+								}
+							}).catch(error => {
+								vscode.window.showErrorMessage(`Error creating upload task: ${error.message}`);
+								apBuildConfig.log(`Upload task creation error: ${error}`);
+							});
+						}
+					} else {
+						vscode.window.showErrorMessage(`Build failed for ${this.label}, aborting upload`);
+					}
+				}
+			});
+		});
 	}
 
 	delete(): void {
@@ -122,8 +166,18 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 					} else {
 						target = targetList[0].split('/')[1];
 					}
-					const task = APTaskProvider.getOrCreateBuildConfig(file, target);
-					apBuildConfigProvider.log(`getOrCreateBuildConfig ${file} ${target}`);
+
+					// Load features if features.txt exists
+					let features: string[] = [];
+					const featuresPath = path.join(buildDir.fsPath, file, 'features.txt');
+					if (fs.existsSync(featuresPath)) {
+						features = fs.readFileSync(featuresPath, 'utf8')
+							.split('\n')
+							.filter(feature => feature.trim());
+					}
+
+					const task = APTaskProvider.getOrCreateBuildConfig(file, target, undefined, features);
+					apBuildConfigProvider.log(`getOrCreateBuildConfig ${file} ${target} with ${features.length} features`);
 					buildConfigList = [new apBuildConfig(this, file, vscode.TreeItemCollapsibleState.None, task), ...buildConfigList];
 				} catch (err) {
 					apBuildConfigProvider.log(`Error reading target_list file ${err}`);
