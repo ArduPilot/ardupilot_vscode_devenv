@@ -278,6 +278,14 @@ export interface APLaunchDefinition {
 	 * Waf file path
 	 */
 	waffile?: string;
+	/**
+	 * sim_vehicle.py command arguments for SITL builds
+	 */
+	simVehicleCommand?: string,
+	/**
+	 * is it a SITL build
+	 */
+	isSITL?: boolean;
 }
 
 export class APLaunchConfigurationProvider implements vscode.DebugConfigurationProvider {
@@ -369,18 +377,32 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				return undefined;
 			}
 		}
+
 		try {
-			// Check if task completed successfully based on task process events
-			// Since exitCode isn't directly accessible, we'll rely on the task process event
-			// and handle potential errors through the terminal output
-
-			// Run the upload command
-			const uploadCommand = `python3 ${apConfig.waffile} ${apConfig.target} --upload`;
-			APLaunchConfigurationProvider.log.log(`Running upload command: ${uploadCommand}`);
-
-			const terminal = vscode.window.createTerminal('ArduPilot Upload');
+			// Create the terminal for ArduPilot commands
+			const terminal = vscode.window.createTerminal(config.isSITL ? 'ArduPilot SITL' : 'ArduPilot Upload');
 			terminal.sendText(`cd ${workspaceRoot}`);
-			terminal.sendText(uploadCommand);
+
+			if (config.isSITL) {
+				// For SITL builds, use sim_vehicle.py with the provided command arguments
+				const simVehiclePath = path.join(workspaceRoot, 'Tools', 'autotest', 'sim_vehicle.py');
+
+				// Extract vehicle type from target (e.g., 'copter' from 'sitl-copter')
+				const vehicleType = apConfig.target.replace('sitl-', '');
+
+				// Build the sim_vehicle.py command with the provided arguments
+				const simVehicleCmd = `python3 ${simVehiclePath} -v ${vehicleType} ${apConfig.simVehicleCommand || ''}`;
+				APLaunchConfigurationProvider.log.log(`Running SITL simulation: ${simVehicleCmd}`);
+
+				terminal.sendText(simVehicleCmd);
+			} else {
+				// For physical board builds, run the upload command
+				const uploadCommand = `python3 ${apConfig.waffile} ${apConfig.target} --upload`;
+				APLaunchConfigurationProvider.log.log(`Running upload command: ${uploadCommand}`);
+
+				terminal.sendText(uploadCommand);
+			}
+
 			terminal.show();
 
 			// This is a custom launch type that we've fully handled, so return undefined
