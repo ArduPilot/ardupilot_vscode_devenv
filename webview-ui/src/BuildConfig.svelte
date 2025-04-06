@@ -8,6 +8,7 @@
   import "@vscode-elements/elements/dist/vscode-divider/index.js";
   import "@vscode-elements/elements/dist/vscode-button/index.js";
   import "@vscode-elements/elements/dist/vscode-progress-ring/index.js";
+  import "@vscode-elements/elements/dist/vscode-checkbox/index.js";
 
   let { vscodeHooks } = $props();
   let board = $state("");
@@ -15,6 +16,8 @@
   let extraConfig = $state("");
   let features = $state([]);
   let isEditMode = $state(false);
+  let enableFeatures = $state(false);
+  let featuresLoaded = $state(false);
 
   let buildButton: any = $state(null);
   let addNewButton: any = $state(null);
@@ -35,11 +38,18 @@
       board = task.configure;
       target = task.target;
       extraConfig = task.configureOptions;
-      features = task.features;
+      features = task.features || [];
+      enableFeatures = task.enableFeatures;
       isEditMode = true;
     } else {
       isEditMode = false;
     }
+    tasksList = TasksList.getInstance(message.tasksList);
+  }
+
+  async function loadFeatures(): Promise<void> {
+    if (featuresLoaded) return;
+
     let response = await vscodeHooks.request("getFeaturesList");
     // group features by features.category
     response.featuresList.forEach((feature: any) => {
@@ -52,17 +62,20 @@
         featuresGroups.push({ features: [feature] });
       }
     });
-    tasksList = TasksList.getInstance(message.tasksList);
+    featuresLoaded = true;
   }
 
   function sendBuildRequest() {
     console.log(board, target, extraConfig, features);
-    const featureOutput = features.map((feature) => feature);
+    const featureOutput = enableFeatures
+      ? features.map((feature) => feature)
+      : [];
     vscodeHooks.postMessage("build", {
       board: board,
       target: target,
       extraConfig: extraConfig,
       features: featureOutput,
+      enableFeatures: enableFeatures,
     });
   }
 
@@ -77,6 +90,21 @@
     // Notify the backend that we want to switch to add mode
     vscodeHooks.postMessage("switchToAddMode", {});
   }
+
+  function toggleFeatures() {
+    if (enableFeatures && !featuresLoaded) {
+      loadFeatures();
+    }
+  }
+
+  function handleFeatureToggle(event: Event) {
+    enableFeatures = (event.target as HTMLInputElement).checked;
+    toggleFeatures();
+  }
+
+  $effect(() => {
+    toggleFeatures();
+  });
 </script>
 
 <main>
@@ -107,21 +135,36 @@
       label="Configure Options:"
     />
     <vscode-divider></vscode-divider>
-    <h2>Features:</h2>
-    <div class="feature-list">
-      {#each featuresGroups as featureGroup}
-        <div class="feature-group">
-          <FeatureBlock
-            bind:selected={features}
-            featureGroups={featuresGroups}
-            features={featureGroup.features}
-            label="Select Features:"
-          />
-        </div>
-      {/each}
+
+    <div class="feature-toggle">
+      <vscode-checkbox
+        id="enable-features-checkbox"
+        onchange={handleFeatureToggle}
+        checked={enableFeatures}>Enable Feature Config</vscode-checkbox
+      >
     </div>
+
+    {#if enableFeatures}
+      <h2>Features:</h2>
+      {#await loadFeatures() then}
+        <div class="feature-list">
+          {#each featuresGroups as featureGroup}
+            <div class="feature-group">
+              <FeatureBlock
+                bind:selected={features}
+                featureGroups={featuresGroups}
+                features={featureGroup.features}
+                label="Select Features:"
+              />
+            </div>
+          {/each}
+        </div>
+      {/await}
+    {/if}
     <vscode-divider></vscode-divider>
-    <vscode-button bind:this={buildButton}>Build</vscode-button>
+    <vscode-button bind:this={buildButton}
+      >Save Configuration & Build</vscode-button
+    >
   {:catch error}
     <p>{error.message}</p>
   {/await}
@@ -135,7 +178,7 @@
   .feature-group {
     padding: 5px;
   }
-  .button-container {
-    margin-bottom: 15px;
+  .feature-toggle {
+    margin: 10px 0;
   }
 </style>

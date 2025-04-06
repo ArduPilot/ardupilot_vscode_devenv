@@ -179,13 +179,15 @@ export class apBuildConfigPanel {
 				target: message.target as string,
 				configureOptions: message.configureOptions as string || '',
 				buildOptions: '',
-				features: message.features as string[] || []
+				features: message.features as string[] || [],
+				enableFeatures: message.enableFeatures as boolean
 			};
 			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
 				taskDefinition.configure,
 				taskDefinition.target,
 				taskDefinition.configureOptions,
-				taskDefinition.features
+				taskDefinition.features,
+				taskDefinition.enableFeatures
 			);
 			// execute the task
 			if (currentTaskDef) {
@@ -242,9 +244,13 @@ export class apBuildConfigPanel {
 
 		// Load features for the new task
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		let featuresFileExists = false;
+
 		if (workspaceRoot) {
 			const featuresPath = path.join(workspaceRoot, 'build', task.definition.configure, 'features.txt');
-			if (fs.existsSync(featuresPath)) {
+			featuresFileExists = fs.existsSync(featuresPath);
+
+			if (featuresFileExists) {
 				const features = fs.readFileSync(featuresPath, 'utf8').split('\n');
 				for (const feature of features) {
 					if (feature.trim()) { // Only add non-empty features
@@ -255,8 +261,17 @@ export class apBuildConfigPanel {
 			task.definition.features = this._currentFeaturesList;
 		}
 
+		// Update the enableFeatures flag based on if features.txt exists
+		if (task.definition.enableFeatures === undefined) {
+			task.definition.enableFeatures = featuresFileExists;
+		}
+
 		// Notify the webview about the updated task
-		this._panel.webview.postMessage({ command: 'getCurrentTask', task: this._currentTask.definition });
+		this._panel.webview.postMessage({
+			command: 'getCurrentTask',
+			task: this._currentTask.definition,
+			featuresFileExists: featuresFileExists
+		});
 
 		apBuildConfigPanel.log(`Updated current task to: ${this._currentTask.definition.configure}`);
 	}
