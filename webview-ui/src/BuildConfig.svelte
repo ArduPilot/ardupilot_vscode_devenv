@@ -16,7 +16,7 @@
   let extraConfig = $state("");
   let features = $state([]);
   let isEditMode = $state(false);
-  let enableFeatures = $state(false);
+  let enableFeatureConfig = $state(false);
   let featuresLoaded = $state(false);
 
   let buildButton: any = $state(null);
@@ -39,7 +39,7 @@
       target = task.target;
       extraConfig = task.configureOptions;
       features = task.features || [];
-      enableFeatures = task.enableFeatures;
+      enableFeatureConfig = task.enableFeatureConfig;
       isEditMode = true;
     } else {
       isEditMode = false;
@@ -67,7 +67,7 @@
 
   function sendBuildRequest() {
     console.log(board, target, extraConfig, features);
-    const featureOutput = enableFeatures
+    const featureOutput = enableFeatureConfig
       ? features.map((feature) => feature)
       : [];
     vscodeHooks.postMessage("build", {
@@ -75,7 +75,7 @@
       target: target,
       extraConfig: extraConfig,
       features: featureOutput,
-      enableFeatures: enableFeatures,
+      enableFeatureConfig: enableFeatureConfig,
     });
   }
 
@@ -92,13 +92,13 @@
   }
 
   function toggleFeatures() {
-    if (enableFeatures && !featuresLoaded) {
+    if (enableFeatureConfig && !featuresLoaded) {
       loadFeatures();
     }
   }
 
   function handleFeatureToggle(event: Event) {
-    enableFeatures = (event.target as HTMLInputElement).checked;
+    enableFeatureConfig = (event.target as HTMLInputElement).checked;
     toggleFeatures();
   }
 
@@ -140,25 +140,34 @@
       <vscode-checkbox
         id="enable-features-checkbox"
         onchange={handleFeatureToggle}
-        checked={enableFeatures}>Enable Feature Config</vscode-checkbox
+        checked={enableFeatureConfig}>Enable Feature Config</vscode-checkbox
       >
     </div>
 
-    {#if enableFeatures}
+    {#if enableFeatureConfig}
       <h2>Features:</h2>
       {#await loadFeatures() then}
-        <div class="feature-list">
-          {#each featuresGroups as featureGroup}
-            <div class="feature-group">
-              <FeatureBlock
-                bind:selected={features}
-                featureGroups={featuresGroups}
-                features={featureGroup.features}
-                label="Select Features:"
-              />
-            </div>
-          {/each}
-        </div>
+        {#if features.length === 0}
+          <div class="info-message">
+            <p>
+              No features loaded. Please Save Configuration & Build firmware to
+              extract initial features.
+            </p>
+          </div>
+        {:else}
+          <div class="feature-list">
+            {#each featuresGroups as featureGroup}
+              <div class="feature-group">
+                <FeatureBlock
+                  bind:selected={features}
+                  featureGroups={featuresGroups}
+                  features={featureGroup.features}
+                  label="Select Features:"
+                />
+              </div>
+            {/each}
+          </div>
+        {/if}
       {/await}
     {/if}
     <vscode-divider></vscode-divider>
@@ -180,5 +189,9 @@
   }
   .feature-toggle {
     margin: 10px 0;
+  }
+  .info-message {
+    margin: 10px 0;
+    color: #666;
   }
 </style>

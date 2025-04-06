@@ -180,14 +180,14 @@ export class apBuildConfigPanel {
 				configureOptions: message.configureOptions as string || '',
 				buildOptions: '',
 				features: message.features as string[] || [],
-				enableFeatures: message.enableFeatures as boolean
+				enableFeatureConfig: message.enableFeatureConfig as boolean
 			};
 			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
 				taskDefinition.configure,
 				taskDefinition.target,
 				taskDefinition.configureOptions,
 				taskDefinition.features,
-				taskDefinition.enableFeatures
+				taskDefinition.enableFeatureConfig
 			);
 			// execute the task
 			if (currentTaskDef) {
@@ -261,9 +261,9 @@ export class apBuildConfigPanel {
 			task.definition.features = this._currentFeaturesList;
 		}
 
-		// Update the enableFeatures flag based on if features.txt exists
-		if (task.definition.enableFeatures === undefined) {
-			task.definition.enableFeatures = featuresFileExists;
+		// Update the enableFeatureConfig flag based on if features.txt exists
+		if (task.definition.enableFeatureConfig === undefined) {
+			task.definition.enableFeatureConfig = featuresFileExists;
 		}
 
 		// Notify the webview about the updated task
