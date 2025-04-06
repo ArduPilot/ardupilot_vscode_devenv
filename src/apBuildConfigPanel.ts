@@ -180,14 +180,16 @@ export class apBuildConfigPanel {
 				configureOptions: message.configureOptions as string || '',
 				buildOptions: '',
 				features: message.features as string[] || [],
-				enableFeatureConfig: message.enableFeatureConfig as boolean
+				enableFeatureConfig: message.enableFeatureConfig as boolean,
+				simVehicleCommand: message.simVehicleCommand as string || ''
 			};
 			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
 				taskDefinition.configure,
 				taskDefinition.target,
 				taskDefinition.configureOptions,
 				taskDefinition.features,
-				taskDefinition.enableFeatureConfig
+				taskDefinition.enableFeatureConfig,
+				taskDefinition.simVehicleCommand
 			);
 			// execute the task
 			if (currentTaskDef) {

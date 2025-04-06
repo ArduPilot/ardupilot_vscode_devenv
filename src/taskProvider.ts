@@ -46,7 +46,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		return this.ardupilotPromise;
 	}
 
-	public static getOrCreateBuildConfig(board: string, target: string, configureOptions?: string, features?: string[], enableFeatureConfig?: boolean): vscode.Task | undefined {
+	public static getOrCreateBuildConfig(board: string, target: string, configureOptions?: string, features?: string[], enableFeatureConfig?: boolean, simVehicleCommand?: string): vscode.Task | undefined {
 		// create a new task definition in tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		APTaskProvider.log.log(`Creating new build configuration for ${board} ${target} @ ${workspaceRoot}`);
@@ -78,6 +78,11 @@ export class APTaskProvider implements vscode.TaskProvider {
 				kind: 'build',
 			}
 		};
+
+		// Add simVehicleCommand for SITL builds
+		if (board.toLowerCase() === 'sitl' && simVehicleCommand) {
+			taskDef.simVehicleCommand = simVehicleCommand;
+		}
 
 		// If task already exists for this board, update it instead of adding a new one
 		const existingTaskIndex = tasks.tasks.findIndex((task: ArdupilotTaskDefinition) => task.configure === board);
@@ -217,6 +222,10 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	 * enable features
 	 */
 	enableFeatureConfig?: boolean;
+	/**
+	 * sim_vehicle.py command for SITL builds
+	 */
+	simVehicleCommand?: string;
 }
 
 let _channel: vscode.OutputChannel;
