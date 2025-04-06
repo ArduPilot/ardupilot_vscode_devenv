@@ -53,7 +53,7 @@ export function activate(_context: vscode.ExtensionContext): void {
 	vscode.commands.registerCommand('apBuildConfig.addEntry', () => apBuildConfigProviderInstance.add());
 	vscode.commands.registerCommand('apBuildConfig.editEntry', (item: apBuildConfig) => item.edit());
 	vscode.commands.registerCommand('apBuildConfig.deleteEntry', (item: apBuildConfig) => item.delete());
-	vscode.commands.registerCommand('apBuildConfig.uploadFirmware', (item: apBuildConfig) => item.upload());
+	vscode.commands.registerCommand('apBuildConfig.buildFirmware', (item: apBuildConfig) => item.build());
 }
 
 // this method is called when your extension is deactivated
