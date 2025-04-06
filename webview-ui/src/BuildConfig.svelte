@@ -3,6 +3,7 @@
   import BoardsList from "./lib/BoardsList.svelte";
   import TargetsList from "./lib/TargetsList.svelte";
   import ExtraConfig from "./lib/ExtraConfig.svelte";
+  import SITLConfig from "./lib/SITLConfig.svelte";
   import FeatureBlock from "./lib/FeatureBlock.svelte";
   import "@vscode-elements/elements/dist/vscode-form-container/index.js";
   import "@vscode-elements/elements/dist/vscode-divider/index.js";
@@ -14,6 +15,7 @@
   let board = $state("");
   let target = $state("");
   let extraConfig = $state("");
+  let simVehicleCommand = $state("");
   let features = $state([]);
   let isEditMode = $state(false);
   let enableFeatureConfig = $state(false);
@@ -38,6 +40,7 @@
       board = task.configure;
       target = task.target;
       extraConfig = task.configureOptions;
+      simVehicleCommand = task.simVehicleCommand || "";
       features = task.features || [];
       enableFeatureConfig = task.enableFeatureConfig;
       isEditMode = true;
@@ -74,6 +77,7 @@
       board: board,
       target: target,
       extraConfig: extraConfig,
+      simVehicleCommand: simVehicleCommand,
       features: featureOutput,
       enableFeatureConfig: enableFeatureConfig,
     });
@@ -84,6 +88,7 @@
     board = "";
     target = "";
     extraConfig = "";
+    simVehicleCommand = "";
     features = [];
     isEditMode = false;
 
@@ -100,6 +105,10 @@
   function handleFeatureToggle(event: Event) {
     enableFeatureConfig = (event.target as HTMLInputElement).checked;
     toggleFeatures();
+  }
+
+  function isSitlBoard(): boolean {
+    return board.toLowerCase() === "sitl";
   }
 
   $effect(() => {
@@ -129,6 +138,13 @@
       label="Select Target:"
       id="target"
     />
+    {#if isSitlBoard()}
+      <SITLConfig
+        bind:value={simVehicleCommand}
+        id="sitlConfig"
+        label="SITL Command:"
+      />
+    {/if}
     <ExtraConfig
       bind:value={extraConfig}
       id="extraConfig"
