@@ -57,6 +57,25 @@
             "type": "boolean",
             "description": "Whether to build before uploading"
           },
+          "features": {
+            "type": "array",
+            "description": "List of features to enable or disable",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nm": {
+            "type": "string",
+            "description": "nm command to use for symbol lookup"
+          },
+          "target_output": {
+            "type": "string",
+            "description": "Target output directory"
+          },
+          "enableFeatureConfig": {
+            "type": "boolean",
+            "description": "Enable feature config"
+          },
           "simVehicleCommand": {
             "type": "string",
             "description": "sim_vehicle.py command arguments for SITL builds"

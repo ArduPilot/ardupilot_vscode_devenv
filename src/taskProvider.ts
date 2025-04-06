@@ -50,21 +50,21 @@ export class APTaskProvider implements vscode.TaskProvider {
 		// create a new task definition in tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		APTaskProvider.log.log(`Creating new build configuration for ${board} ${target} @ ${workspaceRoot}`);
-		if (!workspaceRoot) {
+		if (!workspaceRoot || !vscode.workspace.workspaceFolders) {
 			vscode.window.showErrorMessage('No workspace folder is open.');
 			return;
 		}
-		const tasksPath = path.join(workspaceRoot, '.vscode', 'tasks.json');
-		if (!fs.existsSync(tasksPath)) {
-			// create a new tasks.json file
-			fs.writeFileSync(tasksPath, '{"version": "2.0", "tasks": []}', 'utf8');
+
+		// Prepare .vscode folder if it doesn't exist
+		const vscodeFolder = path.join(workspaceRoot, '.vscode');
+		if (!fs.existsSync(vscodeFolder)) {
+			fs.mkdirSync(vscodeFolder, { recursive: true });
 		}
-		const tasks = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
-		const taskName = `${board}-${target}`;
 
 		if (enableFeatureConfig === false) {
 			features = [];
 		}
+
 		// Create task definition with features
 		const taskDef: ArdupilotTaskDefinition = {
 			type: 'ardupilot',
@@ -84,21 +84,37 @@ export class APTaskProvider implements vscode.TaskProvider {
 			taskDef.simVehicleCommand = simVehicleCommand;
 		}
 
-		// If task already exists for this board, update it instead of adding a new one
-		const existingTaskIndex = tasks.tasks.findIndex((task: ArdupilotTaskDefinition) => task.configure === board);
+		// Get the tasks configuration using the VS Code API
+		const tasksConfig = vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri);
+
+		// Get current tasks array or initialize empty array if it doesn't exist
+		const tasks = tasksConfig.get('tasks') as Array<ArdupilotTaskDefinition> || [];
+
+		// Check if task already exists for this board
+		const existingTaskIndex = tasks.findIndex((task: ArdupilotTaskDefinition) => task.configure === board);
+
+		const task = taskDef ? this.createTask(taskDef) : undefined;
+		if (!task) {
+			vscode.window.showErrorMessage('Failed to create task definition.');
+			return undefined;
+		}
 		if (existingTaskIndex !== -1) {
 			// Update existing task
-			tasks.tasks[existingTaskIndex] = taskDef;
+			tasks[existingTaskIndex] = task.definition as ArdupilotTaskDefinition;
 		} else {
 			// Add new task
-			tasks.tasks.push(taskDef);
+			tasks.push(task.definition as ArdupilotTaskDefinition);
 		}
 
-		// Write updated tasks to the tasks.json file
-		fs.writeFileSync(tasksPath, JSON.stringify(tasks, null, 4), 'utf8');
-		APTaskProvider.log.log(`Added/updated task ${taskName} to ${tasksPath}`);
+		// Update the tasks configuration
+		tasksConfig.update('tasks', tasks, vscode.ConfigurationTarget.Workspace).then(() => {
+			APTaskProvider.log.log(`Added/updated task ${board}-${target} to tasks.json using VS Code API`);
+		}, (error) => {
+			APTaskProvider.log.log(`Error updating tasks.json: ${error}`);
+			vscode.window.showErrorMessage(`Failed to update tasks.json: ${error}`);
+		});
 
-		return taskDef ? this.createTask(taskDef) : undefined;
+		return task;
 	}
 
 	static updateFeaturesList(): void {
@@ -159,21 +175,38 @@ export class APTaskProvider implements vscode.TaskProvider {
 	}
 
 	public static delete(taskName: string): void {
-		// delete the task from tasks.json
-		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		// delete the task from tasks.json using VS Code API
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0] : undefined;
 		if (!workspaceRoot) {
 			vscode.window.showErrorMessage('No workspace folder is open.');
 			return;
 		}
-		const tasksPath = path.join(workspaceRoot, '.vscode', 'tasks.json');
-		if (!fs.existsSync(tasksPath)) {
-			vscode.window.showErrorMessage('tasks.json not found');
+
+		// Get the tasks configuration using the VS Code API
+		const tasksConfig = vscode.workspace.getConfiguration('tasks', workspaceRoot.uri);
+
+		// Get current tasks array
+		const tasks = tasksConfig.get('tasks') as Array<ArdupilotTaskDefinition>;
+		if (!tasks || !Array.isArray(tasks)) {
+			vscode.window.showErrorMessage('No tasks found in tasks.json');
 			return;
 		}
-		const tasks = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
-		const newTasks = tasks.tasks.filter((task: ArdupilotTaskDefinition) => task.configure !== taskName);
-		tasks.tasks = newTasks;
-		fs.writeFileSync(tasksPath, JSON.stringify(tasks, null, 4), 'utf8');
+
+		// Filter out the task with the matching board name
+		const newTasks = tasks.filter((task: ArdupilotTaskDefinition) => task.configure !== taskName);
+
+		// Only update if we actually removed a task
+		if (newTasks.length !== tasks.length) {
+			// Update the tasks configuration
+			tasksConfig.update('tasks', newTasks, vscode.ConfigurationTarget.Workspace).then(() => {
+				APTaskProvider.log.log(`Removed task for ${taskName} from tasks.json`);
+			}, (error) => {
+				APTaskProvider.log.log(`Error removing task from tasks.json: ${error}`);
+				vscode.window.showErrorMessage(`Failed to remove task from tasks.json: ${error}`);
+			});
+		} else {
+			APTaskProvider.log.log(`No task found for ${taskName}`);
+		}
 	}
 
 	public resolveTask(task: vscode.Task): vscode.Task | undefined {
