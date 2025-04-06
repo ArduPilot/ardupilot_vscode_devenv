@@ -57,12 +57,12 @@ export class apBuildConfig extends vscode.TreeItem {
 		}
 	}
 
-	upload(): void {
-		apBuildConfig.log(`upload firmware for ${this.label}`);
+	build(): void {
+		apBuildConfig.log(`build firmware for ${this.label}`);
 		if (!this.task) {
 			return;
 		}
-		// After build completes, run the upload task
+		// Execute the build task
 		vscode.tasks.executeTask(this.task).then(taskExecution => {
 			if (!taskExecution) {
 				return;
@@ -74,26 +74,9 @@ export class apBuildConfig extends vscode.TreeItem {
 					disposable.dispose();  // Clean up the listener
 
 					if (e.exitCode === 0) {
-						apBuildConfig.log(`Build successful, now uploading ${this.label}`);
-
-						// Get the task definition and create an upload task
-						const definition = this.task?.definition as import('./taskProvider').ArdupilotTaskDefinition;
-						if (definition) {
-							// Import the taskProvider module properly and access the createUploadTask function
-							import('./taskProvider').then(taskProviderModule => {
-								const uploadTask = taskProviderModule.createUploadTask(definition);
-								if (uploadTask) {
-									vscode.tasks.executeTask(uploadTask);
-								} else {
-									vscode.window.showErrorMessage(`Failed to create upload task for ${this.label}`);
-								}
-							}).catch(error => {
-								vscode.window.showErrorMessage(`Error creating upload task: ${error.message}`);
-								apBuildConfig.log(`Upload task creation error: ${error}`);
-							});
-						}
+						vscode.window.showInformationMessage(`Build successful for ${this.label}`);
 					} else {
-						vscode.window.showErrorMessage(`Build failed for ${this.label}, aborting upload`);
+						vscode.window.showErrorMessage(`Build failed for ${this.label}`);
 					}
 				}
 			});

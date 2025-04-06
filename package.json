@@ -134,9 +134,9 @@
         "icon": "$(trash)"
       },
       {
-        "command": "apBuildConfig.uploadFirmware",
-        "title": "Upload Firmware",
-        "icon": "$(play)"
+        "command": "apBuildConfig.buildFirmware",
+        "title": "Build Firmware",
+        "icon": "$(tools)"
       }
     ],
     "menus": {
@@ -164,7 +164,7 @@
           "group": "inline"
         },
         {
-          "command": "apBuildConfig.uploadFirmware",
+          "command": "apBuildConfig.buildFirmware",
           "when": "view == apBuildConfig",
           "group": "inline"
         }
