@@ -46,7 +46,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		return this.ardupilotPromise;
 	}
 
-	public static getOrCreateBuildConfig(board: string, target: string, configureOptions?: string, features?: string[], enableFeatures?: boolean): vscode.Task | undefined {
+	public static getOrCreateBuildConfig(board: string, target: string, configureOptions?: string, features?: string[], enableFeatureConfig?: boolean): vscode.Task | undefined {
 		// create a new task definition in tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		APTaskProvider.log.log(`Creating new build configuration for ${board} ${target} @ ${workspaceRoot}`);
@@ -62,6 +62,9 @@ export class APTaskProvider implements vscode.TaskProvider {
 		const tasks = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
 		const taskName = `${board}-${target}`;
 
+		if (enableFeatureConfig === false) {
+			features = [];
+		}
 		// Create task definition with features
 		const taskDef: ArdupilotTaskDefinition = {
 			type: 'ardupilot',
@@ -70,7 +73,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			configureOptions: configureOptions === undefined ? '' : configureOptions,
 			buildOptions: '',
 			features: features || [],
-			enableFeatures: (features && features.length > 0) ? true : (enableFeatures === undefined ? false : enableFeatures),
+			enableFeatureConfig: (features && features.length > 0) ? true : (enableFeatureConfig === undefined ? false : enableFeatureConfig),
 		};
 
 		// If task already exists for this board, update it instead of adding a new one
@@ -130,9 +133,9 @@ export class APTaskProvider implements vscode.TaskProvider {
 		const featureOptions = definition.features && definition.features.length > 0 ?
 			APTaskProvider.updateFeaturesDat(target_dir, definition.features) : '';
 
-		// Conditionally add the extract_features.py script call based on enableFeatures flag
-		const extractFeaturesCmd = definition.enableFeatures === true ?
-			`&& rm -f ${target_dir}/features.txt && python3 Tools/scripts/extract_features.py ${target_binary} -nm ${definition.nm} >> ${target_dir}/features.txt` :
+		// Conditionally add the extract_features.py script call based on enableFeatureConfig flag
+		const extractFeaturesCmd = definition.enableFeatureConfig === true ?
+			`&& python3 Tools/scripts/extract_features.py ${target_binary} -nm ${definition.nm} >> ${target_dir}/features.txt` :
 			'';
 
 		return new vscode.Task(
@@ -141,7 +144,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			task_name,
 			'ardupilot',
 			new vscode.ShellExecution(
-				`python3 ${definition.waffile} configure --board=${definition.configure} ${featureOptions} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions} ${extractFeaturesCmd}`
+				`python3 ${definition.waffile} configure --board=${definition.configure} ${featureOptions} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions} && rm -f ${target_dir}/features.txt ${extractFeaturesCmd}`
 			),
 			'$apgcc'
 		);
@@ -210,7 +213,7 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	/**
 	 * enable features
 	 */
-	enableFeatures?: boolean;
+	enableFeatureConfig?: boolean;
 }
 
 let _channel: vscode.OutputChannel;
