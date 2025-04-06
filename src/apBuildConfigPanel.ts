@@ -177,7 +177,7 @@ export class apBuildConfigPanel {
 				type: 'ardupilot',
 				configure: message.board as string,
 				target: message.target as string,
-				configureOptions: message.configureOptions as string || '',
+				configureOptions: message.extraConfig as string || '',
 				buildOptions: '',
 				features: message.features as string[] || [],
 				enableFeatureConfig: message.enableFeatureConfig as boolean,
@@ -189,7 +189,10 @@ export class apBuildConfigPanel {
 				taskDefinition.features,
 				taskDefinition.enableFeatureConfig,
 			);
-
+			if (taskDefinition.configure.toLowerCase().startsWith('sitl')) {
+				// add configure options to waf-configure-arg to simVehicleCommand
+				message.simVehicleCommand = `--waf-configure-arg="${taskDefinition.configureOptions}" ${message.simVehicleCommand}`;
+			}
 			// Create matching launch.json entry for apLaunch
 			this.createMatchingLaunchConfig(
 				taskDefinition.configure,
@@ -362,11 +365,6 @@ export class apBuildConfigPanel {
 			} catch (error) {
 				apBuildConfigPanel.log(`Error reading launch.json: ${error}`);
 			}
-		}
-
-		// Get the simVehicleCommand from the current task if we're creating a SITL config
-		if (configure.toLowerCase().startsWith('sitl') && this._currentTask?.definition.simVehicleCommand) {
-			simVehicleCommand = this._currentTask.definition.simVehicleCommand;
 		}
 
 		const newConfig = {
