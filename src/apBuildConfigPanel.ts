@@ -181,7 +181,6 @@ export class apBuildConfigPanel {
 				buildOptions: '',
 				features: message.features as string[] || [],
 				enableFeatureConfig: message.enableFeatureConfig as boolean,
-				simVehicleCommand: message.simVehicleCommand as string || ''
 			};
 			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
 				taskDefinition.configure,
@@ -189,13 +188,13 @@ export class apBuildConfigPanel {
 				taskDefinition.configureOptions,
 				taskDefinition.features,
 				taskDefinition.enableFeatureConfig,
-				taskDefinition.simVehicleCommand
 			);
 
 			// Create matching launch.json entry for apLaunch
 			this.createMatchingLaunchConfig(
 				taskDefinition.configure,
-				taskDefinition.target
+				taskDefinition.target,
+				message.simVehicleCommand as string || ''
 			);
 
 			// execute the task
@@ -347,7 +346,7 @@ export class apBuildConfigPanel {
 		}
 	}
 
-	private createMatchingLaunchConfig(configure: string, target: string): void {
+	private createMatchingLaunchConfig(configure: string, target: string, simVehicleCommand: string): void {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
 			apBuildConfigPanel.log('No workspace folder is open.');
@@ -365,13 +364,34 @@ export class apBuildConfigPanel {
 			}
 		}
 
+		// Get the simVehicleCommand from the current task if we're creating a SITL config
+		if (configure.toLowerCase().startsWith('sitl') && this._currentTask?.definition.simVehicleCommand) {
+			simVehicleCommand = this._currentTask.definition.simVehicleCommand;
+		}
+
 		const newConfig = {
 			name: `Launch ${configure} - ${target}`,
 			type: 'apLaunch',
 			request: 'launch',
 			target: target,
-			preLaunchTask: `${APTaskProvider.ardupilotTaskType}: ${configure}-${target}`
+			preLaunchTask: `${APTaskProvider.ardupilotTaskType}: ${configure}-${target}`,
+			isSITL: configure.toLowerCase().startsWith('sitl'),
+			...(simVehicleCommand && { simVehicleCommand })
 		};
+
+		// Check if a similar configuration already exists
+		const existingConfigIndex = launchJson.configurations.findIndex((config: any) =>
+			config.type === 'apLaunch' &&
+			config.name === newConfig.name
+		);
+
+		// Only add the configuration if it doesn't already exist
+		if (existingConfigIndex >= 0) {
+			// Update the existing configuration
+			launchJson.configurations[existingConfigIndex] = newConfig;
+			apBuildConfigPanel.log(`Updated existing launch configuration: ${newConfig.name}`);
+			return;
+		}
 
 		launchJson.configurations.push(newConfig);
 
