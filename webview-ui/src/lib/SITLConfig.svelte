@@ -12,6 +12,13 @@
 			value = textField.value;
 		});
 	});
+
+	// Update the textfield value when the prop value changes
+	$effect(() => {
+		if (textField && value !== undefined) {
+			textField.value = value;
+		}
+	});
 </script>
 
 <vscode-label for={props.id}>{props.label}</vscode-label>

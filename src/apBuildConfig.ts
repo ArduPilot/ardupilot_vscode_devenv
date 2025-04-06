@@ -20,7 +20,7 @@ import { apLog } from './apLog';
 import * as fs from 'fs';
 import * as path from 'path';
 import { apBuildConfigPanel } from './apBuildConfigPanel';
-import { APTaskProvider } from './taskProvider';
+import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 
 export const binToTarget : { [target: string]: string} = {
 	'bin/arducopter': 'copter',
@@ -158,8 +158,24 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 							.split('\n')
 							.filter(feature => feature.trim());
 					}
-
-					const task = APTaskProvider.getOrCreateBuildConfig(file, target, undefined, features);
+					// Get configure options from existing task configuration
+					let configureOptions: string = '';
+					const taskConfiguration = vscode.workspace.workspaceFolders
+						? vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri)
+						: vscode.workspace.getConfiguration('tasks');
+					const tasks = taskConfiguration.get('tasks') as Array<ArdupilotTaskDefinition> || [];
+					if (tasks) {
+						const existingTask = tasks.find(t =>
+							t.configure === file &&
+							t.target === target &&
+							t.type === 'ardupilot'
+						);
+						if (existingTask && existingTask.configureOptions) {
+							// Extract configure options from args array
+							configureOptions = existingTask.configureOptions;
+						}
+					}
+					const task = APTaskProvider.getOrCreateBuildConfig(file, target, configureOptions, features);
 					apBuildConfigProvider.log(`getOrCreateBuildConfig ${file} ${target} with ${features.length} features`);
 					buildConfigList = [new apBuildConfig(this, file, vscode.TreeItemCollapsibleState.None, task), ...buildConfigList];
 				} catch (err) {
