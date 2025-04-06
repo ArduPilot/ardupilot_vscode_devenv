@@ -19,7 +19,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 
-import { APTaskProvider } from './taskProvider';
+import { APTaskProvider, APLaunchConfigurationProvider } from './taskProvider';
 import { apBuildConfig, apBuildConfigProvider } from './apBuildConfig';
 import { apLog } from './apLog';
 import { apWelcomeProvider } from './apWelcome';
@@ -43,6 +43,12 @@ export function activate(_context: vscode.ExtensionContext): void {
 
 	log.log('ardupilot-devenv extension started');
 	apTaskProvider = vscode.tasks.registerTaskProvider(APTaskProvider.ardupilotTaskType, new APTaskProvider(workspaceRoot, _context.extensionUri));
+
+	// Register the APLaunch debug type
+	const apLaunchProvider = new APLaunchConfigurationProvider();
+	_context.subscriptions.push(
+		vscode.debug.registerDebugConfigurationProvider('apLaunch', apLaunchProvider)
+	);
 
 	const rootPath = (vscode.workspace.workspaceFolders && (vscode.workspace.workspaceFolders.length > 0))
 		? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;

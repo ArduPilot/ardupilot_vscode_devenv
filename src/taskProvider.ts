@@ -244,13 +244,13 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
      */
     waffile?: string;
 	/**
-	 * current features
-	 */
-	features?: string[];
-	/**
 	 * nm command
 	 */
 	nm?: string;
+	/**
+	 * features
+	 */
+	features?: string[];
 	/**
 	 * enable features
 	 */
@@ -259,6 +259,138 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	 * sim_vehicle.py command for SITL builds
 	 */
 	simVehicleCommand?: string;
+}
+
+export interface APLaunchDefinition {
+	/**
+	 * Type of launch (must be 'apLaunch')
+	 */
+	type: string;
+	/**
+	 * Target to build
+	 */
+	target: string;
+	/**
+	 * Name of the launch
+	 */
+	name: string;
+	/**
+	 * Waf file path
+	 */
+	waffile?: string;
+}
+
+export class APLaunchConfigurationProvider implements vscode.DebugConfigurationProvider {
+	private static log = new apLog('APLaunchConfigurationProvider');
+
+	constructor() {}
+
+	public async resolveDebugConfiguration(
+		_folder: vscode.WorkspaceFolder | undefined,
+		config: vscode.DebugConfiguration
+	): Promise<vscode.DebugConfiguration | undefined> {
+		// If launch.json is missing or empty
+		if (!config.type && !config.request && !config.name) {
+			const message = 'Cannot launch ArduPilot debug session. Please create a launch configuration.';
+			vscode.window.showErrorMessage(message);
+			return undefined;
+		}
+
+		// Make sure it's an apLaunch type
+		if (config.type !== 'apLaunch') {
+			return config;
+		}
+
+		// Cast to APLaunchDefinition after validation
+		if (!config.target) {
+			vscode.window.showErrorMessage('ArduPilot launch configuration requires \'target\' properties.');
+			return undefined;
+		}
+
+		const apConfig = config as unknown as APLaunchDefinition;
+
+		// Get the workspace root
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			vscode.window.showErrorMessage('No workspace is open.');
+			return undefined;
+		}
+
+		// Set default waf file if not specified
+		if (!apConfig.waffile) {
+			apConfig.waffile = path.join(workspaceRoot, 'waf');
+		}
+
+		if (config.preLaunchTask) {
+			// preLaunchTask is specified as <type>: <taskname>
+			// find and execute it
+			// Parse the task identifier (format: "<type>: <taskname>")
+			const taskParts = config.preLaunchTask.split(':');
+			if (taskParts.length !== 2) {
+				vscode.window.showErrorMessage(`Invalid preLaunchTask format '${config.preLaunchTask}'. Expected format is 'type: taskname'`);
+				return undefined;
+			}
+
+			const taskType = taskParts[0].trim();
+			const taskName = taskParts[1].trim();
+
+			// Find the task by type and name
+			const tasks = await vscode.tasks.fetchTasks({ type: taskType });
+			const task = tasks.find(t => t.name === taskName);
+
+			if (!task) {
+				vscode.window.showErrorMessage(`Pre-launch task '${taskName}' of type '${taskType}' not found.`);
+				return undefined;
+			}
+
+			// Execute the task and wait for it to complete
+			try {
+				// executeTask in terminal
+				const execution = await vscode.tasks.executeTask(task);
+
+				// Create a promise that resolves when the task completes
+				const taskExecution = new Promise<void>((resolve, reject) => {
+					const disposable = vscode.tasks.onDidEndTaskProcess(e => {
+						if (e.execution === execution) {
+							disposable.dispose();
+							if (e.exitCode === 0) {
+								resolve();
+							} else {
+								reject(new Error(`Task '${task.name}' failed with exit code ${e.exitCode}`));
+							}
+						}
+					});
+				});
+
+				// Wait for the task to complete
+				await taskExecution;
+			} catch (error) {
+				vscode.window.showErrorMessage(`Failed to execute pre-launch task: ${error}`);
+				return undefined;
+			}
+		}
+		try {
+			// Check if task completed successfully based on task process events
+			// Since exitCode isn't directly accessible, we'll rely on the task process event
+			// and handle potential errors through the terminal output
+
+			// Run the upload command
+			const uploadCommand = `python3 ${apConfig.waffile} ${apConfig.target} --upload`;
+			APLaunchConfigurationProvider.log.log(`Running upload command: ${uploadCommand}`);
+
+			const terminal = vscode.window.createTerminal('ArduPilot Upload');
+			terminal.sendText(`cd ${workspaceRoot}`);
+			terminal.sendText(uploadCommand);
+			terminal.show();
+
+			// This is a custom launch type that we've fully handled, so return undefined
+			// to prevent VS Code from trying to start a debug session
+			return undefined;
+		} catch (error) {
+			vscode.window.showErrorMessage(`Error in APLaunch: ${error}`);
+			return undefined;
+		}
+	}
 }
 
 let _channel: vscode.OutputChannel;

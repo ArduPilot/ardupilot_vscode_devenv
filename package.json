@@ -83,6 +83,43 @@
         }
       }
     ],
+    "debuggers": [
+      {
+        "type": "apLaunch",
+        "label": "ArduPilot Upload",
+        "languages": [
+          "cpp",
+          "c"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Type of launch configuration (must be 'apLaunch')",
+                "default": "apLaunch"
+              },
+              "request": {
+                "type": "string",
+                "description": "Request type, must be 'launch'",
+                "default": "launch"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name of the launch configuration"
+              },
+              "target": {
+                "type": "string",
+                "description": "Target to build (e.g., 'copter', 'plane', 'rover')"
+              }
+            }
+          }
+        }
+      }
+    ],
     "problemMatchers": [
       {
         "name": "apgcc",

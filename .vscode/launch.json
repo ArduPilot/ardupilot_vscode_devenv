@@ -7,8 +7,10 @@
 			"type": "extensionHost",
 			"request": "launch",
 			"runtimeExecutable": "${execPath}",
-			"args": ["--extensionDevelopmentPath=${workspaceRoot}",
-					"--disable-extensions"],
+			"args": [
+				"--extensionDevelopmentPath=${workspaceRoot}",
+				"--disable-extensions"
+			],
 			"sourceMaps": true,
 			"preLaunchTask": "npm: compile"
 		}

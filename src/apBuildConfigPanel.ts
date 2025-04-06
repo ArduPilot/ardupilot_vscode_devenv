@@ -191,6 +191,13 @@ export class apBuildConfigPanel {
 				taskDefinition.enableFeatureConfig,
 				taskDefinition.simVehicleCommand
 			);
+
+			// Create matching launch.json entry for apLaunch
+			this.createMatchingLaunchConfig(
+				taskDefinition.configure,
+				taskDefinition.target
+			);
+
 			// execute the task
 			if (currentTaskDef) {
 				vscode.tasks.executeTask(currentTaskDef).then((execution) => {
@@ -337,6 +344,42 @@ export class apBuildConfigPanel {
 			if (x) {
 				x.dispose();
 			}
+		}
+	}
+
+	private createMatchingLaunchConfig(configure: string, target: string): void {
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			apBuildConfigPanel.log('No workspace folder is open.');
+			return;
+		}
+
+		const launchPath = path.join(workspaceRoot, '.vscode', 'launch.json');
+		let launchJson: any = { configurations: [] };
+
+		if (fs.existsSync(launchPath)) {
+			try {
+				launchJson = JSON.parse(fs.readFileSync(launchPath, 'utf8'));
+			} catch (error) {
+				apBuildConfigPanel.log(`Error reading launch.json: ${error}`);
+			}
+		}
+
+		const newConfig = {
+			name: `Launch ${configure} - ${target}`,
+			type: 'apLaunch',
+			request: 'launch',
+			target: target,
+			preLaunchTask: `${APTaskProvider.ardupilotTaskType}: ${configure}-${target}`
+		};
+
+		launchJson.configurations.push(newConfig);
+
+		try {
+			fs.writeFileSync(launchPath, JSON.stringify(launchJson, null, 2), 'utf8');
+			apBuildConfigPanel.log(`Added new launch configuration: ${newConfig.name}`);
+		} catch (error) {
+			apBuildConfigPanel.log(`Error writing to launch.json: ${error}`);
 		}
 	}
 }
