@@ -9,7 +9,8 @@
 			"runtimeExecutable": "${execPath}",
 			"args": [
 				"--extensionDevelopmentPath=${workspaceRoot}",
-				"--disable-extensions"
+				// Get all extensions except cortex-debug, then disable them individually
+				"$(${execPath} --list-extensions | grep -v cortex-debug | xargs -I {} echo --disable-extension={})",
 			],
 			"sourceMaps": true,
 			"preLaunchTask": "npm: compile"
