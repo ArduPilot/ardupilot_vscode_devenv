@@ -23,8 +23,10 @@ import { APTaskProvider, APLaunchConfigurationProvider } from './taskProvider';
 import { apBuildConfig, apBuildConfigProvider } from './apBuildConfig';
 import { apLog } from './apLog';
 import { apWelcomeProvider } from './apWelcome';
+import { apConnectedDevices } from './apConnectedDevices';
 
 let apTaskProvider: vscode.Disposable | undefined;
+let connectedDevicesProvider: apConnectedDevices | undefined;
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -60,12 +62,20 @@ export function activate(_context: vscode.ExtensionContext): void {
 	vscode.commands.registerCommand('apBuildConfig.editEntry', (item: apBuildConfig) => item.edit());
 	vscode.commands.registerCommand('apBuildConfig.deleteEntry', (item: apBuildConfig) => item.delete());
 	vscode.commands.registerCommand('apBuildConfig.buildFirmware', (item: apBuildConfig) => item.build());
+
+	// Register Connected Devices tree provider
+	connectedDevicesProvider = new apConnectedDevices();
+	vscode.window.registerTreeDataProvider('connected-devices', connectedDevicesProvider);
+	vscode.commands.registerCommand('connected-devices.refresh', () => connectedDevicesProvider?.refresh());
 }
 
 // this method is called when your extension is deactivated
-
 export function deactivate(): void {
 	if (apTaskProvider) {
 		apTaskProvider.dispose();
+	}
+
+	if (connectedDevicesProvider) {
+		connectedDevicesProvider.dispose();
 	}
 }

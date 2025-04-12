@@ -174,6 +174,10 @@
       {
         "view": "apBuildConfig",
         "contents": "You don't have any build configurations yet.\n[New Build Configuration](command:apBuildConfig.addEntry)\n"
+      },
+      {
+        "view": "connected-devices",
+        "contents": "No USB devices connected.\n[Refresh Devices](command:connected-devices.refresh)\n"
       }
     ],
     "commands": [
@@ -201,6 +205,11 @@
         "command": "apBuildConfig.buildFirmware",
         "title": "Build Firmware",
         "icon": "$(tools)"
+      },
+      {
+        "command": "connected-devices.refresh",
+        "title": "Refresh Connected Devices",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -213,6 +222,11 @@
         {
           "command": "apBuildConfig.addEntry",
           "when": "view == apBuildConfig",
+          "group": "navigation"
+        },
+        {
+          "command": "connected-devices.refresh",
+          "when": "view == connected-devices",
           "group": "navigation"
         }
       ],
