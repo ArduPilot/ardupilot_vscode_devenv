@@ -253,5 +253,8 @@
   "dependencies": {
     "@vscode-elements/elements": "^1.7.1",
     "simple-git": "^3.27.0"
-  }
+  },
+  "extensionDependencies": [
+    "marus25.cortex-debug"
+  ]
 }
