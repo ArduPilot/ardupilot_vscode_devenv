@@ -375,6 +375,24 @@ export class validateEnvironmentPanel {
             <div class="tool-info"></div>
         </div>
         
+        <div class="tool-container" id="jlink">
+            <div class="tool-header">
+                <div class="tool-name">JLinkGDBServerCLExe (Optional)</div>
+                <div class="tool-status status-checking">Checking...</div>
+            </div>
+            <div class="tool-version"></div>
+            <div class="tool-path"></div>
+        </div>
+        
+        <div class="tool-container" id="openocd">
+            <div class="tool-header">
+                <div class="tool-name">OpenOCD (Optional)</div>
+                <div class="tool-status status-checking">Checking...</div>
+            </div>
+            <div class="tool-version"></div>
+            <div class="tool-path"></div>
+        </div>
+        
         <div id="summary"></div>
         
         <button id="refresh-btn">Refresh Validation</button>
@@ -458,12 +476,18 @@ export class validateEnvironmentPanel {
 		});
 		const ccacheCheck = this._checkCCache();
 
-		const [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult] = await Promise.all([
+		// Check optional tools
+		const jlinkCheck = this._checkTool('JLinkGDBServerCLExe', ['--version']).catch(() => ({ available: false }));
+		const openocdCheck = this._checkTool('openocd', ['--version']).catch(() => ({ available: false }));
+
+		const [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, jlinkResult, openocdResult] = await Promise.all([
 			pythonCheck.catch(error => ({ available: false, error })),
 			mavproxyCheck.catch(error => ({ available: false, error })),
 			gccCheck.catch(error => ({ available: false, error })),
 			gdbCheck.catch(error => ({ available: false, error })),
-			ccacheCheck.catch(error => ({ available: false, error }))
+			ccacheCheck.catch(error => ({ available: false, error })),
+			jlinkCheck,
+			openocdCheck
 		]);
 
 		// Report results to webview
@@ -472,8 +496,10 @@ export class validateEnvironmentPanel {
 		this._reportToolStatus('gcc', gccResult);
 		this._reportToolStatus('gdb', gdbResult);
 		this._reportToolStatus('ccache', ccacheResult);
+		this._reportToolStatus('jlink', jlinkResult);
+		this._reportToolStatus('openocd', openocdResult);
 
-		// Generate summary
+		// Generate summary - only include required tools in the summary
 		this._generateSummary([pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult]);
 	}
 
@@ -500,8 +526,22 @@ export class validateEnvironmentPanel {
 
 							// Extract version from output
 							const versionOutput = output || errorOutput;
-							const versionMatch = versionOutput.match(/(\d+\.\d+\.\d+)/);
-							const version = versionMatch ? versionMatch[1] : 'Unknown';
+							let version = 'Unknown';
+
+							// Special handling for JLinkGDBServerCLExe which has a different version format
+							if (command === 'JLinkGDBServerCLExe') {
+								// Example: "SEGGER J-Link GDB Server V7.94e Command Line Version"
+								const jlinkVersionMatch = versionOutput.match(/GDB Server V([\d.]+[a-z]?)/);
+								if (jlinkVersionMatch) {
+									version = jlinkVersionMatch[1];
+								}
+							} else {
+								// Standard version extraction for other tools
+								const versionMatch = versionOutput.match(/(\d+\.\d+\.\d+)/);
+								if (versionMatch) {
+									version = versionMatch[1];
+								}
+							}
 
 							resolve({
 								available: true,
