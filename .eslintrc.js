@@ -16,7 +16,7 @@ module.exports = {
 		warnOnUnsupportedTypeScriptVersion: false
 	},
 	rules: {
-		'semi': [2, "always"],
+		'semi': [2, 'always'],
 		'@typescript-eslint/no-unused-vars': 2,
 		'@typescript-eslint/no-explicit-any': 1,
 		'@typescript-eslint/explicit-module-boundary-types': 2,
