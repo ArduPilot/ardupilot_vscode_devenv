@@ -1,16 +1,15 @@
 {
-	"editor.insertSpaces": false,
-	"tslint.enable": true,
-	"typescript.tsc.autoDetect": "off",
-	"typescript.preferences.quoteStyle": "single",
+    "editor.insertSpaces": false,
+    "tslint.enable": true,
+    "typescript.tsc.autoDetect": "off",
+    "typescript.preferences.quoteStyle": "single",
     "editor.codeActionsOnSave": {
         "source.fixAll.eslint": "explicit"
     },
-    "editor.formatOnSave": true,
     "eslint.validate": [
         "typescript"
     ],
     "[typescript]": {
-        "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+        "editor.defaultFormatter": "vscode.typescript-language-features"
     }
 }
