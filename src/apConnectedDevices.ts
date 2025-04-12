@@ -28,6 +28,43 @@ export interface DeviceInfo {
     product?: string;
     serialNumber?: string;
     isArduPilot?: boolean;
+    isMavproxyConnected?: boolean;
+}
+
+// FileDecorationProvider implementation for decorating connected devices
+export class ConnectedDeviceDecorationProvider implements vscode.FileDecorationProvider {
+	private _onDidChangeFileDecorations: vscode.EventEmitter<vscode.Uri | vscode.Uri[]> = new vscode.EventEmitter<vscode.Uri | vscode.Uri[]>();
+	readonly onDidChangeFileDecorations: vscode.Event<vscode.Uri | vscode.Uri[]> = this._onDidChangeFileDecorations.event;
+	private log = new apLog('ConnectedDeviceDecorationProvider');
+
+	provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+		// Extract the device path from the URI
+		// For tree items, the URI is typically a virtual representation
+		// We'll extract the device information from the URI path
+		if(uri.scheme !== 'connected-device') {
+			return undefined; // Not a connected device
+		}
+		// Check if path contains information about connected state
+		if (uri.query === 'connected') {
+			return {
+				badge: '●', // Dot character to indicate connected status
+				color: new vscode.ThemeColor('focusBorder'),
+				tooltip: 'Connected to MAVProxy'
+			};
+		}
+
+		return undefined;
+	}
+
+	// Method to trigger decoration updates
+	refresh(uri?: vscode.Uri): void {
+		if (uri) {
+			this._onDidChangeFileDecorations.fire(uri);
+		} else {
+			// Fire without URI to refresh all decorations
+			this._onDidChangeFileDecorations.fire([]);
+		}
+	}
 }
 
 // Tree item to represent a connected device
@@ -35,24 +72,41 @@ export class ConnectedDeviceItem extends vscode.TreeItem {
 	constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly device: DeviceInfo
+        public readonly device: DeviceInfo,
+        public readonly isCommand: boolean = false,
+        public readonly command?: vscode.Command
 	) {
 		super(label, collapsibleState);
 
 		// Set the device path as the ID
-		this.id = device.path;
+		this.id = isCommand ? `${device.path}_${label}` : device.path;
 
-		// Create description with VID:PID
-		this.description = `${device.vendorId}:${device.productId}`;
+		// Create description with VID:PID for main items only
+		if (!isCommand) {
+			this.description = `${device.vendorId}:${device.productId}`;
 
-		// Add tooltip with all device info
-		this.tooltip = this.createTooltip();
+			// Add tooltip with all device info
+			this.tooltip = this.createTooltip();
 
-		// Set icon based on device type (using built-in codicon)
-		this.iconPath = new vscode.ThemeIcon(this.getIconForDevice());
+			// Set icon based on device type (using built-in codicon)
+			this.iconPath = new vscode.ThemeIcon(this.getIconForDevice());
+		} else {
+			// Use stop icon for disconnection commands, play icon for connection commands
+			if (label.includes('Disconnect')) {
+				this.iconPath = new vscode.ThemeIcon('stop', new vscode.ThemeColor('charts.red'));
+				// Highlight if connected
+				this.description = `${this.description} (Connected)`;
+				this.resourceUri = vscode.Uri.parse(`connected-device:${device.path}/?connected`);
+			} else {
+				this.iconPath = new vscode.ThemeIcon('play', new vscode.ThemeColor('charts.green'));
+				this.resourceUri = vscode.Uri.parse(`connected-device:${device.path}/?disconnected`);
+			}
 
-		// Set context for right-click menu
-		this.contextValue = 'connectedDevice';
+			// If a command is provided, set it
+			if (command) {
+				this.command = command;
+			}
+		}
 	}
 
 	private createTooltip(): string {
@@ -94,9 +148,13 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	private _onDidChangeTreeData: vscode.EventEmitter<ConnectedDeviceItem | undefined> = new vscode.EventEmitter<ConnectedDeviceItem | undefined>();
 	readonly onDidChangeTreeData: vscode.Event<ConnectedDeviceItem | undefined> = this._onDidChangeTreeData.event;
 
+	// Static list to maintain devices across instances
+	private static connectedDevicesList: Map<string, DeviceInfo> = new Map();
+
 	private log = new apLog('apConnectedDevices');
 	private refreshTimer: NodeJS.Timeout | undefined;
 	private isWSL: boolean = false;
+	private activeConnections: Map<string, { process: cp.ChildProcess | null, terminal: vscode.Terminal | null }> = new Map();
 
 	constructor() {
 		this.log.log('apConnectedDevices constructor');
@@ -114,8 +172,23 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 
 	private startAutoRefresh(): void {
 		this.refreshTimer = setInterval(() => {
-			this.refresh();
-		}, 5000);
+			const previousDevicePaths = new Set(apConnectedDevices.connectedDevicesList.keys());
+			// get children and see if there's been a new device added or removed
+			// compare with the static list if so trigger change event,
+			// Triggering change event no matter what might seem more efficient,
+			// but that leads to "Actual command not found, wanted to execute <command>" errors,
+			// and probably slower performance, as UI will be refreshed more often
+			this.getConnectedDevices().then(devices => {
+			// Check if devices have changed
+				const currentDevicePaths = new Set(devices.map(device => device.path));
+				if (currentDevicePaths.size !== previousDevicePaths.size || ![...currentDevicePaths].every(path => previousDevicePaths.has(path))) {
+					this.refresh();
+				}
+			}
+			).catch(error => {
+				this.log.log(`Error refreshing devices: ${error}`);
+			});
+		}, 1000);
 	}
 
 	private checkIsWSL(): boolean {
@@ -145,9 +218,10 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	}
 
 	async getChildren(element?: ConnectedDeviceItem): Promise<ConnectedDeviceItem[]> {
-		// If element is provided, we're getting children of a device (none for now)
-		if (element) {
-			return [];
+		// If element is provided, we're getting children of a device
+		if (element && !element.isCommand) {
+			// Return command options for the device
+			return this.getDeviceCommands(element.device);
 		}
 
 		// Otherwise, we're getting the root devices
@@ -156,7 +230,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			return devices.map(device => {
 				// Create a display name that's more user-friendly
 				const displayName = this.createDisplayName(device);
-				return new ConnectedDeviceItem(displayName, vscode.TreeItemCollapsibleState.None, device);
+				return new ConnectedDeviceItem(displayName, vscode.TreeItemCollapsibleState.Collapsed, device);
 			});
 		} catch (error) {
 			this.log.log(`Error getting devices: ${error}`);
@@ -167,6 +241,44 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 				manufacturer: String(error)
 			})];
 		}
+	}
+
+	private getDeviceCommands(device: DeviceInfo): ConnectedDeviceItem[] {
+		const commands: ConnectedDeviceItem[] = [];
+
+		// Add MAVProxy connect/disconnect command based on connection status
+		if (device.isMavproxyConnected) {
+			// Show disconnect option if already connected
+			commands.push(new ConnectedDeviceItem(
+				'Disconnect MAVProxy',
+				vscode.TreeItemCollapsibleState.None,
+				device,
+				true,
+				{
+					command: 'connected-devices.disconnectMAVProxy',
+					title: 'Disconnect MAVProxy',
+					arguments: [device]
+				}
+			));
+		} else {
+			// Show connect option if not connected
+			commands.push(new ConnectedDeviceItem(
+				'Connect with MAVProxy',
+				vscode.TreeItemCollapsibleState.None,
+				device,
+				true,
+				{
+					command: 'connected-devices.connectMAVProxy',
+					title: 'Connect with MAVProxy',
+					arguments: [device]
+				}
+			));
+		}
+
+		// Placeholder for future commands
+		// commands.push(new ConnectedDeviceItem("Another Command", ...));
+
+		return commands;
 	}
 
 	private createDisplayName(device: DeviceInfo): string {
@@ -183,14 +295,53 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	}
 
 	private async getConnectedDevices(): Promise<DeviceInfo[]> {
-		// Different approach based on platform
+		// Get new devices based on platform
+		let newDevices: DeviceInfo[] = [];
+
 		if (process.platform === 'win32') {
-			return this.getWindowsDevices();
+			newDevices = await this.getWindowsDevices();
 		} else if (this.isWSL) {
-			return this.getWSLDevices();
+			newDevices = await this.getWSLDevices();
 		} else {
-			return this.getLinuxDevices();
+			newDevices = await this.getLinuxDevices();
 		}
+
+		// Create a set of current device paths
+		const currentDevicePaths = new Set(newDevices.map(device => device.path));
+
+		// Handle devices that have been removed
+		const devicesToRemove: string[] = [];
+		apConnectedDevices.connectedDevicesList.forEach((device, path) => {
+			if (!currentDevicePaths.has(path)) {
+				// Device is no longer connected
+				devicesToRemove.push(path);
+
+				// If it was connected to MAVProxy, clean up
+				if (device.isMavproxyConnected) {
+					this.disconnectDevice(device);
+				}
+			}
+		});
+
+		// Remove disconnected devices from our static list
+		devicesToRemove.forEach(path => {
+			apConnectedDevices.connectedDevicesList.delete(path);
+		});
+
+		// Update our static device list with new/updated devices
+		for (const device of newDevices) {
+			const existingDevice = apConnectedDevices.connectedDevicesList.get(device.path);
+			if (existingDevice) {
+				// Preserve connection state from existing device
+				device.isMavproxyConnected = existingDevice.isMavproxyConnected;
+				// Update other properties as needed
+			}
+			// Update the static list
+			apConnectedDevices.connectedDevicesList.set(device.path, device);
+		}
+
+		// Return the updated list
+		return Array.from(apConnectedDevices.connectedDevicesList.values());
 	}
 
 	private async getLinuxDevices(): Promise<DeviceInfo[]> {
@@ -420,5 +571,153 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		}
 
 		return false;
+	}
+
+	// Set the connection state for MAVProxy
+	private setMavproxyConnection(devicePath: string, isConnected: boolean): void {
+		const device = apConnectedDevices.connectedDevicesList.get(devicePath);
+		if (device) {
+			device.isMavproxyConnected = isConnected;
+			apConnectedDevices.connectedDevicesList.set(devicePath, device);
+		}
+	}
+
+	// Command handlers
+	public async connectMAVProxy(device: DeviceInfo): Promise<void> {
+		// If already connected, ask if user wants to disconnect
+		if (this.activeConnections.has(device.path)) {
+			const disconnect = await vscode.window.showInformationMessage(
+				`Device ${device.path} is already connected to MAVProxy. Would you like to disconnect?`,
+				'Disconnect',
+				'Cancel'
+			);
+
+			if (disconnect === 'Disconnect') {
+				await this.disconnectDevice(device);
+				// trigger change event to refresh the tree view
+				this._onDidChangeTreeData.fire(undefined);
+				return;
+			} else {
+				return; // User canceled
+			}
+		}
+
+		// Default baud rate for most ArduPilot devices
+		const defaultBaudRate = 115200;
+
+		// Ask user for baudrate
+		const baudRateInput = await vscode.window.showInputBox({
+			prompt: 'Enter baud rate for MAVProxy connection',
+			value: defaultBaudRate.toString(),
+			validateInput: (value) => {
+				const num = parseInt(value);
+				return isNaN(num) ? 'Please enter a valid number' : null;
+			}
+		});
+
+		if (!baudRateInput) {
+			return; // User cancelled
+		}
+
+		const baudRate = parseInt(baudRateInput);
+
+		// Build the MAVProxy command
+		const devicePath = device.path;
+		let mavproxyCommand = '';
+
+		if (this.isWSL) {
+			// Use mavproxy.exe when in WSL
+			try {
+				// Check if mavproxy.exe can be executed
+				cp.execSync('powershell.exe -Command "Get-Command mavproxy.exe -ErrorAction SilentlyContinue"');
+				mavproxyCommand = `mavproxy.exe --master=${devicePath} --baudrate=${baudRate} --console`;
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			} catch (error) {
+				vscode.window.showErrorMessage('MAVProxy not found on Windows. Please install it on the Windows side when using WSL.');
+				return;
+			}
+		} else {
+			// Use mavproxy.py on native Linux
+			try {
+				cp.execSync('which mavproxy.py || echo "Not found"').toString().trim();
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			} catch (error) {
+				vscode.window.showErrorMessage('MAVProxy not found. Please install it first.');
+				return;
+			}
+			mavproxyCommand = `mavproxy.py --master=${devicePath} --baudrate=${baudRate} --console`;
+		}
+
+		// Run MAVProxy in a terminal
+		const terminal = vscode.window.createTerminal('MAVProxy Connection');
+		terminal.sendText(mavproxyCommand);
+		terminal.show();
+
+		// Track the active connection
+		this.activeConnections.set(device.path, {
+			process: null, // When using terminal, we don't have direct process access
+			terminal: terminal
+		});
+
+		// Update the device state and refresh the tree view
+		this.setMavproxyConnection(device.path, true);
+		this.refresh();
+
+		// Set up listeners for terminal close
+		const disposable = vscode.window.onDidCloseTerminal(closedTerminal => {
+			if (closedTerminal === terminal) {
+				this.handleTerminalClosed(device.path);
+				disposable.dispose(); // Clean up the event listener
+			}
+		});
+
+		this.log.log(`Started MAVProxy connection to ${devicePath} at ${baudRate} baud using ${this.isWSL ? 'mavproxy.exe (WSL)' : 'mavproxy.py'}`);
+	}
+
+	public async disconnectDevice(device: DeviceInfo): Promise<void> {
+		const connection = this.activeConnections.get(device.path);
+		if (!connection) {
+			return;
+		}
+
+		// If we have a terminal, close it
+		if (connection.terminal) {
+			connection.terminal.dispose();
+		}
+
+		// If we have a process, kill it
+		if (connection.process) {
+			connection.process.kill();
+		}
+
+		// Remove from active connections
+		this.activeConnections.delete(device.path);
+
+		// Update device state and refresh
+		this.setMavproxyConnection(device.path, false);
+		this.refresh();
+
+		this.log.log(`Disconnected device ${device.path}`);
+	}
+
+	private handleTerminalClosed(devicePath: string): void {
+		const connection = this.activeConnections.get(devicePath);
+		if (!connection) {
+			return;
+		}
+
+		// Remove from active connections
+		this.activeConnections.delete(devicePath);
+
+		// Update device state and refresh
+		this.getConnectedDevices().then(devices => {
+			const device = devices.find(d => d.path === devicePath);
+			if (device) {
+				this.setMavproxyConnection(devicePath, false);
+				this.refresh();
+			}
+		});
+
+		this.log.log(`Terminal closed for device ${devicePath}`);
 	}
 }

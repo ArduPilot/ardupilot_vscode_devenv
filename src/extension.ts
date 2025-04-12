@@ -22,7 +22,7 @@ import { APTaskProvider, APLaunchConfigurationProvider } from './taskProvider';
 import { apBuildConfig, apBuildConfigProvider } from './apBuildConfig';
 import { apLog } from './apLog';
 import { apWelcomeProvider } from './apWelcome';
-import { apConnectedDevices } from './apConnectedDevices';
+import { apConnectedDevices, ConnectedDeviceDecorationProvider } from './apConnectedDevices';
 
 let apTaskProvider: vscode.Disposable | undefined;
 let connectedDevicesProvider: apConnectedDevices | undefined;
@@ -65,7 +65,24 @@ export function activate(_context: vscode.ExtensionContext): void {
 	// Register Connected Devices tree provider
 	connectedDevicesProvider = new apConnectedDevices();
 	vscode.window.registerTreeDataProvider('connected-devices', connectedDevicesProvider);
-	vscode.commands.registerCommand('connected-devices.refresh', () => connectedDevicesProvider?.refresh());
+
+	// Register decoration provider for connected devices
+	const connectedDeviceDecorationProvider = new ConnectedDeviceDecorationProvider();
+	_context.subscriptions.push(
+		vscode.window.registerFileDecorationProvider(connectedDeviceDecorationProvider)
+	);
+
+	vscode.commands.registerCommand('connected-devices.refresh', () => {
+		connectedDevicesProvider?.refresh();
+		// Also refresh decorations
+		connectedDeviceDecorationProvider.refresh();
+	});
+	// Register the MAVProxy connection command
+	vscode.commands.registerCommand('connected-devices.connectMAVProxy',
+		(device) => connectedDevicesProvider?.connectMAVProxy(device));
+	// Register the MAVProxy disconnection command
+	vscode.commands.registerCommand('connected-devices.disconnectMAVProxy',
+		(device) => connectedDevicesProvider?.disconnectDevice(device));
 }
 
 // this method is called when your extension is deactivated
