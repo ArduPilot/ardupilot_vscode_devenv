@@ -357,17 +357,15 @@ export class ValidateEnvironmentPanel {
 	}
 
 	private async _validateEnvironment(): Promise<void> {
-		const pythonCheck = ProgramUtils.findProgram('python', ['--version']);
-		const mavproxyCheck = ProgramUtils.findProgram('mavproxy.py', ['--version']);
-		const gccCheck = ProgramUtils.findProgram('arm-none-eabi-gcc', ['--version']);
-		const gdbCheck = ProgramUtils.findProgram('arm-none-eabi-gdb', ['--version'], {
-			alternativeCommands: ['gdb-multiarch']
-		});
+		const pythonCheck = ProgramUtils.findPython();
+		const mavproxyCheck = ProgramUtils.findMavproxy();
+		const gccCheck = ProgramUtils.findArmGCC();
+		const gdbCheck = ProgramUtils.findArmGDB();
 		const ccacheCheck = this._checkCCache();
 
 		// Check optional tools
-		const jlinkCheck = ProgramUtils.findProgram('JLinkGDBServerCLExe', ['--version']).catch(() => ({ available: false }));
-		const openocdCheck = ProgramUtils.findProgram('openocd', ['--version']).catch(() => ({ available: false }));
+		const jlinkCheck = ProgramUtils.findJLinkGDBServerCLExe().catch(() => ({ available: false }));
+		const openocdCheck = ProgramUtils.findOpenOCD().catch(() => ({ available: false }));
 
 		const [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, jlinkResult, openocdResult] = await Promise.all([
 			pythonCheck.catch(error => ({ available: false, error })),
@@ -411,7 +409,7 @@ export class ValidateEnvironmentPanel {
 		return new Promise(async (resolve, reject) => {
 			try {
 				// First check if ccache is installed
-				const ccacheResult = await ProgramUtils.findProgram('ccache', ['-V']).catch(() => null);
+				const ccacheResult = await ProgramUtils.findCcache().catch(() => null);
 
 				if (!ccacheResult) {
 					reject(new Error('ccache is not installed'));

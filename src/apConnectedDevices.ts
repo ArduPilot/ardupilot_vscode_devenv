@@ -612,29 +612,15 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		const devicePath = device.path;
 		let mavproxyCommand = '';
 
-		if (this.isWSL) {
-			// Use mavproxy.exe when in WSL
-			const mavproxyWin = await ProgramUtils.findProgram('mavproxy.exe', ['--version'], {
-				platformOverrides: { linux: 'powershell.exe -Command "Get-Command mavproxy.exe -ErrorAction SilentlyContinue"' }
-			});
+		// Use mavproxy.py on native Linux or Windows
+		const mavproxy = await ProgramUtils.findMavproxy();
 
-			if (!mavproxyWin.available) {
-				vscode.window.showErrorMessage('MAVProxy not found on Windows. Please install it on the Windows side when using WSL.');
-				return;
-			}
-
-			mavproxyCommand = `mavproxy.exe --master=${devicePath} --baudrate=${baudRate} --console`;
-		} else {
-			// Use mavproxy.py on native Linux or Windows
-			const mavproxy = await ProgramUtils.findProgram('mavproxy.py', ['--version']);
-
-			if (!mavproxy.available) {
-				vscode.window.showErrorMessage('MAVProxy not found. Please install it first.');
-				return;
-			}
-
-			mavproxyCommand = `mavproxy.py --master=${devicePath} --baudrate=${baudRate} --console`;
+		if (!mavproxy.available) {
+			vscode.window.showErrorMessage('MAVProxy not found. Please install it first.');
+			return;
 		}
+
+		mavproxyCommand = `${mavproxy.path} --master=${devicePath} --baudrate=${baudRate} --console`;
 
 		// Run MAVProxy in a terminal
 		const terminal = vscode.window.createTerminal('MAVProxy Connection');

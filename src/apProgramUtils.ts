@@ -30,6 +30,8 @@ export interface ProgramInfo {
 	version?: string;
 	/** Additional information about the program */
 	info?: string;
+	/** command string */
+	command?: string;
 }
 
 /**
@@ -45,7 +47,7 @@ export class ProgramUtils {
 	 * @param options Additional options
 	 * @returns Promise resolving to program information
 	 */
-	public static async findProgram(
+	private static async findProgram(
 		command: string,
 		args: string[] = ['--version'],
 		options?: {
@@ -64,6 +66,7 @@ export class ProgramUtils {
 			// Try to execute the command
 			const result = await this._tryExecuteCommand(command, args);
 			if (result) {
+				result.command = command;
 				return result;
 			}
 
@@ -73,6 +76,7 @@ export class ProgramUtils {
 					this.log.log(`Command ${command} not found, trying alternative ${altCommand}`);
 					const altResult = await this._tryExecuteCommand(altCommand, args, options?.versionRegex);
 					if (altResult) {
+						altResult.command = altCommand;
 						return altResult;
 					}
 				}
@@ -84,6 +88,161 @@ export class ProgramUtils {
 			this.log.log(`Error finding program ${command}: ${error}`);
 			return { available: false };
 		}
+	}
+
+	public static async findMavproxy(): Promise<ProgramInfo> {
+		// check for mavproxy by platform
+		const platform = os.platform();
+		if (platform === 'win32' || this.isWSL()) {
+			// Windows: check for mavproxy.bat
+			return this.findProgram('mavproxy.exe', ['--version']);
+		} else {
+			// Linux: check for mavproxy
+			return this.findProgram('mavproxy.py', ['--version']);
+		}
+	}
+
+	public static async findPython(): Promise<ProgramInfo> {
+		// check for python by platform
+		const platform = os.platform();
+		if (platform === 'win32' || this.isWSL()) {
+			// Windows: check for python
+			return this.findProgram('python.exe', ['--version']);
+		} else {
+			// Linux: check for python3
+			return this.findProgram('python3', ['--version']);
+		}
+	}
+
+	public static async findCcache(): Promise<ProgramInfo> {
+		// check for ccache by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for ccache
+			return this.findProgram('ccache', ['-V']);
+		}
+		return { available: false };
+	}
+
+	public static async findOpenOCD(): Promise<ProgramInfo> {
+		// check for openocd by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for openocd
+			return this.findProgram('openocd', ['--version']);
+		} else if (platform === 'win32') {
+			// Windows: check for openocd.exe
+			return this.findProgram('openocd.exe', ['--version']);
+		}
+		return { available: false };
+	}
+
+	public static async findJLinkGDBServerCLExe(): Promise<ProgramInfo> {
+		// check for JLinkGDBServerCLExe by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for JLinkGDBServerCLExe
+			return this.findProgram('JLinkGDBServerCLExe', ['--version'], {
+				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/,
+				platformOverrides: {
+					darwin: 'JLinkGDBServerCLExe'
+				}
+			});
+		} else if (platform === 'win32') {
+			// Windows: check for JLinkGDBServerCLExe.exe
+			return this.findProgram('JLinkGDBServerCLExe.exe', ['--version'], {
+				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/,
+				platformOverrides: {
+					win32: 'JLinkGDBServerCLExe.exe'
+				}
+			});
+		}
+		return { available: false };
+	}
+
+	public static async findGCC(): Promise<ProgramInfo> {
+		// check for gcc by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for gcc
+			return this.findProgram('gcc', ['--version']);
+		} else if (platform === 'win32') {
+			// Windows: check for gcc.exe
+			return this.findProgram('gcc.exe', ['--version']);
+		}
+		return { available: false };
+	}
+
+	public static async findGPP(): Promise<ProgramInfo> {
+		// check for g++ by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for g++
+			return this.findProgram('g++', ['--version']);
+		} else if (platform === 'win32') {
+			// Windows: check for g++.exe
+			return this.findProgram('g++.exe', ['--version']);
+		}
+		return { available: false };
+	}
+
+	public static async findGDB(): Promise<ProgramInfo> {
+		// check for gdb by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for gdb
+			return this.findProgram('gdb', ['--version']);
+		} else if (platform === 'win32') {
+			// Windows: check for gdb.exe
+			return this.findProgram('gdb.exe', ['--version']);
+		}
+		return { available: false };
+	}
+
+	// find arm-none-eabi-gcc and arm-none-eabi-g++
+	public static async findArmGCC(): Promise<ProgramInfo> {
+		// check for arm-none-eabi-gcc by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for arm-none-eabi-gcc
+			return this.findProgram('arm-none-eabi-gcc', ['--version']);
+		} else if (platform === 'win32') {
+			// Windows: check for arm-none-eabi-gcc.exe
+			return this.findProgram('arm-none-eabi-gcc.exe', ['--version']);
+		}
+		return { available: false };
+	}
+
+	// find arm-none-eabi-gcc and arm-none-eabi-g++
+	public static async findArmGPP(): Promise<ProgramInfo> {
+		// check for arm-none-eabi-g++ by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for arm-none-eabi-g++
+			return this.findProgram('arm-none-eabi-g++', ['--version']);
+		} else if (platform === 'win32') {
+			// Windows: check for arm-none-eabi-g++.exe
+			return this.findProgram('arm-none-eabi-g++.exe', ['--version']);
+		}
+		return { available: false };
+	}
+
+	// find arm-none-eabi-gdb or gdb-multiarch
+	public static async findArmGDB(): Promise<ProgramInfo> {
+		// check for arm-none-eabi-gdb by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for arm-none-eabi-gdb
+			return this.findProgram('arm-none-eabi-gdb', ['--version'], {
+				alternativeCommands: ['gdb-multiarch']
+			});
+		} else if (platform === 'win32') {
+			// Windows: check for arm-none-eabi-gdb.exe
+			return this.findProgram('arm-none-eabi-gdb.exe', ['--version'], {
+				alternativeCommands: ['gdb-multiarch.exe']
+			});
+		}
+		return { available: false };
 	}
 
 	/**
