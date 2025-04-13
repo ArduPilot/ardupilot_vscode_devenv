@@ -23,6 +23,7 @@ import { apBuildConfig, apBuildConfigProvider } from './apBuildConfig';
 import { apLog } from './apLog';
 import { apWelcomeProvider } from './apWelcomeProvider';
 import { apConnectedDevices, ConnectedDeviceDecorationProvider } from './apConnectedDevices';
+import { ToolsConfig } from './apToolsConfig';
 
 let apTaskProvider: vscode.Disposable | undefined;
 let connectedDevicesProvider: apConnectedDevices | undefined;
@@ -30,6 +31,9 @@ let connectedDevicesProvider: apConnectedDevices | undefined;
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(_context: vscode.ExtensionContext): void {
+
+	// Initialize ToolsConfig
+	ToolsConfig.initialize(_context);
 
 	const apWelcomeProviderInstance = new apWelcomeProvider();
 

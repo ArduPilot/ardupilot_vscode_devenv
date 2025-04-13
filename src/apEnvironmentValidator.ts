@@ -23,6 +23,8 @@ import { apLog } from './apLog';
 import * as child_process from 'child_process';
 import { apWelcomeItem } from './apWelcomeItem';
 import { ProgramUtils } from './apProgramUtils';
+import { ToolsConfig } from './apToolsConfig';
+import * as fs from 'fs';
 
 export class ValidateEnvironment extends apWelcomeItem {
 	static log = new apLog('validateEnvironment');
@@ -108,6 +110,12 @@ export class ValidateEnvironmentPanel {
 				case 'checkEnvironment':
 					this._validateEnvironment();
 					break;
+				case 'configureToolPath':
+					this._configureToolPath(message.toolId, message.toolName);
+					break;
+				case 'resetAllPaths':
+					this._resetAllToolPaths();
+					break;
 				}
 			},
 			null,
@@ -182,6 +190,12 @@ export class ValidateEnvironmentPanel {
             font-size: 14px;
             color: var(--vscode-descriptionForeground);
             word-break: break-all;
+            display: flex;
+            align-items: center;
+        }
+        .tool-path-text {
+            flex-grow: 1;
+            margin-right: 10px;
         }
         button {
             background-color: var(--vscode-button-background);
@@ -191,10 +205,21 @@ export class ValidateEnvironmentPanel {
             border-radius: 2px;
             cursor: pointer;
             font-size: 14px;
-            margin-top: 20px;
+            margin-top: 5px;
+            margin-right: 5px;
         }
         button:hover {
             background-color: var(--vscode-button-hoverBackground);
+        }
+        .config-button {
+            padding: 4px 8px;
+            font-size: 12px;
+            margin-top: 0;
+        }
+        .action-buttons {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
         }
         #summary {
             margin-top: 20px;
@@ -214,84 +239,142 @@ export class ValidateEnvironmentPanel {
             background-color: rgba(204, 34, 34, 0.1);
             border: 1px solid #cc2222;
         }
+        .tool-info {
+            margin-top: 5px;
+            font-size: 14px;
+            color: var(--vscode-descriptionForeground);
+        }
+        .custom-path-notification {
+            font-style: italic;
+            color: var(--vscode-notificationsInfoIcon-foreground);
+            margin-top: 5px;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
     <h1>ArduPilot Environment Validation</h1>
     <div id="validation-results">
-        <div class="tool-container" id="python">
+        <div class="tool-container" id="python" data-tool-id="${ProgramUtils.TOOL_PYTHON}">
             <div class="tool-header">
                 <div class="tool-name">Python</div>
                 <div class="tool-status status-checking">Checking...</div>
             </div>
             <div class="tool-version"></div>
-            <div class="tool-path"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
         </div>
         
-        <div class="tool-container" id="mavproxy">
+        <div class="tool-container" id="mavproxy" data-tool-id="${ProgramUtils.TOOL_MAVPROXY}">
             <div class="tool-header">
                 <div class="tool-name">MAVProxy</div>
                 <div class="tool-status status-checking">Checking...</div>
             </div>
             <div class="tool-version"></div>
-            <div class="tool-path"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
         </div>
         
-        <div class="tool-container" id="gcc">
+        <div class="tool-container" id="gcc" data-tool-id="${ProgramUtils.TOOL_ARM_GCC}">
             <div class="tool-header">
                 <div class="tool-name">arm-none-eabi-gcc</div>
                 <div class="tool-status status-checking">Checking...</div>
             </div>
             <div class="tool-version"></div>
-            <div class="tool-path"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
         </div>
         
-        <div class="tool-container" id="gdb">
+        <div class="tool-container" id="gdb" data-tool-id="${ProgramUtils.TOOL_ARM_GDB}">
             <div class="tool-header">
                 <div class="tool-name">arm-none-eabi-gdb / gdb-multiarch</div>
                 <div class="tool-status status-checking">Checking...</div>
             </div>
             <div class="tool-version"></div>
-            <div class="tool-path"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
         </div>
         
-        <div class="tool-container" id="ccache">
+        <div class="tool-container" id="ccache" data-tool-id="${ProgramUtils.TOOL_CCACHE}">
             <div class="tool-header">
                 <div class="tool-name">ccache</div>
                 <div class="tool-status status-checking">Checking...</div>
             </div>
             <div class="tool-version"></div>
-            <div class="tool-path"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
             <div class="tool-info"></div>
         </div>
         
-        <div class="tool-container" id="jlink">
+        <div class="tool-container" id="jlink" data-tool-id="${ProgramUtils.TOOL_JLINK}">
             <div class="tool-header">
                 <div class="tool-name">JLinkGDBServerCLExe (Optional)</div>
                 <div class="tool-status status-checking">Checking...</div>
             </div>
             <div class="tool-version"></div>
-            <div class="tool-path"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
         </div>
         
-        <div class="tool-container" id="openocd">
+        <div class="tool-container" id="openocd" data-tool-id="${ProgramUtils.TOOL_OPENOCD}">
             <div class="tool-header">
                 <div class="tool-name">OpenOCD (Optional)</div>
                 <div class="tool-status status-checking">Checking...</div>
             </div>
             <div class="tool-version"></div>
-            <div class="tool-path"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
         </div>
         
         <div id="summary"></div>
         
-        <button id="refresh-btn">Refresh Validation</button>
+        <div class="action-buttons">
+            <button id="refresh-btn">Refresh Validation</button>
+            <button id="reset-all-paths-btn">Reset All Paths</button>
+        </div>
     </div>
 
     <script>
         (function() {
             const vscode = acquireVsCodeApi();
             
+            // Setup tool path configuration buttons
+            document.querySelectorAll('.config-path-btn').forEach(btn => {
+                btn.addEventListener('click', (event) => {
+                    const toolContainer = event.target.closest('.tool-container');
+                    const toolId = toolContainer.getAttribute('data-tool-id');
+                    const toolName = toolContainer.querySelector('.tool-name').textContent;
+                    
+                    vscode.postMessage({
+                        command: 'configureToolPath',
+                        toolId: toolId,
+                        toolName: toolName
+                    });
+                });
+            });
+            
+            // Setup refresh button
             document.getElementById('refresh-btn').addEventListener('click', () => {
                 // Reset all status indicators to "Checking..."
                 document.querySelectorAll('.tool-status').forEach(el => {
@@ -300,7 +383,7 @@ export class ValidateEnvironmentPanel {
                 });
                 
                 // Clear all version and path info
-                document.querySelectorAll('.tool-version, .tool-path').forEach(el => {
+                document.querySelectorAll('.tool-version, .tool-path-text, .tool-info, .custom-path-notification').forEach(el => {
                     el.textContent = '';
                 });
                 
@@ -312,6 +395,11 @@ export class ValidateEnvironmentPanel {
                 vscode.postMessage({ command: 'checkEnvironment' });
             });
             
+            // Setup reset all paths button
+            document.getElementById('reset-all-paths-btn').addEventListener('click', () => {
+                vscode.postMessage({ command: 'resetAllPaths' });
+            });
+            
             // Request initial validation when the page loads
             vscode.postMessage({ command: 'checkEnvironment' });
             
@@ -320,14 +408,15 @@ export class ValidateEnvironmentPanel {
                 const message = event.data;
                 
                 if (message.command === 'validationResult') {
-                    const { tool, available, version, path, info } = message;
+                    const { tool, available, version, path, info, isCustomPath } = message;
                     const toolElement = document.getElementById(tool);
                     
                     if (toolElement) {
                         const statusElement = toolElement.querySelector('.tool-status');
                         const versionElement = toolElement.querySelector('.tool-version');
-                        const pathElement = toolElement.querySelector('.tool-path');
+                        const pathElement = toolElement.querySelector('.tool-path-text');
                         const infoElement = toolElement.querySelector('.tool-info');
+                        const notificationElement = toolElement.querySelector('.custom-path-notification');
                         
                         statusElement.className = 'tool-status ' + (available ? 'status-available' : 'status-missing');
                         statusElement.textContent = available ? 'Available' : 'Missing';
@@ -340,6 +429,12 @@ export class ValidateEnvironmentPanel {
                             pathElement.textContent = 'Path: ' + path;
                         }
                         
+                        if (isCustomPath) {
+                            notificationElement.textContent = 'Using custom configured path';
+                        } else {
+                            notificationElement.textContent = '';
+                        }
+                        
                         if (info && infoElement) {
                             infoElement.innerHTML = info;
                         }
@@ -348,6 +443,9 @@ export class ValidateEnvironmentPanel {
                     const summaryElement = document.getElementById('summary');
                     summaryElement.textContent = message.message;
                     summaryElement.className = 'summary-' + message.status;
+                } else if (message.command === 'configurationSaved') {
+                    // Refresh validation after configuration is saved
+                    vscode.postMessage({ command: 'checkEnvironment' });
                 }
             });
         })();
@@ -388,17 +486,6 @@ export class ValidateEnvironmentPanel {
 
 		// Generate summary - only include required tools in the summary
 		this._generateSummary([pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult]);
-	}
-
-	private _reportToolStatus(tool: string, result: { available: boolean, version?: string, path?: string, info?: string }): void {
-		this._panel.webview.postMessage({
-			command: 'validationResult',
-			tool,
-			available: result.available,
-			version: result.version,
-			path: result.path,
-			info: result.info
-		});
 	}
 
 	private _checkCCache(): Promise<{ available: boolean, version?: string, path?: string, info?: string }> {
@@ -515,6 +602,167 @@ export class ValidateEnvironmentPanel {
 				message: '❌ All required tools are missing. Please set up your development environment.'
 			});
 		}
+	}
+
+	/**
+	 * Opens a dialog to configure a custom path for a tool
+	 * @param toolId The ID of the tool to configure
+	 * @param toolName The display name of the tool
+	 */
+	private async _configureToolPath(toolId: string, toolName: string): Promise<void> {
+		// Show open file dialog to select the tool executable
+		const options: vscode.OpenDialogOptions = {
+			canSelectMany: false,
+			openLabel: `Select ${toolName} Executable`,
+			filters: {
+				'Executable Files': ['*'],
+				'All Files': ['*']
+			}
+		};
+
+		const fileUri = await vscode.window.showOpenDialog(options);
+		if (fileUri && fileUri.length > 0) {
+			const filePath = fileUri[0].fsPath;
+
+			try {
+				// Verify the file exists and is executable
+				const stat = fs.statSync(filePath);
+
+				// Check if file is executable (on Linux/Mac)
+				// On Windows, we can't easily check this, so we just check if it's a file
+				const isExecutable = process.platform === 'win32' ||
+					!!(stat.mode & fs.constants.S_IXUSR);
+
+				if (!stat.isFile()) {
+					vscode.window.showErrorMessage(`${filePath} is not a file.`);
+					return;
+				}
+
+				if (!isExecutable && process.platform !== 'win32') {
+					const makeExecutable = await vscode.window.showWarningMessage(
+						`${filePath} is not executable. Do you want to make it executable?`,
+						'Yes', 'No'
+					);
+
+					if (makeExecutable === 'Yes') {
+						// Make the file executable (user+group+others)
+						fs.chmodSync(filePath, stat.mode | fs.constants.S_IXUSR | fs.constants.S_IXGRP | fs.constants.S_IXOTH);
+					} else {
+						return;
+					}
+				}
+
+				// Save the custom path in the configuration
+				ToolsConfig.setToolPath(toolId, filePath);
+
+				// Notify the webview that configuration was saved
+				this._panel.webview.postMessage({
+					command: 'configurationSaved'
+				});
+
+				// Show success message
+				vscode.window.showInformationMessage(`Custom path for ${toolName} saved successfully.`);
+
+				// Run validation again to check with the new path
+				this._validateEnvironment();
+
+			} catch (error) {
+				vscode.window.showErrorMessage(`Error configuring custom path: ${error}`);
+			}
+		}
+	}
+
+	/**
+	 * Resets all custom tool paths
+	 */
+	private _resetAllToolPaths(): void {
+		// Confirm with the user
+		vscode.window.showWarningMessage(
+			'Are you sure you want to reset all custom tool paths?',
+			'Yes', 'No'
+		).then(answer => {
+			if (answer === 'Yes') {
+				// Get all tool IDs from the ProgramUtils
+				const toolIds = [
+					ProgramUtils.TOOL_PYTHON,
+					ProgramUtils.TOOL_MAVPROXY,
+					ProgramUtils.TOOL_CCACHE,
+					ProgramUtils.TOOL_OPENOCD,
+					ProgramUtils.TOOL_JLINK,
+					ProgramUtils.TOOL_GCC,
+					ProgramUtils.TOOL_GPP,
+					ProgramUtils.TOOL_GDB,
+					ProgramUtils.TOOL_ARM_GCC,
+					ProgramUtils.TOOL_ARM_GPP,
+					ProgramUtils.TOOL_ARM_GDB
+				];
+
+				// Remove each tool path
+				for (const toolId of toolIds) {
+					ToolsConfig.removeToolPath(toolId);
+				}
+
+				// Notify the webview that configuration was reset
+				this._panel.webview.postMessage({
+					command: 'configurationSaved'
+				});
+
+				// Show success message
+				vscode.window.showInformationMessage('All custom tool paths have been reset.');
+
+				// Run validation again to check with default paths
+				this._validateEnvironment();
+			}
+		});
+	}
+
+	/**
+	 * Reports a tool's status to the webview, including whether it's using a custom path
+	 * @param tool The tool ID in the webview
+	 * @param result The result of the tool check
+	 */
+	private _reportToolStatus(tool: string, result: { available: boolean, version?: string, path?: string, info?: string, command?: string }): void {
+		// Map the tool ID in the webview to the actual tool ID for configuration
+		let toolId: string;
+		switch (tool) {
+		case 'python':
+			toolId = ProgramUtils.TOOL_PYTHON;
+			break;
+		case 'mavproxy':
+			toolId = ProgramUtils.TOOL_MAVPROXY;
+			break;
+		case 'gcc':
+			toolId = ProgramUtils.TOOL_ARM_GCC;
+			break;
+		case 'gdb':
+			toolId = ProgramUtils.TOOL_ARM_GDB;
+			break;
+		case 'ccache':
+			toolId = ProgramUtils.TOOL_CCACHE;
+			break;
+		case 'jlink':
+			toolId = ProgramUtils.TOOL_JLINK;
+			break;
+		case 'openocd':
+			toolId = ProgramUtils.TOOL_OPENOCD;
+			break;
+		default:
+			toolId = '';
+		}
+
+		// Check if this tool is using a custom path
+		const customPath = ToolsConfig.getToolPath(toolId);
+		const isCustomPath = !!customPath && result.path === customPath;
+
+		this._panel.webview.postMessage({
+			command: 'validationResult',
+			tool,
+			available: result.available,
+			version: result.version,
+			path: result.path,
+			info: result.info,
+			isCustomPath
+		});
 	}
 
 	public dispose(): void {

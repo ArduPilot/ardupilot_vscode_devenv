@@ -17,6 +17,8 @@
 import * as child_process from 'child_process';
 import * as os from 'os';
 import { apLog } from './apLog';
+import { ToolsConfig } from './apToolsConfig';
+import * as fs from 'fs';
 
 /**
  * Interface for program information
@@ -41,6 +43,21 @@ export class ProgramUtils {
 	private static log = new apLog('ProgramUtils');
 
 	/**
+	 * Tool IDs for configuration
+	 */
+	public static readonly TOOL_PYTHON = 'python';
+	public static readonly TOOL_MAVPROXY = 'mavproxy';
+	public static readonly TOOL_CCACHE = 'ccache';
+	public static readonly TOOL_OPENOCD = 'openocd';
+	public static readonly TOOL_JLINK = 'jlink';
+	public static readonly TOOL_GCC = 'gcc';
+	public static readonly TOOL_GPP = 'g++';
+	public static readonly TOOL_GDB = 'gdb';
+	public static readonly TOOL_ARM_GCC = 'arm-gcc';
+	public static readonly TOOL_ARM_GPP = 'arm-g++';
+	public static readonly TOOL_ARM_GDB = 'arm-gdb';
+
+	/**
 	 * Finds a program in the system path and returns information about it
 	 * @param command The command to check
 	 * @param args The arguments to pass to the command (typically for version check)
@@ -53,10 +70,29 @@ export class ProgramUtils {
 		options?: {
 			alternativeCommands?: string[],
 			versionRegex?: RegExp,
-			platformOverrides?: { [platform: string]: string }
+			platformOverrides?: { [platform: string]: string },
+			toolId?: string
 		}
 	): Promise<ProgramInfo> {
 		try {
+			// Check if there's a custom path configured for this tool
+			if (options?.toolId) {
+				const customPath = ToolsConfig.getToolPath(options.toolId);
+				if (customPath && fs.existsSync(customPath)) {
+					this.log.log(`Using custom path for ${options.toolId}: ${customPath}`);
+
+					// Try using the custom path
+					const result = await this._tryExecuteCommand(customPath, args, options?.versionRegex);
+					if (result) {
+						result.command = command; // Keep the original command name
+						result.path = customPath; // Use the custom path
+						return result;
+					}
+
+					this.log.log(`Custom path for ${options.toolId} is invalid, falling back to default search`);
+				}
+			}
+
 			// Apply platform-specific command overrides if provided
 			const platform = os.platform();
 			if (options?.platformOverrides && options.platformOverrides[platform]) {
@@ -95,10 +131,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'win32' || this.isWSL()) {
 			// Windows: check for mavproxy.bat
-			return this.findProgram('mavproxy.exe', ['--version']);
+			return this.findProgram('mavproxy.exe', ['--version'], { toolId: this.TOOL_MAVPROXY });
 		} else {
 			// Linux: check for mavproxy
-			return this.findProgram('mavproxy.py', ['--version']);
+			return this.findProgram('mavproxy.py', ['--version'], { toolId: this.TOOL_MAVPROXY });
 		}
 	}
 
@@ -107,10 +143,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'win32' || this.isWSL()) {
 			// Windows: check for python
-			return this.findProgram('python.exe', ['--version']);
+			return this.findProgram('python.exe', ['--version'], { toolId: this.TOOL_PYTHON });
 		} else {
 			// Linux: check for python3
-			return this.findProgram('python3', ['--version']);
+			return this.findProgram('python3', ['--version'], { toolId: this.TOOL_PYTHON });
 		}
 	}
 
@@ -119,7 +155,7 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for ccache
-			return this.findProgram('ccache', ['-V']);
+			return this.findProgram('ccache', ['-V'], { toolId: this.TOOL_CCACHE });
 		}
 		return { available: false };
 	}
@@ -129,10 +165,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for openocd
-			return this.findProgram('openocd', ['--version']);
+			return this.findProgram('openocd', ['--version'], { toolId: this.TOOL_OPENOCD });
 		} else if (platform === 'win32') {
 			// Windows: check for openocd.exe
-			return this.findProgram('openocd.exe', ['--version']);
+			return this.findProgram('openocd.exe', ['--version'], { toolId: this.TOOL_OPENOCD });
 		}
 		return { available: false };
 	}
@@ -146,7 +182,8 @@ export class ProgramUtils {
 				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/,
 				platformOverrides: {
 					darwin: 'JLinkGDBServerCLExe'
-				}
+				},
+				toolId: this.TOOL_JLINK
 			});
 		} else if (platform === 'win32') {
 			// Windows: check for JLinkGDBServerCLExe.exe
@@ -154,7 +191,8 @@ export class ProgramUtils {
 				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/,
 				platformOverrides: {
 					win32: 'JLinkGDBServerCLExe.exe'
-				}
+				},
+				toolId: this.TOOL_JLINK
 			});
 		}
 		return { available: false };
@@ -165,10 +203,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for gcc
-			return this.findProgram('gcc', ['--version']);
+			return this.findProgram('gcc', ['--version'], { toolId: this.TOOL_GCC });
 		} else if (platform === 'win32') {
 			// Windows: check for gcc.exe
-			return this.findProgram('gcc.exe', ['--version']);
+			return this.findProgram('gcc.exe', ['--version'], { toolId: this.TOOL_GCC });
 		}
 		return { available: false };
 	}
@@ -178,10 +216,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for g++
-			return this.findProgram('g++', ['--version']);
+			return this.findProgram('g++', ['--version'], { toolId: this.TOOL_GPP });
 		} else if (platform === 'win32') {
 			// Windows: check for g++.exe
-			return this.findProgram('g++.exe', ['--version']);
+			return this.findProgram('g++.exe', ['--version'], { toolId: this.TOOL_GPP });
 		}
 		return { available: false };
 	}
@@ -191,10 +229,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for gdb
-			return this.findProgram('gdb', ['--version']);
+			return this.findProgram('gdb', ['--version'], { toolId: this.TOOL_GDB });
 		} else if (platform === 'win32') {
 			// Windows: check for gdb.exe
-			return this.findProgram('gdb.exe', ['--version']);
+			return this.findProgram('gdb.exe', ['--version'], { toolId: this.TOOL_GDB });
 		}
 		return { available: false };
 	}
@@ -205,10 +243,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for arm-none-eabi-gcc
-			return this.findProgram('arm-none-eabi-gcc', ['--version']);
+			return this.findProgram('arm-none-eabi-gcc', ['--version'], { toolId: this.TOOL_ARM_GCC });
 		} else if (platform === 'win32') {
 			// Windows: check for arm-none-eabi-gcc.exe
-			return this.findProgram('arm-none-eabi-gcc.exe', ['--version']);
+			return this.findProgram('arm-none-eabi-gcc.exe', ['--version'], { toolId: this.TOOL_ARM_GCC });
 		}
 		return { available: false };
 	}
@@ -219,10 +257,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for arm-none-eabi-g++
-			return this.findProgram('arm-none-eabi-g++', ['--version']);
+			return this.findProgram('arm-none-eabi-g++', ['--version'], { toolId: this.TOOL_ARM_GPP });
 		} else if (platform === 'win32') {
 			// Windows: check for arm-none-eabi-g++.exe
-			return this.findProgram('arm-none-eabi-g++.exe', ['--version']);
+			return this.findProgram('arm-none-eabi-g++.exe', ['--version'], { toolId: this.TOOL_ARM_GPP });
 		}
 		return { available: false };
 	}
@@ -234,12 +272,14 @@ export class ProgramUtils {
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for arm-none-eabi-gdb
 			return this.findProgram('arm-none-eabi-gdb', ['--version'], {
-				alternativeCommands: ['gdb-multiarch']
+				alternativeCommands: ['gdb-multiarch'],
+				toolId: this.TOOL_ARM_GDB
 			});
 		} else if (platform === 'win32') {
 			// Windows: check for arm-none-eabi-gdb.exe
 			return this.findProgram('arm-none-eabi-gdb.exe', ['--version'], {
-				alternativeCommands: ['gdb-multiarch.exe']
+				alternativeCommands: ['gdb-multiarch.exe'],
+				toolId: this.TOOL_ARM_GDB
 			});
 		}
 		return { available: false };
@@ -273,40 +313,40 @@ export class ProgramUtils {
 
 				process.on('close', (code) => {
 					if (code === 0) {
-						// Tool exists, now find its path
-						child_process.exec(`which ${command}`, (error, stdout) => {
-							const path = error ? 'Unknown' : stdout.trim();
+						// Tool exists, now find its path if it's not a custom path
+						// If command includes a path separator, it's likely a custom path
+						const isCustomPath = command.includes('/') || command.includes('\\');
+						const path = isCustomPath ? command : this.findCommandPath(command);
 
-							// Extract version from output
-							const versionOutput = output || errorOutput;
-							let version = 'Unknown';
+						// Extract version from output
+						const versionOutput = output || errorOutput;
+						let version = 'Unknown';
 
-							// Special handling for JLinkGDBServerCLExe which has a different version format
-							if (command === 'JLinkGDBServerCLExe') {
-								// Example: "SEGGER J-Link GDB Server V7.94e Command Line Version"
-								const jlinkVersionMatch = versionOutput.match(/GDB Server V([\d.]+[a-z]?)/);
-								if (jlinkVersionMatch) {
-									version = jlinkVersionMatch[1];
-								}
-							} else if (versionRegex) {
-								// Use custom regex if provided
-								const match = versionOutput.match(versionRegex);
-								if (match && match[1]) {
-									version = match[1];
-								}
-							} else {
-								// Standard version extraction for other tools
-								const versionMatch = versionOutput.match(/(\d+\.\d+\.\d+)/);
-								if (versionMatch) {
-									version = versionMatch[1];
-								}
+						// Special handling for JLinkGDBServerCLExe which has a different version format
+						if (command.includes('JLinkGDBServerCLExe')) {
+							// Example: "SEGGER J-Link GDB Server V7.94e Command Line Version"
+							const jlinkVersionMatch = versionOutput.match(/GDB Server V([\d.]+[a-z]?)/);
+							if (jlinkVersionMatch) {
+								version = jlinkVersionMatch[1];
 							}
+						} else if (versionRegex) {
+							// Use custom regex if provided
+							const match = versionOutput.match(versionRegex);
+							if (match && match[1]) {
+								version = match[1];
+							}
+						} else {
+							// Standard version extraction for other tools
+							const versionMatch = versionOutput.match(/(\d+\.\d+\.\d+)/);
+							if (versionMatch) {
+								version = versionMatch[1];
+							}
+						}
 
-							resolve({
-								available: true,
-								version,
-								path
-							});
+						resolve({
+							available: true,
+							version,
+							path
 						});
 					} else {
 						resolve(null);
@@ -321,6 +361,22 @@ export class ProgramUtils {
 				resolve(null);
 			}
 		});
+	}
+
+	/**
+	 * Finds the path of a command using 'which' (Linux/Mac) or 'where' (Windows)
+	 * @param command The command to find
+	 * @returns The path to the command
+	 */
+	private static findCommandPath(command: string): string {
+		try {
+			const platform = os.platform();
+			const whichCommand = platform === 'win32' ? 'where' : 'which';
+			return child_process.execSync(`${whichCommand} ${command}`).toString().trim();
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
+		} catch (error) {
+			return 'Unknown';
+		}
 	}
 
 	/**
