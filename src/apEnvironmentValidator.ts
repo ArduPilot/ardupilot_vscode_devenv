@@ -14,124 +14,16 @@
 	Copyright (c) 2024 Siddharth Purohit, CubePilot Global Pty Ltd.
 */
 
+/*
+	ValidateEnvironment.ts
+	Validates the development environment for ArduPilot.
+*/
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
-import * as fs from 'fs';
-import { simpleGit, SimpleGitProgressEvent } from 'simple-git';
 import * as child_process from 'child_process';
+import { apWelcomeItem } from './apWelcomeItem';
 
-export class apWelcomeItem extends vscode.TreeItem {
-	constructor(
-		public readonly label: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState
-	) {
-		super(label, collapsibleState);
-	}
-}
-
-class cloneArdupilot extends apWelcomeItem {
-	static log = new apLog('cloneArdupilot');
-	constructor(
-		public readonly label: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState
-	) {
-		super(label, collapsibleState);
-		vscode.commands.registerCommand('apClone', () => cloneArdupilot.run());
-	}
-
-	static run(): void {
-		// clone the ardupilot repository
-		this.log.log('cloneArdupilot called');
-		// show open dialog box to select the directory
-		const options: vscode.OpenDialogOptions = {
-			canSelectFiles: false,
-			canSelectFolders: true,
-			canSelectMany: false,
-			openLabel: 'Select Directory to Clone Ardupilot',
-		};
-		vscode.window.showOpenDialog(options).then((uri) => {
-			if (uri) {
-				let finalUri = uri[0];
-				// ask the user to name the directory
-				vscode.window.showInputBox({
-					placeHolder: 'Enter the name of the directory to clone Ardupilot',
-					prompt: 'Enter the name of the directory to clone Ardupilot'
-				}).then((name) => {
-					if (!name) {
-						name = '';
-					}
-					finalUri = vscode.Uri.joinPath(uri[0], name);
-					// create the directory if it does not exist
-					if (!fs.existsSync(finalUri.fsPath)) {
-						fs.mkdirSync(finalUri.fsPath);
-					} else {
-						// fail if the directory already exists
-						vscode.window.showErrorMessage('Directory already exists');
-					}
-
-					const abortController = new AbortController();
-
-					let progressReference: vscode.Progress<{ message?: string; increment?: number; }> | null = null;
-					let progressFinishPromiseResolve: () => void;
-					const progressFinishPromise: Promise<void> = new Promise<void>((resolve) => {
-						progressFinishPromiseResolve = resolve;
-					});
-					// show progress bar
-					vscode.window.withProgress({
-						location: vscode.ProgressLocation.Notification,
-						title: 'Cloning Ardupilot',
-						cancellable: true
-					}, (prog, token) => {
-						token.onCancellationRequested(() => {
-							this.log.log('Clone cancelled by user');
-							abortController.abort();
-						});
-						progressReference = prog;
-						return progressFinishPromise;
-					});
-					let lastProgress = 0;
-					// clone the repository using simple-git and pass the percent progress to vscode
-					const progController = ({ method, stage, progress }: SimpleGitProgressEvent) => {
-						this.log.log(`git.${method} ${stage} stage ${progress}% complete`);
-						if (method === 'clone' && progressReference && progress != lastProgress) {
-							progressReference.report({ message: `${stage}`, increment: progress - lastProgress });
-							lastProgress = progress;
-						}
-					};
-					const git = simpleGit({ baseDir: finalUri.fsPath, progress: progController, abort: abortController.signal });
-					git.clone('https://www.github.com/ardupilot/ardupilot.git', finalUri.fsPath, ['--progress'])
-						.then(() => {
-							// close the progress bar
-							progressFinishPromiseResolve();
-							// add the cloned repository to the workspace
-							vscode.workspace.updateWorkspaceFolders(vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders.length : 0, null, { uri: finalUri });
-						}, () => {
-							progressFinishPromiseResolve();
-							if (!abortController.signal.aborted) {
-								// show failed to clone
-								vscode.window.showErrorMessage('Failed to clone ardupilot');
-							}
-						});
-
-					return finalUri;
-				});
-			}
-		});
-	}
-
-	// set logo for the tree item
-	iconPath = new vscode.ThemeIcon('repo-clone');
-
-	command = {
-		command: 'apClone',
-		title: 'Clone Ardupilot',
-		arguments: [this.label]
-	};
-
-	contextValue = 'cloneArdupilot';
-}
-
-class validateEnvironment extends apWelcomeItem {
+export class ValidateEnvironment extends apWelcomeItem {
 	static log = new apLog('validateEnvironment');
 
 	constructor(
@@ -139,13 +31,13 @@ class validateEnvironment extends apWelcomeItem {
 		public readonly collapsibleState: vscode.TreeItemCollapsibleState
 	) {
 		super(label, collapsibleState);
-		vscode.commands.registerCommand('apValidateEnv', () => validateEnvironment.run());
+		vscode.commands.registerCommand('apValidateEnv', () => ValidateEnvironment.run());
 	}
 
 	static run(): void {
 		this.log.log('validateEnvironment called');
 		// Create a webview panel to show the validation results
-		validateEnvironmentPanel.createOrShow(vscode.window.activeTextEditor?.viewColumn);
+		ValidateEnvironmentPanel.createOrShow(vscode.window.activeTextEditor?.viewColumn);
 	}
 
 	// set logo for the tree item
@@ -163,31 +55,30 @@ class validateEnvironment extends apWelcomeItem {
 /**
  * Manages Environment Validation webview panel
  */
-export class validateEnvironmentPanel {
+export class ValidateEnvironmentPanel {
 	/**
 	 * Track the currently panel. Only allow a single panel to exist at a time.
 	 */
-	public static currentPanel: validateEnvironmentPanel | undefined;
+	public static currentPanel: ValidateEnvironmentPanel | undefined;
 
 	public static readonly viewType = 'validateEnvironmentPanel';
 	private static log = new apLog('validateEnvironmentPanel');
 
 	private readonly _panel: vscode.WebviewPanel;
-	private readonly _extensionUri: vscode.Uri;
 	private _disposables: vscode.Disposable[] = [];
 
 	public static createOrShow(column?: vscode.ViewColumn): void {
 		const activeColumn = column || vscode.ViewColumn.One;
 
 		// If we already have a panel, show it
-		if (validateEnvironmentPanel.currentPanel) {
-			validateEnvironmentPanel.currentPanel._panel.reveal(activeColumn);
+		if (ValidateEnvironmentPanel.currentPanel) {
+			ValidateEnvironmentPanel.currentPanel._panel.reveal(activeColumn);
 			return;
 		}
 
 		// Otherwise, create a new panel
 		const panel = vscode.window.createWebviewPanel(
-			validateEnvironmentPanel.viewType,
+			ValidateEnvironmentPanel.viewType,
 			'ArduPilot Environment Validation',
 			activeColumn,
 			{
@@ -196,12 +87,11 @@ export class validateEnvironmentPanel {
 			}
 		);
 
-		validateEnvironmentPanel.currentPanel = new validateEnvironmentPanel(panel);
+		ValidateEnvironmentPanel.currentPanel = new ValidateEnvironmentPanel(panel);
 	}
 
 	private constructor(panel: vscode.WebviewPanel) {
 		this._panel = panel;
-		this._extensionUri = vscode.extensions.getExtension('cubepilot.ardupilot-devenv')?.extensionUri || vscode.Uri.file('');
 
 		// Set the webview's initial html content
 		this._panel.webview.html = this._getInitialHtml();
@@ -578,10 +468,6 @@ export class validateEnvironmentPanel {
 		// specifically catching errors for each check
 		// and handling them in the promise chain
 		// eslint-disable-next-line no-async-promise-executor
-		// disabled eslint rule for async promise executor as we are
-		// specifically catching errors for each check
-		// and handling them in the promise chain
-		// eslint-disable-next-line no-async-promise-executor
 		return new Promise(async (resolve, reject) => {
 			try {
 				// First check if ccache is installed
@@ -694,7 +580,7 @@ export class validateEnvironmentPanel {
 	}
 
 	public dispose(): void {
-		validateEnvironmentPanel.currentPanel = undefined;
+		ValidateEnvironmentPanel.currentPanel = undefined;
 
 		// Clean up our resources
 		this._panel.dispose();
@@ -705,31 +591,5 @@ export class validateEnvironmentPanel {
 				disposable.dispose();
 			}
 		}
-	}
-}
-
-export class apWelcomeProvider implements vscode.TreeDataProvider<apWelcomeItem> {
-	private _onDidChangeTreeData: vscode.EventEmitter<apWelcomeItem | undefined> = new vscode.EventEmitter<apWelcomeItem | undefined>();
-	readonly onDidChangeTreeData: vscode.Event<apWelcomeItem | undefined> = this._onDidChangeTreeData.event;
-	private log = new apLog('apWelcomeProvider');
-
-	constructor() {
-		this.log.log('apWelcomeProvider constructor');
-	}
-
-	getTreeItem(element: apWelcomeItem): vscode.TreeItem {
-		return element;
-	}
-
-	refresh(): void {
-		this._onDidChangeTreeData.fire(new apWelcomeItem('Welcome', vscode.TreeItemCollapsibleState.None));
-	}
-
-	getChildren(): Thenable<apWelcomeItem[]> {
-		// Return both Clone Ardupilot and Validate Environment items
-		return Promise.resolve([
-			new cloneArdupilot('Clone Ardupilot', vscode.TreeItemCollapsibleState.None),
-			new validateEnvironment('Validate Environment', vscode.TreeItemCollapsibleState.None)
-		]);
 	}
 }

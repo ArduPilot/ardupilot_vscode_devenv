@@ -21,7 +21,7 @@ import * as vscode from 'vscode';
 import { APTaskProvider, APLaunchConfigurationProvider } from './taskProvider';
 import { apBuildConfig, apBuildConfigProvider } from './apBuildConfig';
 import { apLog } from './apLog';
-import { apWelcomeProvider } from './apWelcome';
+import { apWelcomeProvider } from './apWelcomeProvider';
 import { apConnectedDevices, ConnectedDeviceDecorationProvider } from './apConnectedDevices';
 
 let apTaskProvider: vscode.Disposable | undefined;
