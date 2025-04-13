@@ -16,8 +16,8 @@
 
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
-import * as os from 'os';
 import { apLog } from './apLog';
+import { ProgramUtils } from './apProgramUtils';
 
 // Device information interface
 export interface DeviceInfo {
@@ -192,20 +192,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	}
 
 	private checkIsWSL(): boolean {
-		// Check if running in WSL
-		const platform = os.platform();
-		if (platform !== 'linux') {
-			return false;
-		}
-
-		// Check for WSL in release info
-		try {
-			const releaseInfo = cp.execSync('cat /proc/version').toString();
-			return releaseInfo.toLowerCase().includes('microsoft') || releaseInfo.toLowerCase().includes('wsl');
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		} catch (error) {
-			return false;
-		}
+		return ProgramUtils.isWSL();
 	}
 
 	refresh(): void {
@@ -627,24 +614,25 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 
 		if (this.isWSL) {
 			// Use mavproxy.exe when in WSL
-			try {
-				// Check if mavproxy.exe can be executed
-				cp.execSync('powershell.exe -Command "Get-Command mavproxy.exe -ErrorAction SilentlyContinue"');
-				mavproxyCommand = `mavproxy.exe --master=${devicePath} --baudrate=${baudRate} --console`;
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
-			} catch (error) {
+			const mavproxyWin = await ProgramUtils.findProgram('mavproxy.exe', ['--version'], {
+				platformOverrides: { linux: 'powershell.exe -Command "Get-Command mavproxy.exe -ErrorAction SilentlyContinue"' }
+			});
+
+			if (!mavproxyWin.available) {
 				vscode.window.showErrorMessage('MAVProxy not found on Windows. Please install it on the Windows side when using WSL.');
 				return;
 			}
+
+			mavproxyCommand = `mavproxy.exe --master=${devicePath} --baudrate=${baudRate} --console`;
 		} else {
-			// Use mavproxy.py on native Linux
-			try {
-				cp.execSync('which mavproxy.py || echo "Not found"').toString().trim();
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
-			} catch (error) {
+			// Use mavproxy.py on native Linux or Windows
+			const mavproxy = await ProgramUtils.findProgram('mavproxy.py', ['--version']);
+
+			if (!mavproxy.available) {
 				vscode.window.showErrorMessage('MAVProxy not found. Please install it first.');
 				return;
 			}
+
 			mavproxyCommand = `mavproxy.py --master=${devicePath} --baudrate=${baudRate} --console`;
 		}
 

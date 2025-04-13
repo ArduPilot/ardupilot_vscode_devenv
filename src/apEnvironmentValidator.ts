@@ -22,6 +22,7 @@ import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import * as child_process from 'child_process';
 import { apWelcomeItem } from './apWelcomeItem';
+import { ProgramUtils } from './apProgramUtils';
 
 export class ValidateEnvironment extends apWelcomeItem {
 	static log = new apLog('validateEnvironment');
@@ -356,18 +357,17 @@ export class ValidateEnvironmentPanel {
 	}
 
 	private async _validateEnvironment(): Promise<void> {
-		const pythonCheck = this._checkTool('python', ['--version']);
-		const mavproxyCheck = this._checkTool('mavproxy.py', ['--version']);
-		const gccCheck = this._checkTool('arm-none-eabi-gcc', ['--version']);
-		const gdbCheck = this._checkTool('arm-none-eabi-gdb', ['--version']).catch(() => {
-			// If arm-none-eabi-gdb fails, try gdb-multiarch
-			return this._checkTool('gdb-multiarch', ['--version']);
+		const pythonCheck = ProgramUtils.findProgram('python', ['--version']);
+		const mavproxyCheck = ProgramUtils.findProgram('mavproxy.py', ['--version']);
+		const gccCheck = ProgramUtils.findProgram('arm-none-eabi-gcc', ['--version']);
+		const gdbCheck = ProgramUtils.findProgram('arm-none-eabi-gdb', ['--version'], {
+			alternativeCommands: ['gdb-multiarch']
 		});
 		const ccacheCheck = this._checkCCache();
 
 		// Check optional tools
-		const jlinkCheck = this._checkTool('JLinkGDBServerCLExe', ['--version']).catch(() => ({ available: false }));
-		const openocdCheck = this._checkTool('openocd', ['--version']).catch(() => ({ available: false }));
+		const jlinkCheck = ProgramUtils.findProgram('JLinkGDBServerCLExe', ['--version']).catch(() => ({ available: false }));
+		const openocdCheck = ProgramUtils.findProgram('openocd', ['--version']).catch(() => ({ available: false }));
 
 		const [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, jlinkResult, openocdResult] = await Promise.all([
 			pythonCheck.catch(error => ({ available: false, error })),
@@ -392,66 +392,6 @@ export class ValidateEnvironmentPanel {
 		this._generateSummary([pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult]);
 	}
 
-	private _checkTool(command: string, args: string[]): Promise<{ available: boolean, version?: string, path?: string }> {
-		return new Promise((resolve, reject) => {
-			try {
-				const process = child_process.spawn(command, args);
-				let output = '';
-				let errorOutput = '';
-
-				process.stdout.on('data', (data) => {
-					output += data.toString();
-				});
-
-				process.stderr.on('data', (data) => {
-					errorOutput += data.toString();
-				});
-
-				process.on('close', (code) => {
-					if (code === 0) {
-						// Tool exists, now find its path
-						child_process.exec(`which ${command}`, (error, stdout) => {
-							const path = error ? 'Unknown' : stdout.trim();
-
-							// Extract version from output
-							const versionOutput = output || errorOutput;
-							let version = 'Unknown';
-
-							// Special handling for JLinkGDBServerCLExe which has a different version format
-							if (command === 'JLinkGDBServerCLExe') {
-								// Example: "SEGGER J-Link GDB Server V7.94e Command Line Version"
-								const jlinkVersionMatch = versionOutput.match(/GDB Server V([\d.]+[a-z]?)/);
-								if (jlinkVersionMatch) {
-									version = jlinkVersionMatch[1];
-								}
-							} else {
-								// Standard version extraction for other tools
-								const versionMatch = versionOutput.match(/(\d+\.\d+\.\d+)/);
-								if (versionMatch) {
-									version = versionMatch[1];
-								}
-							}
-
-							resolve({
-								available: true,
-								version,
-								path
-							});
-						});
-					} else {
-						reject(new Error(`Tool exited with code ${code}`));
-					}
-				});
-
-				process.on('error', () => {
-					reject(new Error(`Failed to execute ${command}`));
-				});
-			} catch (error) {
-				reject(error);
-			}
-		});
-	}
-
 	private _reportToolStatus(tool: string, result: { available: boolean, version?: string, path?: string, info?: string }): void {
 		this._panel.webview.postMessage({
 			command: 'validationResult',
@@ -471,7 +411,7 @@ export class ValidateEnvironmentPanel {
 		return new Promise(async (resolve, reject) => {
 			try {
 				// First check if ccache is installed
-				const ccacheResult = await this._checkTool('ccache', ['-V']).catch(() => null);
+				const ccacheResult = await ProgramUtils.findProgram('ccache', ['-V']).catch(() => null);
 
 				if (!ccacheResult) {
 					reject(new Error('ccache is not installed'));
