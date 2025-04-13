@@ -49,7 +49,7 @@ export class ProgramUtils {
 	public static readonly TOOL_MAVPROXY = 'mavproxy';
 	public static readonly TOOL_CCACHE = 'ccache';
 	public static readonly TOOL_OPENOCD = 'openocd';
-	public static readonly TOOL_JLINK = 'jlink';
+	public static readonly TOOL_JLINK = 'JLinkGDBServerCL';
 	public static readonly TOOL_GCC = 'gcc';
 	public static readonly TOOL_GPP = 'g++';
 	public static readonly TOOL_GDB = 'gdb';
@@ -71,7 +71,8 @@ export class ProgramUtils {
 			alternativeCommands?: string[],
 			versionRegex?: RegExp,
 			platformOverrides?: { [platform: string]: string },
-			toolId?: string
+			toolId?: string,
+			ignoreRunError?: boolean
 		}
 	): Promise<ProgramInfo> {
 		try {
@@ -82,7 +83,7 @@ export class ProgramUtils {
 					this.log.log(`Using custom path for ${options.toolId}: ${customPath}`);
 
 					// Try using the custom path
-					const result = await this._tryExecuteCommand(customPath, args, options?.versionRegex);
+					const result = await this._tryExecuteCommand(customPath, args, options?.versionRegex, options?.ignoreRunError);
 					if (result) {
 						result.command = command; // Keep the original command name
 						result.path = customPath; // Use the custom path
@@ -100,7 +101,7 @@ export class ProgramUtils {
 			}
 
 			// Try to execute the command
-			const result = await this._tryExecuteCommand(command, args);
+			const result = await this._tryExecuteCommand(command, args, options?.versionRegex, options?.ignoreRunError);
 			if (result) {
 				result.command = command;
 				return result;
@@ -110,7 +111,7 @@ export class ProgramUtils {
 			if (options?.alternativeCommands && options.alternativeCommands.length > 0) {
 				for (const altCommand of options.alternativeCommands) {
 					this.log.log(`Command ${command} not found, trying alternative ${altCommand}`);
-					const altResult = await this._tryExecuteCommand(altCommand, args, options?.versionRegex);
+					const altResult = await this._tryExecuteCommand(altCommand, args, options?.versionRegex, options?.ignoreRunError);
 					if (altResult) {
 						altResult.command = altCommand;
 						return altResult;
@@ -176,7 +177,7 @@ export class ProgramUtils {
 	public static async findJLinkGDBServerCLExe(): Promise<ProgramInfo> {
 		// check for JLinkGDBServerCLExe by platform
 		const platform = os.platform();
-		if (platform === 'linux' || platform === 'darwin') {
+		if ((platform === 'linux' && !this.isWSL()) || platform === 'darwin') {
 			// Linux: check for JLinkGDBServerCLExe
 			return this.findProgram('JLinkGDBServerCLExe', ['--version'], {
 				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/,
@@ -185,14 +186,12 @@ export class ProgramUtils {
 				},
 				toolId: this.TOOL_JLINK
 			});
-		} else if (platform === 'win32') {
+		} else if (platform === 'win32' || this.isWSL()) {
 			// Windows: check for JLinkGDBServerCLExe.exe
-			return this.findProgram('JLinkGDBServerCLExe.exe', ['--version'], {
+			return this.findProgram('JLinkGDBServerCL.exe', ['-version', '-nogui'], {
 				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/,
-				platformOverrides: {
-					win32: 'JLinkGDBServerCLExe.exe'
-				},
-				toolId: this.TOOL_JLINK
+				toolId: this.TOOL_JLINK,
+				ignoreRunError: true
 			});
 		}
 		return { available: false };
@@ -295,7 +294,8 @@ export class ProgramUtils {
 	private static async _tryExecuteCommand(
 		command: string,
 		args: string[],
-		versionRegex?: RegExp
+		versionRegex?: RegExp,
+		ignoreRunError = false
 	): Promise<ProgramInfo | null> {
 		return new Promise<ProgramInfo | null>((resolve) => {
 			try {
@@ -312,7 +312,7 @@ export class ProgramUtils {
 				});
 
 				process.on('close', (code) => {
-					if (code === 0) {
+					if (code === 0 || ignoreRunError) {
 						// Tool exists, now find its path if it's not a custom path
 						// If command includes a path separator, it's likely a custom path
 						const isCustomPath = command.includes('/') || command.includes('\\');
@@ -322,8 +322,8 @@ export class ProgramUtils {
 						const versionOutput = output || errorOutput;
 						let version = 'Unknown';
 
-						// Special handling for JLinkGDBServerCLExe which has a different version format
-						if (command.includes('JLinkGDBServerCLExe')) {
+						// Special handling for JLinkGDBServerCL which has a different version format
+						if (command.includes('JLinkGDBServerCL')) {
 							// Example: "SEGGER J-Link GDB Server V7.94e Command Line Version"
 							const jlinkVersionMatch = versionOutput.match(/GDB Server V([\d.]+[a-z]?)/);
 							if (jlinkVersionMatch) {
