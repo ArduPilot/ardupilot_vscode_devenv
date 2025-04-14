@@ -156,9 +156,21 @@ export class APTaskProvider implements vscode.TaskProvider {
 		const featureOptions = definition.features && definition.features.length > 0 ?
 			APTaskProvider.updateFeaturesDat(target_dir, definition.features) : '';
 
+		// check if extract_features.py uses -nm or --nm by running with --help
+		const extractFeaturesHelp = cp.spawnSync('python3', [`${workspaceRoot.uri.fsPath}/Tools/scripts/extract_features.py`, '--help']);
+		let nmArg = '';
+		const extractFeaturesHelpOutput = extractFeaturesHelp.stdout.toString();
+		if (extractFeaturesHelpOutput.includes('--nm')) {
+			nmArg = '--nm';
+		} else if (extractFeaturesHelpOutput.includes('-nm')) {
+			nmArg = '-nm';
+		} else {
+			APTaskProvider.log.log('Error: extract_features.py does not support --nm or -nm');
+			return undefined;
+		}
 		// Conditionally add the extract_features.py script call based on enableFeatureConfig flag
 		const extractFeaturesCmd = definition.enableFeatureConfig === true ?
-			`&& python3 Tools/scripts/extract_features.py ${target_binary} --nm ${definition.nm} >> ${target_dir}/features.txt` :
+			`&& python3 Tools/scripts/extract_features.py ${target_binary} ${nmArg} ${definition.nm} > ${target_dir}/features.txt` :
 			'';
 
 		return new vscode.Task(
