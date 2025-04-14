@@ -35,6 +35,7 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
       
       - name: Update version to pre-release using odd minor version
+        id: update_version
         run: |
           # Get current version components
           CURRENT_VERSION=$(node -p "require('./package.json').version")
@@ -53,11 +54,18 @@ jobs:
             NEW_MINOR=$MINOR
           fi
           
-          # Create new version with odd minor number for pre-release
-          NEW_VERSION="$MAJOR.$NEW_MINOR.$PATCH"
+          # Use GitHub run number as patch version for pre-release
+          NEW_PATCH=$GITHUB_RUN_NUMBER
+          
+          # Create new version with odd minor number and run number as patch, plus git hash
+          NEW_VERSION="$MAJOR.$NEW_MINOR.$NEW_PATCH"
+          echo "Creating pre-release version: $NEW_VERSION"
           
           # Update package.json with new version
           npm version --no-git-tag-version $NEW_VERSION
+          
+          # Store the new version for later steps
+          echo "prerelease_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           
       - name: Install vsce
         run: npm install -g @vscode/vsce
