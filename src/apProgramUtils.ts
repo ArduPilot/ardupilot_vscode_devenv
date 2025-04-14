@@ -56,6 +56,7 @@ export class ProgramUtils {
 	public static readonly TOOL_ARM_GCC = 'arm-gcc';
 	public static readonly TOOL_ARM_GPP = 'arm-g++';
 	public static readonly TOOL_ARM_GDB = 'arm-gdb';
+	public static readonly TOOL_PYSERIAL = 'pyserial';
 
 	/**
 	 * Finds a program in the system path and returns information about it
@@ -282,6 +283,85 @@ export class ProgramUtils {
 			});
 		}
 		return { available: false };
+	}
+
+	public static async findPyserial(): Promise<ProgramInfo> {
+		try {
+			const pythonInfo = await this.findPython();
+			if (!pythonInfo.available) {
+				// If Python is not available, include the installation instructions
+				// but for Python first, then pyserial
+				const platform = os.platform();
+				let installInstructions = '';
+
+				// Python install instructions based on platform
+				if (platform === 'win32' || this.isWSL()) {
+					installInstructions = 'Please install Python first, then run: pip.exe install pyserial';
+				} else {
+					installInstructions = 'Please install Python first, then run: pip install pyserial';
+				}
+
+				return {
+					available: false,
+					info: installInstructions
+				};
+			}
+
+			// Use Python to check for pyserial module
+			const pythonCmd = pythonInfo.path || (os.platform() === 'win32' ? 'python.exe' : 'python3');
+			const cmd = `${pythonCmd} -c "import serial; print('Serial module version:', serial.__version__)"`;
+
+			return new Promise<ProgramInfo>((resolve) => {
+				child_process.exec(cmd, (error, stdout, stderr) => {
+					if (error) {
+						this.log.log(`Pyserial check failed: ${error}`);
+
+						// Provide platform-specific installation instructions
+						const platform = os.platform();
+						let installInstructions = '';
+
+						if (platform === 'win32' || this.isWSL()) {
+							installInstructions = 'To install pyserial, run: pip.exe install pyserial';
+						} else {
+							installInstructions = 'To install pyserial, run: pip install pyserial';
+						}
+
+						resolve({
+							available: false,
+							info: installInstructions
+						});
+						return;
+					}
+
+					const versionMatch = stdout.match(/Serial module version: ([\d.]+)/);
+					const version = versionMatch ? versionMatch[1] : 'Unknown';
+
+					resolve({
+						available: true,
+						version,
+						path: pythonInfo.path,
+						info: 'Detected in Python installation'
+					});
+				});
+			});
+		} catch (error) {
+			this.log.log(`Error finding pyserial: ${error}`);
+
+			// Provide platform-specific installation instructions on error as well
+			const platform = os.platform();
+			let installInstructions = '';
+
+			if (platform === 'win32' || this.isWSL()) {
+				installInstructions = 'To install pyserial, run: pip.exe install pyserial';
+			} else {
+				installInstructions = 'To install pyserial, run: pip install pyserial';
+			}
+
+			return {
+				available: false,
+				info: installInstructions
+			};
+		}
 	}
 
 	/**
