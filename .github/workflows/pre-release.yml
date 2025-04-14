@@ -34,10 +34,30 @@ jobs:
         id: get_version
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
       
-      - name: Update version to pre-release
+      - name: Update version to pre-release using odd minor version
         run: |
-          # Update package.json with pre-release version
-          npm version --no-git-tag-version $(node -p "require('./package.json').version")-pre.${{ github.run_number }}
+          # Get current version components
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          
+          # Check if minor version is even (release) or odd (pre-release)
+          is_even=$((MINOR % 2 == 0))
+          
+          if [ "$is_even" = "1" ]; then
+            # If current version has even minor, increment to next odd number for pre-release
+            NEW_MINOR=$((MINOR + 1))
+          else
+            # If already odd, keep it (we're already in a pre-release version scheme)
+            NEW_MINOR=$MINOR
+          fi
+          
+          # Create new version with odd minor number for pre-release
+          NEW_VERSION="$MAJOR.$NEW_MINOR.$PATCH"
+          
+          # Update package.json with new version
+          npm version --no-git-tag-version $NEW_VERSION
           
       - name: Install vsce
         run: npm install -g @vscode/vsce
