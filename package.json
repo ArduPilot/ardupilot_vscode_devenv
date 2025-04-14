@@ -3,7 +3,7 @@
   "displayName": "ardupilot-devenv",
   "description": "VS Code Developer environment creator for ardupilot project",
   "publisher": "ardupilot-org",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.52.0"
   },
