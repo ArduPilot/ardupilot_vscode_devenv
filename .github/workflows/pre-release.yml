@@ -1,0 +1,48 @@
+name: Pre-release to Marketplace on Push to Master
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  pre-release:
+    name: Create Marketplace Pre-release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd webview-ui && npm ci && cd ..
+      
+      - name: Build extension
+        run: npm run compile
+      
+      - name: Get version from package.json
+        id: get_version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+      
+      - name: Update version to pre-release
+        run: |
+          # Update package.json with pre-release version
+          npm version --no-git-tag-version $(node -p "require('./package.json').version")-pre.${{ github.run_number }}
+          
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+        
+      - name: Publish to Marketplace as pre-release
+        run: vsce publish --pre-release
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
