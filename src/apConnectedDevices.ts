@@ -620,7 +620,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			return;
 		}
 
-		mavproxyCommand = `${mavproxy.path} --master=${devicePath} --baudrate=${baudRate} --console`;
+		mavproxyCommand = `"${mavproxy.path}" --master=${devicePath} --baudrate=${baudRate} --console`;
 
 		// Run MAVProxy in a terminal
 		const terminal = vscode.window.createTerminal('MAVProxy Connection');
