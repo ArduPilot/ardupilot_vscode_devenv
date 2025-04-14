@@ -143,7 +143,59 @@
 
 	$effect(() => {
 		if (mainCheckbox) {
-			mainCheckbox.addEventListener("change", () => {});
+			mainCheckbox.addEventListener("change", () => {
+				// If mainCheckbox is unchecked, uncheck all child features
+				if (!mainCheckbox.checked) {
+					// Update the selected array to remove all features and add negated versions
+					const updatedSelected = [...selected];
+					for (const feature of features) {
+						const featureName = feature.define;
+						// Remove the feature if it exists in the selected array
+						const featureIndex = updatedSelected.indexOf(featureName);
+						if (featureIndex !== -1) {
+							updatedSelected.splice(featureIndex, 1);
+						}
+						
+						// Add negated version if it's not already there
+						if (!updatedSelected.includes(`!${featureName}`)) {
+							updatedSelected.push(`!${featureName}`);
+						}
+						
+						// Update the checkbox UI if it exists
+						if (checkbox[featureName]) {
+							checkbox[featureName].checked = false;
+						}
+					}
+					selected = updatedSelected;
+				} else {
+					// If mainCheckbox is checked, check all child features that aren't disabled
+					const updatedSelected = [...selected];
+					for (const feature of features) {
+						const featureName = feature.define;
+						// Skip features disabled by dependencies
+						if (disabledByDependency[featureName]) {
+							continue;
+						}
+						
+						// Remove negated version if it exists
+						const negatedIndex = updatedSelected.indexOf(`!${featureName}`);
+						if (negatedIndex !== -1) {
+							updatedSelected.splice(negatedIndex, 1);
+						}
+						
+						// Add the feature if it's not already there
+						if (!updatedSelected.includes(featureName)) {
+							updatedSelected.push(featureName);
+						}
+						
+						// Update the checkbox UI if it exists
+						if (checkbox[featureName]) {
+							checkbox[featureName].checked = true;
+						}
+					}
+					selected = updatedSelected;
+				}
+			});
 			updateMainCheckbox(mainCheckbox);
 		}
 	});
