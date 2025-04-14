@@ -158,7 +158,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 
 		// Conditionally add the extract_features.py script call based on enableFeatureConfig flag
 		const extractFeaturesCmd = definition.enableFeatureConfig === true ?
-			`&& python3 Tools/scripts/extract_features.py ${target_binary} -nm ${definition.nm} >> ${target_dir}/features.txt` :
+			`&& python3 Tools/scripts/extract_features.py ${target_binary} --nm ${definition.nm} >> ${target_dir}/features.txt` :
 			'';
 
 		return new vscode.Task(
