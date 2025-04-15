@@ -78,8 +78,8 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 		};
 
-		// Add simVehicleCommand for SITL builds
-		if (board.toLowerCase() === 'sitl' && simVehicleCommand) {
+		// Add simVehicleCommand for SITL builds (case insensitive check)
+		if (board.toLowerCase().startsWith('sitl') && simVehicleCommand) {
 			taskDef.simVehicleCommand = simVehicleCommand;
 		}
 
@@ -89,8 +89,37 @@ export class APTaskProvider implements vscode.TaskProvider {
 		// Get current tasks array or initialize empty array if it doesn't exist
 		const tasks = tasksConfig.get('tasks') as Array<ArdupilotTaskDefinition> || [];
 
-		// Check if task already exists for this board
-		const existingTaskIndex = tasks.findIndex((task: ArdupilotTaskDefinition) => task.configure === board);
+		// Check if task already exists for this board-target combination
+		const existingTaskIndex = tasks.findIndex((task: ArdupilotTaskDefinition) => 
+			task.configure === board && task.target === target
+		);
+
+		// If task exists and is a SITL build, check for existing simVehicleCommand
+		if (existingTaskIndex !== -1 && board.toLowerCase().startsWith('sitl')) {
+			// Check for existing simVehicleCommand in launch.json
+			const launchPath = path.join(workspaceRoot, '.vscode', 'launch.json');
+			if (fs.existsSync(launchPath)) {
+				try {
+					const launchJson = JSON.parse(fs.readFileSync(launchPath, 'utf8'));
+					const launchConfigName = `Launch ${board} - ${target}`;
+					
+					const matchingLaunchConfig = launchJson.configurations?.find((config: any) => 
+						config.type === 'apLaunch' &&
+						config.name === launchConfigName
+					);
+
+					// If we found a matching launch config with simVehicleCommand and no new one was provided
+					if (matchingLaunchConfig?.simVehicleCommand && !simVehicleCommand) {
+						taskDef.simVehicleCommand = matchingLaunchConfig.simVehicleCommand;
+						// remove --waf-configure-arg="<args>" from simVehicleCommand
+						taskDef.simVehicleCommand = taskDef.simVehicleCommand?.replace(/--waf-configure-arg="[^"]*" /g, '');
+						APTaskProvider.log.log(`Loaded existing simVehicleCommand: ${taskDef.simVehicleCommand}`);
+					}
+				} catch (error) {
+					APTaskProvider.log.log(`Error reading launch.json: ${error}`);
+				}
+			}
+		}
 
 		const task = taskDef ? this.createTask(taskDef) : undefined;
 		if (!task) {

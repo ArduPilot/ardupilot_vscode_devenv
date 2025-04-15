@@ -188,6 +188,11 @@ export class apBuildConfigPanel {
 				taskDefinition.features,
 				taskDefinition.enableFeatureConfig,
 			);
+
+			if (currentTaskDef?.definition.simVehicleCommand) {
+				currentTaskDef.definition.simVehicleCommand = message.simVehicleCommand as string || '';
+			}
+
 			if (taskDefinition.configure.toLowerCase().startsWith('sitl')) {
 				// add configure options to waf-configure-arg to simVehicleCommand
 				message.simVehicleCommand = `--waf-configure-arg="${taskDefinition.configureOptions}" ${message.simVehicleCommand}`;
@@ -386,11 +391,9 @@ export class apBuildConfigPanel {
 		if (existingConfigIndex >= 0) {
 			// Update the existing configuration
 			launchJson.configurations[existingConfigIndex] = newConfig;
-			apBuildConfigPanel.log(`Updated existing launch configuration: ${newConfig.name}`);
-			return;
+		} else {
+			launchJson.configurations.push(newConfig);
 		}
-
-		launchJson.configurations.push(newConfig);
 
 		try {
 			fs.writeFileSync(launchPath, JSON.stringify(launchJson, null, 2), 'utf8');
