@@ -18,12 +18,13 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 
-import { APTaskProvider, APLaunchConfigurationProvider } from './taskProvider';
+import { APTaskProvider } from './taskProvider';
 import { apBuildConfig, apBuildConfigProvider } from './apBuildConfig';
 import { apLog } from './apLog';
 import { apWelcomeProvider } from './apWelcomeProvider';
 import { apConnectedDevices, ConnectedDeviceDecorationProvider } from './apConnectedDevices';
 import { ToolsConfig } from './apToolsConfig';
+import { APLaunchConfigurationProvider } from './apLaunch';
 
 let apTaskProvider: vscode.Disposable | undefined;
 let connectedDevicesProvider: apConnectedDevices | undefined;
