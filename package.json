@@ -266,6 +266,7 @@
   },
   "dependencies": {
     "@vscode-elements/elements": "^1.7.1",
+    "fast-glob": "^3.3.3",
     "simple-git": "^3.27.0"
   },
   "extensionDependencies": [

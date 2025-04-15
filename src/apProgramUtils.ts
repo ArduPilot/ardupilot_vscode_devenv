@@ -16,6 +16,7 @@
 
 import * as child_process from 'child_process';
 import * as os from 'os';
+import * as glob from 'fast-glob';
 import { apLog } from './apLog';
 import { ToolsConfig } from './apToolsConfig';
 import * as fs from 'fs';
@@ -58,6 +59,94 @@ export class ProgramUtils {
 	public static readonly TOOL_ARM_GDB = 'arm-gdb';
 	public static readonly TOOL_PYSERIAL = 'pyserial';
 
+	// usual list of paths for the tools per platform per tool id
+	public static readonly TOOL_PATHS: {
+		[key: string]: {
+			linux: string[];
+			win32: string[];
+			darwin: string[];
+		}
+	} = {
+			[ProgramUtils.TOOL_PYTHON]:
+				{ linux: ['python.exe', 'python3', 'python'], win32: ['python.exe', 'python'], darwin: ['python3', 'python'] },
+			[ProgramUtils.TOOL_MAVPROXY]:
+				{ linux: ['mavproxy.exe','mavproxy.py'], win32: ['mavproxy.exe'], darwin: ['mavproxy.py'] },
+			[ProgramUtils.TOOL_CCACHE]:
+				{ linux: ['ccache'], win32: ['ccache.exe'], darwin: ['ccache'] },
+			[ProgramUtils.TOOL_OPENOCD]:
+				{ linux: ['openocd'], win32: ['openocd.exe'], darwin: ['openocd'] },
+			[ProgramUtils.TOOL_JLINK]:
+				{ linux: ['/mnt/c/Program Files/SEGGER/JLink/JLinkGDBServerCLExe', //wsl
+					'/mnt/c/Program Files (x86)/SEGGER/JLink/JLinkGDBServerCLExe', //wsl
+					'/opt/SEGGER/JLink*/JLinkGDBServerCLExe'
+				], win32: ['JLinkGDBServerCL.exe',
+					'C:\\Program Files\\SEGGER\\JLink\\JLinkGDBServerCL.exe',
+					'C:\\Program Files (x86)\\SEGGER\\JLink\\JLinkGDBServerCL.exe'
+				], darwin: ['JLinkGDBServerCLExe',
+					'/Applications/SEGGER/JLink/JLinkGDBServerCLExe'
+				]
+				},
+			[ProgramUtils.TOOL_GCC]:
+				{ linux: ['gcc'], win32: ['gcc.exe'], darwin: ['gcc'] },
+			[ProgramUtils.TOOL_GPP]:
+				{ linux: ['g++'], win32: ['g++.exe'], darwin: ['g++'] },
+			[ProgramUtils.TOOL_GDB]:
+				{ linux: ['gdb'], win32: ['gdb.exe'], darwin: ['gdb'] },
+			[ProgramUtils.TOOL_ARM_GCC]:
+				{ linux: ['arm-none-eabi-gcc'], win32: ['arm-none-eabi-gcc.exe'], darwin: ['arm-none-eabi-gcc'] },
+			[ProgramUtils.TOOL_ARM_GPP]:
+				{ linux: ['arm-none-eabi-g++'], win32: ['arm-none-eabi-g++.exe'], darwin: ['arm-none-eabi-g++'] },
+			[ProgramUtils.TOOL_ARM_GDB]:
+				{ linux: ['gdb-multiarch', 'arm-none-eabi-gdb'], win32: ['arm-none-eabi-gdb.exe'], darwin: ['arm-none-eabi-gdb'] },
+		};
+
+	// find the tool path for the tool id
+	public static findToolPath(toolId: string): string | undefined {
+		const toolPaths = ProgramUtils.TOOL_PATHS[toolId];
+		if (!toolPaths) {
+			return undefined;
+		}
+		const platform = os.platform() as 'linux' | 'win32' | 'darwin';
+		if (!toolPaths[platform]) {
+			return undefined;
+		}
+		for (const toolPath of toolPaths[platform]) {
+			if (toolPath) {
+				// Check if the path is a wildcard
+				if (toolPath.includes('*')) {
+					// Expand the wildcard using glob
+					const expandedPaths = glob.sync(toolPath);
+					if (expandedPaths.length > 0) {
+						return expandedPaths[0]; // Return the first matching path
+					}
+				} else if (toolPath.includes('?')) {
+					// Expand the wildcard using glob
+					const expandedPaths = glob.sync(toolPath);
+					if (expandedPaths.length > 0) {
+						return expandedPaths[0]; // Return the first matching path
+					}
+				} else if (fs.existsSync(toolPath)) {
+					// Check if the path exists
+					return toolPath;
+				} else {
+					// use which or where to find the tool
+					const command = platform === 'win32' ? 'where' : 'which';
+					try {
+						const result = child_process.execSync(`${command} ${toolPath}`).toString().trim();
+						if (result) {
+							return result; // Return the first matching path
+						}
+					}
+					// eslint-disable-next-line @typescript-eslint/no-unused-vars
+					catch (error) {
+						// Ignore errors, continue searching
+					}
+				}
+			}
+		}
+		return undefined;
+	}
+
 	/**
 	 * Finds a program in the system path and returns information about it
 	 * @param command The command to check
@@ -66,64 +155,46 @@ export class ProgramUtils {
 	 * @returns Promise resolving to program information
 	 */
 	private static async findProgram(
-		command: string,
+		toolId: string,
 		args: string[] = ['--version'],
 		options?: {
-			alternativeCommands?: string[],
 			versionRegex?: RegExp,
-			platformOverrides?: { [platform: string]: string },
-			toolId?: string,
 			ignoreRunError?: boolean
 		}
 	): Promise<ProgramInfo> {
 		try {
 			// Check if there's a custom path configured for this tool
-			if (options?.toolId) {
-				const customPath = ToolsConfig.getToolPath(options.toolId);
-				if (customPath && fs.existsSync(customPath)) {
-					this.log.log(`Using custom path for ${options.toolId}: ${customPath}`);
+			const customPath = ToolsConfig.getToolPath(toolId);
+			if (customPath && fs.existsSync(customPath)) {
+				this.log.log(`Using custom path for ${toolId}: ${customPath}`);
 
-					// Try using the custom path
-					const result = await this._tryExecuteCommand(customPath, args, options?.versionRegex, options?.ignoreRunError);
-					if (result) {
-						result.command = command; // Keep the original command name
-						result.path = customPath; // Use the custom path
-						return result;
-					}
-
-					this.log.log(`Custom path for ${options.toolId} is invalid, falling back to default search`);
+				// Try using the custom path
+				const result = await this._tryExecuteCommand(customPath, args, options?.versionRegex, options?.ignoreRunError);
+				if (result) {
+					result.command = customPath; // Keep the original command name
+					result.path = customPath; // Use the custom path
+					return result;
 				}
-			}
 
-			// Apply platform-specific command overrides if provided
-			const platform = os.platform();
-			if (options?.platformOverrides && options.platformOverrides[platform]) {
-				command = options.platformOverrides[platform];
+				this.log.log(`Custom path for ${toolId} is invalid, falling back to default search`);
 			}
 
 			// Try to execute the command
+			const command = this.findToolPath(toolId);
+			if (!command) {
+				this.log.log(`Command ${toolId} not found in system path`);
+				return { available: false };
+			}
 			const result = await this._tryExecuteCommand(command, args, options?.versionRegex, options?.ignoreRunError);
 			if (result) {
 				result.command = command;
 				return result;
 			}
 
-			// If command fails and alternatives are provided, try those
-			if (options?.alternativeCommands && options.alternativeCommands.length > 0) {
-				for (const altCommand of options.alternativeCommands) {
-					this.log.log(`Command ${command} not found, trying alternative ${altCommand}`);
-					const altResult = await this._tryExecuteCommand(altCommand, args, options?.versionRegex, options?.ignoreRunError);
-					if (altResult) {
-						altResult.command = altCommand;
-						return altResult;
-					}
-				}
-			}
-
 			// If we get here, all attempts failed
 			return { available: false };
 		} catch (error) {
-			this.log.log(`Error finding program ${command}: ${error}`);
+			this.log.log(`Error finding program ${toolId}: ${error}`);
 			return { available: false };
 		}
 	}
@@ -133,10 +204,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'win32' || this.isWSL()) {
 			// Windows: check for mavproxy.bat
-			return this.findProgram('mavproxy.exe', ['--version'], { toolId: this.TOOL_MAVPROXY });
+			return this.findProgram(this.TOOL_MAVPROXY, ['--version']);
 		} else {
 			// Linux: check for mavproxy
-			return this.findProgram('mavproxy.py', ['--version'], { toolId: this.TOOL_MAVPROXY });
+			return this.findProgram(this.TOOL_MAVPROXY, ['--version']);
 		}
 	}
 
@@ -145,10 +216,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'win32' || this.isWSL()) {
 			// Windows: check for python
-			return this.findProgram('python.exe', ['--version'], { toolId: this.TOOL_PYTHON });
+			return this.findProgram(this.TOOL_PYTHON, ['--version']);
 		} else {
 			// Linux: check for python3
-			return this.findProgram('python3', ['--version'], { toolId: this.TOOL_PYTHON });
+			return this.findProgram(this.TOOL_PYTHON, ['--version']);
 		}
 	}
 
@@ -157,7 +228,7 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for ccache
-			return this.findProgram('ccache', ['-V'], { toolId: this.TOOL_CCACHE });
+			return this.findProgram(this.TOOL_CCACHE, ['-V']);
 		}
 		return { available: false };
 	}
@@ -167,10 +238,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for openocd
-			return this.findProgram('openocd', ['--version'], { toolId: this.TOOL_OPENOCD });
+			return this.findProgram(this.TOOL_OPENOCD, ['--version']);
 		} else if (platform === 'win32') {
 			// Windows: check for openocd.exe
-			return this.findProgram('openocd.exe', ['--version'], { toolId: this.TOOL_OPENOCD });
+			return this.findProgram(this.TOOL_OPENOCD, ['--version']);
 		}
 		return { available: false };
 	}
@@ -180,18 +251,13 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if ((platform === 'linux' && !this.isWSL()) || platform === 'darwin') {
 			// Linux: check for JLinkGDBServerCLExe
-			return this.findProgram('JLinkGDBServerCLExe', ['--version'], {
-				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/,
-				platformOverrides: {
-					darwin: 'JLinkGDBServerCLExe'
-				},
-				toolId: this.TOOL_JLINK
+			return this.findProgram(this.TOOL_JLINK, ['--version'], {
+				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/
 			});
 		} else if (platform === 'win32' || this.isWSL()) {
 			// Windows: check for JLinkGDBServerCLExe.exe
-			return this.findProgram('JLinkGDBServerCL.exe', ['-version', '-nogui'], {
+			return this.findProgram(this.TOOL_JLINK, ['-version', '-nogui'], {
 				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/,
-				toolId: this.TOOL_JLINK,
 				ignoreRunError: true
 			});
 		}
@@ -203,10 +269,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for gcc
-			return this.findProgram('gcc', ['--version'], { toolId: this.TOOL_GCC });
+			return this.findProgram(this.TOOL_GCC, ['--version']);
 		} else if (platform === 'win32') {
 			// Windows: check for gcc.exe
-			return this.findProgram('gcc.exe', ['--version'], { toolId: this.TOOL_GCC });
+			return this.findProgram(this.TOOL_GCC, ['--version']);
 		}
 		return { available: false };
 	}
@@ -216,10 +282,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for g++
-			return this.findProgram('g++', ['--version'], { toolId: this.TOOL_GPP });
+			return this.findProgram(this.TOOL_GPP, ['--version']);
 		} else if (platform === 'win32') {
 			// Windows: check for g++.exe
-			return this.findProgram('g++.exe', ['--version'], { toolId: this.TOOL_GPP });
+			return this.findProgram(this.TOOL_GPP, ['--version']);
 		}
 		return { available: false };
 	}
@@ -229,10 +295,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for gdb
-			return this.findProgram('gdb', ['--version'], { toolId: this.TOOL_GDB });
+			return this.findProgram(this.TOOL_GDB, ['--version']);
 		} else if (platform === 'win32') {
 			// Windows: check for gdb.exe
-			return this.findProgram('gdb.exe', ['--version'], { toolId: this.TOOL_GDB });
+			return this.findProgram(this.TOOL_GDB, ['--version']);
 		}
 		return { available: false };
 	}
@@ -243,10 +309,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for arm-none-eabi-gcc
-			return this.findProgram('arm-none-eabi-gcc', ['--version'], { toolId: this.TOOL_ARM_GCC });
+			return this.findProgram(this.TOOL_ARM_GCC, ['--version']);
 		} else if (platform === 'win32') {
 			// Windows: check for arm-none-eabi-gcc.exe
-			return this.findProgram('arm-none-eabi-gcc.exe', ['--version'], { toolId: this.TOOL_ARM_GCC });
+			return this.findProgram(this.TOOL_ARM_GCC, ['--version']);
 		}
 		return { available: false };
 	}
@@ -257,10 +323,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for arm-none-eabi-g++
-			return this.findProgram('arm-none-eabi-g++', ['--version'], { toolId: this.TOOL_ARM_GPP });
+			return this.findProgram(this.TOOL_ARM_GPP, ['--version']);
 		} else if (platform === 'win32') {
 			// Windows: check for arm-none-eabi-g++.exe
-			return this.findProgram('arm-none-eabi-g++.exe', ['--version'], { toolId: this.TOOL_ARM_GPP });
+			return this.findProgram(this.TOOL_ARM_GPP, ['--version']);
 		}
 		return { available: false };
 	}
@@ -271,16 +337,10 @@ export class ProgramUtils {
 		const platform = os.platform();
 		if (platform === 'linux' || platform === 'darwin') {
 			// Linux: check for arm-none-eabi-gdb
-			return this.findProgram('arm-none-eabi-gdb', ['--version'], {
-				alternativeCommands: ['gdb-multiarch'],
-				toolId: this.TOOL_ARM_GDB
-			});
+			return this.findProgram(this.TOOL_ARM_GDB, ['--version']);
 		} else if (platform === 'win32') {
 			// Windows: check for arm-none-eabi-gdb.exe
-			return this.findProgram('arm-none-eabi-gdb.exe', ['--version'], {
-				alternativeCommands: ['gdb-multiarch.exe'],
-				toolId: this.TOOL_ARM_GDB
-			});
+			return this.findProgram(this.TOOL_ARM_GDB, ['--version']);
 		}
 		return { available: false };
 	}
@@ -312,7 +372,7 @@ export class ProgramUtils {
 			const cmd = `${pythonCmd} -c "import serial; print('Serial module version:', serial.__version__)"`;
 
 			return new Promise<ProgramInfo>((resolve) => {
-				child_process.exec(cmd, (error, stdout, stderr) => {
+				child_process.exec(cmd, (error, stdout) => {
 					if (error) {
 						this.log.log(`Pyserial check failed: ${error}`);
 
