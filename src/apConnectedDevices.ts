@@ -153,7 +153,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 
 	private log = new apLog('apConnectedDevices');
 	private refreshTimer: NodeJS.Timeout | undefined;
-	private isWSL: boolean = false;
+	private isWSL = false;
 	private activeConnections: Map<string, { process: cp.ChildProcess | null, terminal: vscode.Terminal | null }> = new Map();
 
 	constructor() {
@@ -343,7 +343,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 				// Parse lsusb output
 				const devices: DeviceInfo[] = [];
 				const lines = stdout.split('\n');
-
+				const findPromises: Promise<void>[] = [];
 				for (let i = 0; i < lines.length; i++) {
 					if (!lines[i].trim()) continue;
 
@@ -353,38 +353,51 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 						const [, vendorId, productId, description] = match;
 
 						// Also get serial devices
-						this.findSerialDeviceForUsbDevice(vendorId, productId).then(serialPath => {
-							if (serialPath) {
-								devices.push({
-									path: serialPath || 'Unknown',
-									vendorId,
-									productId,
-									manufacturer: description || 'Unknown',
-									// Check if this is likely an ArduPilot board
-									isArduPilot: this.isArduPilotDevice(vendorId, productId, description)
-								});
+						findPromises.push(this.findSerialDeviceForUsbDevice(vendorId, productId).then(serialPaths => {
+							if (!serialPaths.length) {
+								return;
 							}
-						});
+							// there can be multiple serial paths for a single USB device with different instance numbers
+							for (const serialPath of serialPaths) {
+								if (serialPath) {
+									devices.push({
+										path: serialPath || 'Unknown',
+										vendorId,
+										productId,
+										manufacturer: description || 'Unknown',
+										// Check if this is likely an ArduPilot board
+										isArduPilot: this.isArduPilotDevice(vendorId, productId, description)
+									});
+								}
+							}
+						}));
 					}
 				}
-
-				resolve(devices);
+				Promise.all(findPromises).then(() => {
+					resolve(devices);
+				}).catch(err => {
+					reject(new Error(`Error finding serial devices: ${err.message}`));
+				}
+				);
 			});
 		});
 	}
 
 	private async getWindowsDevices(): Promise<DeviceInfo[]> {
 		// On Windows, use PowerShell to get device information
-		return new Promise((resolve, reject) => {
+		return new Promise((resolve) => {
+			// Execute PowerShell from WSL using powershell.exe
 			const psCommand = 'Get-PnpDevice -Class Ports | Where-Object { $_.Status -eq "OK" } | Format-List';
+			const devices: DeviceInfo[] = [];
 
-			cp.exec(`powershell.exe -Command "${psCommand}"`, (error, stdout) => {
+			cp.exec(`powershell.exe -Command '${psCommand}'`, (error, stdout) => {
 				if (error) {
-					reject(new Error(`Error executing PowerShell: ${error.message}`));
+					this.log.log(`Error executing PowerShell from WSL: ${error.message}`);
+					// Return an empty array rather than rejecting
+					resolve(devices);
 					return;
 				}
 
-				const devices: DeviceInfo[] = [];
 				const sections = stdout.split('\r\n\r\n');
 
 				for (const section of sections) {
@@ -393,28 +406,30 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 					// Parse the device info from PowerShell output
 					const deviceIdMatch = section.match(/DeviceID\s*:\s*(.*)/);
 					const friendlyNameMatch = section.match(/FriendlyName\s*:\s*(.*)/);
-
+					const manufacturerNameMatch = section.match(/Manufacturer\s*:\s*(.*)/);
 					if (deviceIdMatch && friendlyNameMatch) {
 						const deviceId = deviceIdMatch[1];
 						const friendlyName = friendlyNameMatch[1];
+						const manufacturerName = manufacturerNameMatch ? manufacturerNameMatch[1] : 'Unknown';
 
 						// Try to extract VID/PID from the DeviceID
 						const vidPidMatch = deviceId.match(/VID_([0-9A-F]{4})&PID_([0-9A-F]{4})/i);
 
 						if (vidPidMatch) {
 							const [, vendorId, productId] = vidPidMatch;
+
 							const comMatch = friendlyName.match(/\(COM(\d+)\)/);
 							devices.push({
 								path: comMatch && comMatch[1] ? `COM${comMatch[1]}` : friendlyName,
 								vendorId,
 								productId,
-								product: friendlyName,
+								product: `${friendlyName} (Windows)`,
+								manufacturer: manufacturerName,
 								isArduPilot: this.isArduPilotDevice(vendorId, productId, friendlyName)
 							});
 						}
 					}
 				}
-
 				resolve(devices);
 			});
 		});
@@ -431,101 +446,29 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			devices.push(...linuxDevices);
 			// Otherwise, try to use PowerShell from WSL to access Windows devices
 			this.log.log('No devices found directly in WSL, trying Windows approach...');
-
-			return new Promise((resolve) => {
-				// Execute PowerShell from WSL using powershell.exe
-				const psCommand = 'Get-PnpDevice -Class Ports | Where-Object { $_.Status -eq "OK" } | Format-List';
-
-				cp.exec(`powershell.exe -Command '${psCommand}'`, (error, stdout) => {
-					if (error) {
-						this.log.log(`Error executing PowerShell from WSL: ${error.message}`);
-						// Return an empty array rather than rejecting
-						resolve(devices);
-						return;
-					}
-
-					const sections = stdout.split('\r\n\r\n');
-
-					for (const section of sections) {
-						if (!section.trim()) continue;
-
-						// Parse the device info from PowerShell output
-						const deviceIdMatch = section.match(/DeviceID\s*:\s*(.*)/);
-						const friendlyNameMatch = section.match(/FriendlyName\s*:\s*(.*)/);
-						const manufacturerNameMatch = section.match(/Manufacturer\s*:\s*(.*)/);
-						if (deviceIdMatch && friendlyNameMatch) {
-							const deviceId = deviceIdMatch[1];
-							const friendlyName = friendlyNameMatch[1];
-							const manufacturerName = manufacturerNameMatch ? manufacturerNameMatch[1] : 'Unknown';
-
-							// Try to extract VID/PID from the DeviceID
-							const vidPidMatch = deviceId.match(/VID_([0-9A-F]{4})&PID_([0-9A-F]{4})/i);
-
-							if (vidPidMatch) {
-								const [, vendorId, productId] = vidPidMatch;
-
-								const comMatch = friendlyName.match(/\(COM(\d+)\)/);
-								devices.push({
-									path: comMatch && comMatch[1] ? `COM${comMatch[1]}` : friendlyName,
-									vendorId,
-									productId,
-									product: `${friendlyName} (Windows)`,
-									manufacturer: manufacturerName,
-									isArduPilot: this.isArduPilotDevice(vendorId, productId, friendlyName)
-								});
-							}
-						}
-					}
-					resolve(devices);
-				});
-			});
-
+			devices.push(...await this.getWindowsDevices());
+			return devices;
 		} catch (error) {
 			this.log.log(`Error in WSL device detection: ${error}`);
 			return [];
 		}
 	}
 
-	private async findSerialDeviceForUsbDevice(vendorId: string, productId: string): Promise<string | null> {
+	private async findSerialDeviceForUsbDevice(vendorId: string, productId: string): Promise<string[]> {
 		return new Promise((resolve) => {
-			// Look for serial device files
-			cp.exec('ls -l /dev/tty* | grep -i serial', (error) => {
-				if (error) {
-					// This might error if there are no serial devices, which is fine
-					resolve(null);
-					return;
-				}
-
-				// Check if we can match device by VID/PID
-				cp.exec(`udevadm info --name=/dev/ttyACM* --attribute-walk 2>/dev/null | grep -i "ATTRS{idVendor}=="${vendorId}"" -A10 | grep -i "ATTRS{idProduct}=="${productId}""`, (error, stdout) => {
-					if (error || !stdout.trim()) {
-						// Try ttyUSB
-						cp.exec(`udevadm info --name=/dev/ttyUSB* --attribute-walk 2>/dev/null | grep -i "ATTRS{idVendor}=="${vendorId}"" -A10 | grep -i "ATTRS{idProduct}=="${productId}""`, (error, stdout) => {
-							if (error || !stdout.trim()) {
-								resolve(null);
-								return;
-							}
-
-							// Find the device name
-							cp.exec('find /dev -name "ttyUSB*" | head -1', (error, stdout) => {
-								if (error || !stdout.trim()) {
-									resolve(null);
-								} else {
-									resolve(stdout.trim());
-								}
-							});
-						});
-					} else {
-						// Find the device name
-						cp.exec('find /dev -name "ttyACM*" | head -1', (error, stdout) => {
-							if (error || !stdout.trim()) {
-								resolve(null);
-							} else {
-								resolve(stdout.trim());
-							}
-						});
+			// look through /dev/ttyUSB* and /dev/ttyACM*
+			cp.exec('ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null', (error, stdout) => {
+				const devices: string[] = [];
+				const raw_device_paths = stdout.split('\n').filter(device => device.trim());
+				for (const device of raw_device_paths) {
+					// Check if the device matches the vendorId and productId
+					const result = cp.spawnSync('udevadm', ['info', '--query=property', '--name=' + device], { stdio: 'pipe' });
+					const output = result.stdout.toString();
+					if (output.includes(`ID_VENDOR_ID=${vendorId}`) && output.includes(`ID_MODEL_ID=${productId}`)) {
+						devices.push(device);
 					}
-				});
+				}
+				resolve(devices); // No matching device found
 			});
 		});
 	}
