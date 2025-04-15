@@ -13,7 +13,6 @@ export class apLog {
 	public static get channel(): vscode.OutputChannel {
 		if (!apLog._channel) {
 			apLog._channel = vscode.window.createOutputChannel('ArduPilot');
-			apLog._channel.show();
 		}
 		return apLog._channel;
 	}

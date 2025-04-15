@@ -558,7 +558,6 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 				channel.appendLine(error.stdout);
 			}
 			channel.appendLine('Auto detecting ardupilot tasks failed.');
-			channel.show(true);
 		}
 	}
 	return result;
