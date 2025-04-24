@@ -371,6 +371,17 @@ export class apBuildConfigPanel {
 			}
 		}
 
+		// Check if launch.json has a version property
+		if (!launchJson.version) {
+			launchJson.version = '0.2.0';
+		}
+
+		// Check if launch.json has a configurations array
+		if (!launchJson.configurations) {
+			launchJson.configurations = [];
+		}
+
+		// Create standard launch configuration
 		const newConfig = {
 			name: `Launch ${configure} - ${target}`,
 			type: 'apLaunch',
@@ -381,11 +392,24 @@ export class apBuildConfigPanel {
 			...(simVehicleCommand && { simVehicleCommand })
 		};
 
+		// Create debug launch configuration if this is a SITL build
+		const debugConfig = newConfig.isSITL ? {
+			...newConfig,
+			name: `Debug ${configure} - ${target}`,
+			debug: true
+		} : undefined;
+
 		// Check if a similar configuration already exists
 		const existingConfigIndex = launchJson.configurations.findIndex((config: any) =>
 			config.type === 'apLaunch' &&
 			config.name === newConfig.name
 		);
+
+		// Check if a similar debug configuration already exists
+		const existingDebugConfigIndex = debugConfig ? launchJson.configurations.findIndex((config: any) =>
+			config.type === 'apLaunch' &&
+			config.name === debugConfig.name
+		) : -1;
 
 		// Only add the configuration if it doesn't already exist
 		if (existingConfigIndex >= 0) {
@@ -395,9 +419,25 @@ export class apBuildConfigPanel {
 			launchJson.configurations.push(newConfig);
 		}
 
+		// Only add the debug configuration if it doesn't already exist and it's a SITL build
+		if (debugConfig) {
+			if (existingDebugConfigIndex >= 0) {
+				// Update the existing debug configuration
+				launchJson.configurations[existingDebugConfigIndex] = debugConfig;
+			} else {
+				launchJson.configurations.push(debugConfig);
+			}
+		}
+
+		// Create .vscode directory if it doesn't exist
+		const vscodeDir = path.dirname(launchPath);
+		if (!fs.existsSync(vscodeDir)) {
+			fs.mkdirSync(vscodeDir, { recursive: true });
+		}
+
 		try {
 			fs.writeFileSync(launchPath, JSON.stringify(launchJson, null, 2), 'utf8');
-			apBuildConfigPanel.log(`Added new launch configuration: ${newConfig.name}`);
+			apBuildConfigPanel.log(`Updated launch configurations for ${configure}-${target}`);
 		} catch (error) {
 			apBuildConfigPanel.log(`Error writing to launch.json: ${error}`);
 		}

@@ -20,7 +20,6 @@ import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import { targetToBin } from './apBuildConfig';
-import { APLaunchDefinition } from './apLaunch';
 
 export class APTaskProvider implements vscode.TaskProvider {
 	static ardupilotTaskType = 'ardupilot';
