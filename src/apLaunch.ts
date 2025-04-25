@@ -21,6 +21,7 @@ import { ProgramUtils } from './apProgramUtils';
 import { targetToBin } from './apBuildConfig';
 import * as cp from 'child_process';
 import * as fs from 'fs';
+import { time } from 'console';
 export interface APLaunchDefinition {
 	/**
 	 * Type of launch (must be 'apLaunch')

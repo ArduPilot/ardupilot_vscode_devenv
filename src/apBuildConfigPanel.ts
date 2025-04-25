@@ -181,28 +181,24 @@ export class apBuildConfigPanel {
 				features: message.features as string[] || [],
 				enableFeatureConfig: message.enableFeatureConfig as boolean,
 			};
+
+			if (taskDefinition.configure.toLowerCase().startsWith('sitl')) {
+				// add configure options to waf-configure-arg to simVehicleCommand
+				message.simVehicleCommand = `--waf-configure-arg="${taskDefinition.configureOptions}" ${message.simVehicleCommand}`;
+			}
+
 			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
 				taskDefinition.configure,
 				taskDefinition.target,
 				taskDefinition.configureOptions,
 				taskDefinition.features,
 				taskDefinition.enableFeatureConfig,
+				message?.simVehicleCommand as string || '',
 			);
 
 			if (currentTaskDef?.definition.simVehicleCommand) {
 				currentTaskDef.definition.simVehicleCommand = message.simVehicleCommand as string || '';
 			}
-
-			if (taskDefinition.configure.toLowerCase().startsWith('sitl')) {
-				// add configure options to waf-configure-arg to simVehicleCommand
-				message.simVehicleCommand = `--waf-configure-arg="${taskDefinition.configureOptions}" ${message.simVehicleCommand}`;
-			}
-			// Create matching launch.json entry for apLaunch
-			this.createMatchingLaunchConfig(
-				taskDefinition.configure,
-				taskDefinition.target,
-				message.simVehicleCommand as string || ''
-			);
 
 			// execute the task
 			if (currentTaskDef) {
@@ -221,7 +217,13 @@ export class apBuildConfigPanel {
 		this._uiHooks.on('getCurrentTask', () => {
 			// send the current task to the webview
 			apBuildConfigPanel.log(`Current task: ${this._currentTask?.definition}`);
-			this._panel.webview.postMessage({ command: 'getCurrentTask', task: this._currentTask?.definition });
+			const taskDef = this._currentTask?.definition ? {...this._currentTask?.definition} : undefined;
+
+			// remove --waf-configure-arg="<args>" from simVehicleCommand
+			if (taskDef && taskDef.simVehicleCommand) {
+				taskDef.simVehicleCommand = taskDef.simVehicleCommand.replace(/--waf-configure-arg="[^"]*" /g, '');
+			}
+			this._panel.webview.postMessage({ command: 'getCurrentTask', task: taskDef });
 			return;
 		});
 
@@ -350,96 +352,6 @@ export class apBuildConfigPanel {
 			if (x) {
 				x.dispose();
 			}
-		}
-	}
-
-	private createMatchingLaunchConfig(configure: string, target: string, simVehicleCommand: string): void {
-		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		if (!workspaceRoot) {
-			apBuildConfigPanel.log('No workspace folder is open.');
-			return;
-		}
-
-		const launchPath = path.join(workspaceRoot, '.vscode', 'launch.json');
-		let launchJson: any = { configurations: [] };
-
-		if (fs.existsSync(launchPath)) {
-			try {
-				launchJson = JSON.parse(fs.readFileSync(launchPath, 'utf8'));
-			} catch (error) {
-				apBuildConfigPanel.log(`Error reading launch.json: ${error}`);
-			}
-		}
-
-		// Check if launch.json has a version property
-		if (!launchJson.version) {
-			launchJson.version = '0.2.0';
-		}
-
-		// Check if launch.json has a configurations array
-		if (!launchJson.configurations) {
-			launchJson.configurations = [];
-		}
-
-		// Create standard launch configuration
-		const newConfig = {
-			name: `Launch ${configure} - ${target}`,
-			type: 'apLaunch',
-			request: 'launch',
-			target: target,
-			preLaunchTask: `${APTaskProvider.ardupilotTaskType}: ${configure}-${target}`,
-			isSITL: configure.toLowerCase().startsWith('sitl'),
-			...(simVehicleCommand && { simVehicleCommand })
-		};
-
-		// Create debug launch configuration if this is a SITL build
-		const debugConfig = newConfig.isSITL ? {
-			...newConfig,
-			name: `Debug ${configure} - ${target}`,
-			debug: true
-		} : undefined;
-
-		// Check if a similar configuration already exists
-		const existingConfigIndex = launchJson.configurations.findIndex((config: any) =>
-			config.type === 'apLaunch' &&
-			config.name === newConfig.name
-		);
-
-		// Check if a similar debug configuration already exists
-		const existingDebugConfigIndex = debugConfig ? launchJson.configurations.findIndex((config: any) =>
-			config.type === 'apLaunch' &&
-			config.name === debugConfig.name
-		) : -1;
-
-		// Only add the configuration if it doesn't already exist
-		if (existingConfigIndex >= 0) {
-			// Update the existing configuration
-			launchJson.configurations[existingConfigIndex] = newConfig;
-		} else {
-			launchJson.configurations.push(newConfig);
-		}
-
-		// Only add the debug configuration if it doesn't already exist and it's a SITL build
-		if (debugConfig) {
-			if (existingDebugConfigIndex >= 0) {
-				// Update the existing debug configuration
-				launchJson.configurations[existingDebugConfigIndex] = debugConfig;
-			} else {
-				launchJson.configurations.push(debugConfig);
-			}
-		}
-
-		// Create .vscode directory if it doesn't exist
-		const vscodeDir = path.dirname(launchPath);
-		if (!fs.existsSync(vscodeDir)) {
-			fs.mkdirSync(vscodeDir, { recursive: true });
-		}
-
-		try {
-			fs.writeFileSync(launchPath, JSON.stringify(launchJson, null, 2), 'utf8');
-			apBuildConfigPanel.log(`Updated launch configurations for ${configure}-${target}`);
-		} catch (error) {
-			apBuildConfigPanel.log(`Error writing to launch.json: ${error}`);
 		}
 	}
 }

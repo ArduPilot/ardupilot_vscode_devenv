@@ -79,44 +79,68 @@ export class APTaskProvider implements vscode.TaskProvider {
 		};
 
 		// Add simVehicleCommand for SITL builds (case insensitive check)
-		if (board.toLowerCase().startsWith('sitl') && simVehicleCommand) {
-			taskDef.simVehicleCommand = simVehicleCommand;
-		}
+		if (board.toLowerCase().startsWith('sitl')) {
+			// If simVehicleCommand is provided, use it
+			if (simVehicleCommand) {
+				taskDef.simVehicleCommand = simVehicleCommand;
+				APTaskProvider.log.log(`Using provided simVehicleCommand: ${simVehicleCommand}`);
+			} else {
+				// Check for existing simVehicleCommand in tasks.json
+				const tasksPath = path.join(workspaceRoot, '.vscode', 'tasks.json');
+				if (fs.existsSync(tasksPath)) {
+					try {
+						const tasksJson = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
+						// Define an interface for task to avoid using 'any'
+						interface TaskJsonDefinition {
+							type: string;
+							configure: string;
+							target: string;
+							simVehicleCommand?: string;
+						}
 
-		// Get the tasks configuration using the VS Code API
-		const tasksConfig = vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri);
+						const matchingTask = tasksJson.tasks?.find((task: TaskJsonDefinition) =>
+							task.type === 'ardupilot' &&
+							task.configure === board &&
+							task.target === target
+						);
 
-		// Get current tasks array or initialize empty array if it doesn't exist
-		const tasks = tasksConfig.get('tasks') as Array<ArdupilotTaskDefinition> || [];
-
-		// Check if task already exists for this board-target combination
-		const existingTaskIndex = tasks.findIndex((task: ArdupilotTaskDefinition) => 
-			task.configure === board && task.target === target
-		);
-
-		// If task exists and is a SITL build, check for existing simVehicleCommand
-		if (existingTaskIndex !== -1 && board.toLowerCase().startsWith('sitl')) {
-			// Check for existing simVehicleCommand in launch.json
-			const launchPath = path.join(workspaceRoot, '.vscode', 'launch.json');
-			if (fs.existsSync(launchPath)) {
-				try {
-					const launchJson = JSON.parse(fs.readFileSync(launchPath, 'utf8'));
-					const launchConfigName = `Launch ${board} - ${target}`;
-					
-					const matchingLaunchConfig = launchJson.configurations?.find((config: any) => 
-						config.type === 'apLaunch' &&
-						config.name === launchConfigName
-					);
-
-					// If we found a matching launch config with simVehicleCommand and no new one was provided
-					if (matchingLaunchConfig?.simVehicleCommand && !simVehicleCommand) {
-						taskDef.simVehicleCommand = matchingLaunchConfig.simVehicleCommand;
-						// remove --waf-configure-arg="<args>" from simVehicleCommand
-						taskDef.simVehicleCommand = taskDef.simVehicleCommand?.replace(/--waf-configure-arg="[^"]*" /g, '');
-						APTaskProvider.log.log(`Loaded existing simVehicleCommand: ${taskDef.simVehicleCommand}`);
+						if (matchingTask?.simVehicleCommand) {
+							taskDef.simVehicleCommand = matchingTask.simVehicleCommand;
+							APTaskProvider.log.log(`Loaded existing simVehicleCommand from tasks.json: ${taskDef.simVehicleCommand}`);
+						}
+					} catch (error) {
+						APTaskProvider.log.log(`Error reading tasks.json: ${error}`);
 					}
-				} catch (error) {
-					APTaskProvider.log.log(`Error reading launch.json: ${error}`);
+				}
+
+				// If still no simVehicleCommand, check launch.json as fallback
+				if (!taskDef.simVehicleCommand) {
+					const launchPath = path.join(workspaceRoot, '.vscode', 'launch.json');
+					if (fs.existsSync(launchPath)) {
+						try {
+							const launchJson = JSON.parse(fs.readFileSync(launchPath, 'utf8'));
+							const launchConfigName = `Launch ${board} - ${target}`;
+
+							// Define an interface for launch configuration to avoid using 'any'
+							interface LaunchJsonConfig {
+								type: string;
+								name: string;
+								simVehicleCommand?: string;
+							}
+
+							const matchingLaunchConfig = launchJson.configurations?.find((config: LaunchJsonConfig) =>
+								config.type === 'apLaunch' &&
+								config.name === launchConfigName
+							);
+
+							if (matchingLaunchConfig?.simVehicleCommand) {
+								taskDef.simVehicleCommand = matchingLaunchConfig.simVehicleCommand;
+								APTaskProvider.log.log(`Loaded existing simVehicleCommand from launch.json: ${taskDef.simVehicleCommand}`);
+							}
+						} catch (error) {
+							APTaskProvider.log.log(`Error reading launch.json: ${error}`);
+						}
+					}
 				}
 			}
 		}
@@ -126,6 +150,21 @@ export class APTaskProvider implements vscode.TaskProvider {
 			vscode.window.showErrorMessage('Failed to create task definition.');
 			return undefined;
 		}
+		if (task.definition.simVehicleCommand) {
+			APTaskProvider.log.log(`Task created with simVehicleCommand: ${task.definition.simVehicleCommand}`);
+		}
+
+		// Get the tasks configuration using the VS Code API
+		const tasksConfig = vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri);
+
+		// Get current tasks array or initialize empty array if it doesn't exist
+		const tasks = tasksConfig.get('tasks') as Array<ArdupilotTaskDefinition> || [];
+
+		// Check if task already exists for this board-target combination
+		const existingTaskIndex = tasks.findIndex((task: ArdupilotTaskDefinition) =>
+			task.configure === board && task.target === target
+		);
+
 		if (existingTaskIndex !== -1) {
 			// Update existing task
 			tasks[existingTaskIndex] = task.definition as ArdupilotTaskDefinition;

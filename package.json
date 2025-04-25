@@ -75,6 +75,13 @@
           "enableFeatureConfig": {
             "type": "boolean",
             "description": "Enable feature config"
+          },
+          "simVehicleCommand": {
+            "type": "string",
+            "description": "sim_vehicle.py command arguments for SITL builds",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }
