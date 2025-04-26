@@ -237,9 +237,13 @@ export class apBuildConfig extends vscode.TreeItem {
 		// delete the folder
 		apBuildConfig.log(`delete ${this.label}`);
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		fs.rmdirSync(workspaceRoot + '/build/' + this.label, { recursive: true });
-		// also remove c4che/{board}_cache.py
-		fs.unlinkSync(workspaceRoot + '/build/c4che/' + this.label + '_cache.py');
+		try {
+			fs.rmdirSync(workspaceRoot + '/build/' + this.label, { recursive: true });
+			// also remove c4che/{board}_cache.py
+			fs.unlinkSync(workspaceRoot + '/build/c4che/' + this.label + '_cache.py');
+		} catch (err) {
+			apBuildConfig.log(`Error deleting build folder: ${err}`);
+		}
 		vscode.commands.executeCommand('apBuildConfig.refreshEntry');
 		// also delete the task from tasks.json
 		APTaskProvider.delete(this.label);
@@ -278,7 +282,13 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 		}
 
 		// check if build directory exists in the workspace
-		const buildDir = vscode.Uri.file(this.workspaceRoot + '/build');
+		const buildDirPath = path.join(this.workspaceRoot, 'build');
+		if (!fs.existsSync(buildDirPath)) {
+			apBuildConfigProvider.log('Build directory does not exist');
+			return Promise.resolve([]);
+		}
+
+		const buildDir = vscode.Uri.file(buildDirPath);
 		if (!buildDir) {
 			return Promise.resolve([]);
 		}
@@ -286,72 +296,81 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 		// get the list of folders inside the build directory
 		// create a list of apBuildConfig objects for each folder containing ap_config.h file
 		let buildConfigList: apBuildConfig[] = [];
-		fs.readdirSync(buildDir.fsPath).forEach(file => {
-			if (fs.lstatSync(buildDir.fsPath + '/' + file).isDirectory() && fs.existsSync(buildDir.fsPath + '/' + file + '/ap_config.h')) {
-				// get current task from target_list in the folder
+		try {
+			fs.readdirSync(buildDir.fsPath).forEach(file => {
 				try {
-					const data = fs.readFileSync(buildDir.fsPath + '/' + file + '/target_list', 'utf8');
-					// split the data by comma
-					const targetList:string[] = data.split(',');
-					let target: string;
-					if (binToTarget[targetList[0]] !== undefined) {
-						target = binToTarget[targetList[0]];
-					} else {
-						target = targetList[0].split('/')[1];
-					}
-
-					// Load features if features.txt exists
-					let features: string[] = [];
-					const featuresPath = path.join(buildDir.fsPath, file, 'features.txt');
-					if (fs.existsSync(featuresPath)) {
-						features = fs.readFileSync(featuresPath, 'utf8')
-							.split('\n')
-							.filter(feature => feature.trim());
-					}
-
-					// Get configure options and simVehicleCommand from existing task configuration
-					let configureOptions: string = '';
-					let simVehicleCommand: string = '';
-					const taskConfiguration = vscode.workspace.workspaceFolders
-						? vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri)
-						: vscode.workspace.getConfiguration('tasks');
-					const tasks = taskConfiguration.get('tasks') as Array<ArdupilotTaskDefinition> || [];
-
-					if (tasks) {
-						const existingTask = tasks.find(t =>
-							t.configure === file &&
-							t.target === target &&
-							t.type === 'ardupilot'
-						);
-						if (existingTask) {
-							// Extract configure options and simVehicleCommand from existing task
-							if (existingTask.configureOptions) {
-								configureOptions = existingTask.configureOptions;
+					if (fs.lstatSync(buildDir.fsPath + '/' + file).isDirectory() && fs.existsSync(buildDir.fsPath + '/' + file + '/ap_config.h')) {
+						// get current task from target_list in the folder
+						try {
+							const data = fs.readFileSync(buildDir.fsPath + '/' + file + '/target_list', 'utf8');
+							// split the data by comma
+							const targetList:string[] = data.split(',');
+							let target: string;
+							if (binToTarget[targetList[0]] !== undefined) {
+								target = binToTarget[targetList[0]];
+							} else {
+								target = targetList[0].split('/')[1];
 							}
-							if (existingTask.simVehicleCommand) {
-								simVehicleCommand = existingTask.simVehicleCommand;
+
+							// Load features if features.txt exists
+							let features: string[] = [];
+							const featuresPath = path.join(buildDir.fsPath, file, 'features.txt');
+							if (fs.existsSync(featuresPath)) {
+								features = fs.readFileSync(featuresPath, 'utf8')
+									.split('\n')
+									.filter(feature => feature.trim());
 							}
+
+							// Get configure options and simVehicleCommand from existing task configuration
+							let configureOptions: string = '';
+							let simVehicleCommand: string = '';
+							const taskConfiguration = vscode.workspace.workspaceFolders
+								? vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri)
+								: vscode.workspace.getConfiguration('tasks');
+							const tasks = taskConfiguration.get('tasks') as Array<ArdupilotTaskDefinition> || [];
+
+							if (tasks) {
+								const existingTask = tasks.find(t =>
+									t.configure === file &&
+									t.target === target &&
+									t.type === 'ardupilot'
+								);
+								if (existingTask) {
+									// Extract configure options and simVehicleCommand from existing task
+									if (existingTask.configureOptions) {
+										configureOptions = existingTask.configureOptions;
+									}
+									if (existingTask.simVehicleCommand) {
+										simVehicleCommand = existingTask.simVehicleCommand;
+									}
+								}
+							}
+
+							const task = APTaskProvider.getOrCreateBuildConfig(
+								file,
+								target,
+								configureOptions,
+								features,
+								undefined,
+								simVehicleCommand
+							);
+
+							apBuildConfigProvider.log(`getOrCreateBuildConfig ${file} ${target} with ${features.length} features` +
+								(simVehicleCommand ? ` and simVehicleCommand: ${simVehicleCommand}` : ''));
+
+							buildConfigList = [new apBuildConfig(this, file, vscode.TreeItemCollapsibleState.None, task), ...buildConfigList];
+						} catch (err) {
+							apBuildConfigProvider.log(`Error reading target_list file ${err}`);
 						}
 					}
-
-					const task = APTaskProvider.getOrCreateBuildConfig(
-						file,
-						target,
-						configureOptions,
-						features,
-						undefined,
-						simVehicleCommand
-					);
-
-					apBuildConfigProvider.log(`getOrCreateBuildConfig ${file} ${target} with ${features.length} features` +
-						(simVehicleCommand ? ` and simVehicleCommand: ${simVehicleCommand}` : ''));
-
-					buildConfigList = [new apBuildConfig(this, file, vscode.TreeItemCollapsibleState.None, task), ...buildConfigList];
 				} catch (err) {
-					apBuildConfigProvider.log(`Error reading target_list file ${err}`);
+					apBuildConfigProvider.log(`Error processing build directory entry ${file}: ${err}`);
 				}
-			}
-		});
+			});
+		} catch (err) {
+			apBuildConfigProvider.log(`Error reading build directory: ${err}`);
+			return Promise.resolve([]);
+		}
 		console.log(buildConfigList);
 		return Promise.resolve(buildConfigList);
 	}
