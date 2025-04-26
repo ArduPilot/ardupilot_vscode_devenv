@@ -52,10 +52,10 @@ export class apBuildConfig extends vscode.TreeItem {
 	private static log = new apLog('apBuildConfig').log;
 
 	constructor(
-        private _buildProvider: apBuildConfigProvider,
-        public readonly label: string,
-        public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly task?: vscode.Task,
+		private _buildProvider: apBuildConfigProvider,
+		public readonly label: string,
+		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+		public readonly task?: vscode.Task,
 	) {
 		super(label, collapsibleState);
 		if (this.task && this.task.definition) {
@@ -65,6 +65,8 @@ export class apBuildConfig extends vscode.TreeItem {
 				taskDef.target,
 				taskDef.simVehicleCommand || ''
 			);
+			// Set the description to include the target name
+			this.description = taskDef.target;
 		}
 	}
 
