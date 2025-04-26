@@ -112,36 +112,6 @@ export class APTaskProvider implements vscode.TaskProvider {
 						APTaskProvider.log.log(`Error reading tasks.json: ${error}`);
 					}
 				}
-
-				// If still no simVehicleCommand, check launch.json as fallback
-				if (!taskDef.simVehicleCommand) {
-					const launchPath = path.join(workspaceRoot, '.vscode', 'launch.json');
-					if (fs.existsSync(launchPath)) {
-						try {
-							const launchJson = JSON.parse(fs.readFileSync(launchPath, 'utf8'));
-							const launchConfigName = `Launch ${board} - ${target}`;
-
-							// Define an interface for launch configuration to avoid using 'any'
-							interface LaunchJsonConfig {
-								type: string;
-								name: string;
-								simVehicleCommand?: string;
-							}
-
-							const matchingLaunchConfig = launchJson.configurations?.find((config: LaunchJsonConfig) =>
-								config.type === 'apLaunch' &&
-								config.name === launchConfigName
-							);
-
-							if (matchingLaunchConfig?.simVehicleCommand) {
-								taskDef.simVehicleCommand = matchingLaunchConfig.simVehicleCommand;
-								APTaskProvider.log.log(`Loaded existing simVehicleCommand from launch.json: ${taskDef.simVehicleCommand}`);
-							}
-						} catch (error) {
-							APTaskProvider.log.log(`Error reading launch.json: ${error}`);
-						}
-					}
-				}
 			}
 		}
 
