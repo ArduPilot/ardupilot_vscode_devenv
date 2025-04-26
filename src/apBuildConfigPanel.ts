@@ -182,11 +182,6 @@ export class apBuildConfigPanel {
 				enableFeatureConfig: message.enableFeatureConfig as boolean,
 			};
 
-			if (taskDefinition.configure.toLowerCase().startsWith('sitl')) {
-				// add configure options to waf-configure-arg to simVehicleCommand
-				message.simVehicleCommand = `--waf-configure-arg="${taskDefinition.configureOptions}" ${message.simVehicleCommand}`;
-			}
-
 			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
 				taskDefinition.configure,
 				taskDefinition.target,
@@ -218,11 +213,6 @@ export class apBuildConfigPanel {
 			// send the current task to the webview
 			apBuildConfigPanel.log(`Current task: ${this._currentTask?.definition}`);
 			const taskDef = this._currentTask?.definition ? {...this._currentTask?.definition} : undefined;
-
-			// remove --waf-configure-arg="<args>" from simVehicleCommand
-			if (taskDef && taskDef.simVehicleCommand) {
-				taskDef.simVehicleCommand = taskDef.simVehicleCommand.replace(/--waf-configure-arg="[^"]*" /g, '');
-			}
 			this._panel.webview.postMessage({ command: 'getCurrentTask', task: taskDef });
 			return;
 		});

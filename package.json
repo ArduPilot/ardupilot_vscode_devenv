@@ -126,11 +126,6 @@
                 "type": "boolean",
                 "description": "Whether the build is for SITL (Software In The Loop) simulation"
               },
-              "debug": {
-                "type": "boolean",
-                "description": "Enable debugging with GDB for SITL builds",
-                "default": false
-              },
               "waffile": {
                 "type": "string",
                 "description": "Path to waf build script"
@@ -286,6 +281,7 @@
     "simple-git": "^3.27.0"
   },
   "extensionDependencies": [
-    "marus25.cortex-debug"
+    "marus25.cortex-debug",
+    "ms-vscode.cpptools"
   ]
 }

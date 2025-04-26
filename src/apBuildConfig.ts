@@ -30,7 +30,6 @@ interface LaunchConfiguration {
 	preLaunchTask: string;
 	isSITL: boolean;
 	simVehicleCommand?: string;
-	debug?: boolean;
 }
 
 export const binToTarget : { [target: string]: string} = {
@@ -153,10 +152,6 @@ export class apBuildConfig extends vscode.TreeItem {
 			isSITL: isSITL,
 			...(simVehicleCommand && { simVehicleCommand })
 		};
-
-		if (isSITL) {
-			newConfig.debug = true;
-		}
 
 		// Check if a similar configuration already exists
 		const existingConfigIndex = launchJson.configurations.findIndex((config: LaunchConfiguration) =>

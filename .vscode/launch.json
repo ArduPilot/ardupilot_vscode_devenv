@@ -8,9 +8,9 @@
 			"request": "launch",
 			"runtimeExecutable": "${execPath}",
 			"args": [
-				"--extensionDevelopmentPath=${workspaceRoot}",
 				// Get all extensions except cortex-debug, then disable them individually
-				"$(${execPath} --list-extensions | grep -v cortex-debug | xargs -I {} echo --disable-extension={})",
+				"$(${execPath} --list-extensions | grep -v cortex-debug | grep -v mcu-debug | grep -v cpptools | xargs -I {} echo --disable-extension={})",
+				"--extensionDevelopmentPath=${workspaceRoot}",
 			],
 			"sourceMaps": true,
 			"preLaunchTask": "npm: compile"

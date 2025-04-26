@@ -19,9 +19,8 @@ import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { targetToBin } from './apBuildConfig';
-import * as cp from 'child_process';
 import * as fs from 'fs';
-import { time } from 'console';
+
 export interface APLaunchDefinition {
 	/**
 	 * Type of launch (must be 'apLaunch')
@@ -47,10 +46,6 @@ export interface APLaunchDefinition {
 	 * is it a SITL build
 	 */
 	isSITL?: boolean;
-	/**
-	 * Enable debug mode
-	 */
-	debug?: boolean;
 }
 
 export class APLaunchConfigurationProvider implements vscode.DebugConfigurationProvider {
@@ -176,98 +171,85 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				// Extract vehicle type from target (e.g., 'copter' from 'sitl-copter')
 				const vehicleType = apConfig.target.replace('sitl-', '');
 
-				if (apConfig.debug) {
-					// Check if GDB is available
-					const gdb = await ProgramUtils.findGDB();
-					if (!gdb.available) {
-						vscode.window.showErrorMessage('GDB not found. Please install GDB to debug SITL.');
-						return undefined;
-					}
+				// Check if GDB is available
+				const gdb = await ProgramUtils.findGDB();
+				if (!gdb.available) {
+					vscode.window.showErrorMessage('GDB not found. Please install GDB to debug SITL.');
+					return undefined;
+				}
 
-					// Find the binary path for the vehicle
-					const binaryPath = path.join(workspaceRoot, 'build', 'sitl', targetToBin[vehicleType]);
-					APLaunchConfigurationProvider.log.log(`Debug binary path: ${binaryPath}`);
+				// Find the binary path for the vehicle
+				const binaryPath = path.join(workspaceRoot, 'build', 'sitl', targetToBin[vehicleType]);
+				APLaunchConfigurationProvider.log.log(`Debug binary path: ${binaryPath}`);
 
-					// Generate a unique port for gdbserver (between 3000-4000)
-					const gdbPort = 3000 + Math.floor(Math.random() * 1000);
+				// Generate a unique port for gdbserver (between 3000-4000)
+				const gdbPort = 3000 + Math.floor(Math.random() * 1000);
 
-					// check if run_in_terminal_window.sh contains TMUX_GDBSERVER
-					if (!fs.existsSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'))) {
-						vscode.window.showErrorMessage('run_in_terminal_window.sh not found. Please clone ArduPilot to debug SITL.');
-						return undefined;
-					} else {
-						// check file contains TMUX_GDBSERVER
-						const fileContent = fs.readFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), 'utf8');
-						if (!fileContent.includes('TMUX_GDBSERVER')) {
-							// if it doesn't contain TMUX_GDBSERVER, replace it with run_in_terminal_window.sh from resources, do backup of existing file
-							const backupPath = path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh.bak');
-							if (!fs.existsSync(backupPath)) {
-								// backup the existing file
-								fs.copyFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), backupPath);
-							}
-							const runInTerminalWindowPath = path.join(__dirname, '..', 'resources', 'run_in_terminal_window.sh');
-							if (fs.existsSync(runInTerminalWindowPath)) {
-								// write the data to the file
-								fs.writeFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), fs.readFileSync(runInTerminalWindowPath));
-							}
+				// check if run_in_terminal_window.sh contains TMUX_GDBSERVER
+				if (!fs.existsSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'))) {
+					vscode.window.showErrorMessage('run_in_terminal_window.sh not found. Please clone ArduPilot to debug SITL.');
+					return undefined;
+				} else {
+					// check file contains TMUX_GDBSERVER
+					const fileContent = fs.readFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), 'utf8');
+					if (!fileContent.includes('TMUX_GDBSERVER')) {
+						// if it doesn't contain TMUX_GDBSERVER, replace it with run_in_terminal_window.sh from resources, do backup of existing file
+						const backupPath = path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh.bak');
+						if (!fs.existsSync(backupPath)) {
+							// backup the existing file
+							fs.copyFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), backupPath);
+						}
+						const runInTerminalWindowPath = path.join(__dirname, '..', 'resources', 'run_in_terminal_window.sh');
+						if (fs.existsSync(runInTerminalWindowPath)) {
+							// write the data to the file
+							fs.writeFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), fs.readFileSync(runInTerminalWindowPath));
 						}
 					}
-
-					// Generate a unique tmux session name
-					this.tmuxSessionName = `ardupilot_sitl_${vehicleType}_${Date.now()}`;
-
-					// Set up the environment to use gdbserver through TMUX_GDBSERVER
-					const simVehicleCmd = `tmux new-session -s "${this.tmuxSessionName}" -n "SimVehicle" 'tmux set mouse on && export TMUX_GDBSERVER="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} -v ${vehicleType} ${apConfig.simVehicleCommand || ''}'`;
-					APLaunchConfigurationProvider.log.log(`Running SITL simulation with debug: ${simVehicleCmd}`);
-
-					// Start the SITL simulation in a terminal and store the terminal reference
-					this.debugSessionTerminal = vscode.window.createTerminal('ArduPilot SITL');
-					this.debugSessionTerminal.sendText(`cd ${workspaceRoot}`);
-					this.debugSessionTerminal.sendText(simVehicleCmd);
-					this.debugSessionTerminal.show();
-
-					// Create a debug configuration for the C++ debugger
-					const cppDebugConfig = {
-						type: 'cppdbg',
-						request: 'launch',
-						name: `Debug ${vehicleType} SITL`,
-						miDebuggerServerAddress: `localhost:${gdbPort}`,
-						program: binaryPath,
-						args: [],
-						stopAtEntry: false,
-						cwd: workspaceRoot,
-						environment: [],
-						externalConsole: false,
-						MIMode: 'gdb',
-						miDebuggerPath: gdb.path,
-						setupCommands: [
-							{
-								description: 'Enable pretty-printing for gdb',
-								text: '-enable-pretty-printing',
-								ignoreFailures: true
-							},
-							{
-								description: 'Set Disassembly Flavor to Intel',
-								text: '-gdb-set disassembly-flavor intel',
-								ignoreFailures: true
-							}
-						]
-					};
-					// Start the C++ debugger
-					APLaunchConfigurationProvider.log.log('Starting C++ debugger session');
-					return cppDebugConfig;
-				} else {
-					// For non-debug SITL builds, use sim_vehicle.py with the provided command arguments
-					const terminal = vscode.window.createTerminal('ArduPilot SITL');
-					terminal.sendText(`cd ${workspaceRoot}`);
-
-					// Build the sim_vehicle.py command with the provided arguments
-					const simVehicleCmd = `python3 ${simVehiclePath} -v ${vehicleType} ${apConfig.simVehicleCommand || ''}`;
-					APLaunchConfigurationProvider.log.log(`Running SITL simulation: ${simVehicleCmd}`);
-
-					terminal.sendText(simVehicleCmd);
-					terminal.show();
 				}
+
+				// Generate a unique tmux session name
+				this.tmuxSessionName = `ardupilot_sitl_${vehicleType}_${Date.now()}`;
+
+				// Set up the environment to use gdbserver through TMUX_GDBSERVER
+				const simVehicleCmd = `tmux new-session -s "${this.tmuxSessionName}" -n "SimVehicle" 'tmux set mouse on && export TMUX_GDBSERVER="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${apConfig.simVehicleCommand || ''}'`;
+				APLaunchConfigurationProvider.log.log(`Running SITL simulation with debug: ${simVehicleCmd}`);
+
+				// Start the SITL simulation in a terminal and store the terminal reference
+				this.debugSessionTerminal = vscode.window.createTerminal('ArduPilot SITL');
+				this.debugSessionTerminal.sendText(`cd ${workspaceRoot}`);
+				this.debugSessionTerminal.sendText(simVehicleCmd);
+				this.debugSessionTerminal.show();
+
+				// Create a debug configuration for the C++ debugger
+				const cppDebugConfig = {
+					type: 'cppdbg',
+					request: 'launch',
+					name: `Debug ${vehicleType} SITL`,
+					miDebuggerServerAddress: `localhost:${gdbPort}`,
+					program: binaryPath,
+					args: [],
+					stopAtEntry: false,
+					cwd: workspaceRoot,
+					environment: [],
+					externalConsole: false,
+					MIMode: 'gdb',
+					miDebuggerPath: gdb.path,
+					setupCommands: [
+						{
+							description: 'Enable pretty-printing for gdb',
+							text: '-enable-pretty-printing',
+							ignoreFailures: true
+						},
+						{
+							description: 'Set Disassembly Flavor to Intel',
+							text: '-gdb-set disassembly-flavor intel',
+							ignoreFailures: true
+						}
+					]
+				};
+				// Start the C++ debugger
+				APLaunchConfigurationProvider.log.log('Starting C++ debugger session');
+				return cppDebugConfig;
 			} else {
 				// For physical board builds, run the upload command
 				const terminal = vscode.window.createTerminal('ArduPilot Upload');
