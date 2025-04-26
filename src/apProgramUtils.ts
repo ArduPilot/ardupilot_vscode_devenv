@@ -57,6 +57,7 @@ export class ProgramUtils {
 	public static readonly TOOL_ARM_GCC = 'arm-gcc';
 	public static readonly TOOL_ARM_GPP = 'arm-g++';
 	public static readonly TOOL_ARM_GDB = 'arm-gdb';
+	public static readonly TOOL_GDBSERVER = 'gdbserver';
 	public static readonly TOOL_PYSERIAL = 'pyserial';
 
 	// usual list of paths for the tools per platform per tool id
@@ -98,6 +99,8 @@ export class ProgramUtils {
 				{ linux: ['arm-none-eabi-g++'], win32: ['arm-none-eabi-g++.exe'], darwin: ['arm-none-eabi-g++'] },
 			[ProgramUtils.TOOL_ARM_GDB]:
 				{ linux: ['gdb-multiarch', 'arm-none-eabi-gdb'], win32: ['arm-none-eabi-gdb.exe'], darwin: ['arm-none-eabi-gdb'] },
+			[ProgramUtils.TOOL_GDBSERVER]:
+				{ linux: ['gdbserver'], win32: ['gdbserver.exe'], darwin: ['gdbserver'] },
 		};
 
 	// find the tool path for the tool id
@@ -341,6 +344,20 @@ export class ProgramUtils {
 		} else if (platform === 'win32') {
 			// Windows: check for arm-none-eabi-gdb.exe
 			return this.findProgram(this.TOOL_ARM_GDB, ['--version']);
+		}
+		return { available: false };
+	}
+
+	// find gdbserver
+	public static async findGDBServer(): Promise<ProgramInfo> {
+		// check for gdbserver by platform
+		const platform = os.platform();
+		if (platform === 'linux' || platform === 'darwin') {
+			// Linux: check for gdbserver
+			return this.findProgram(this.TOOL_GDBSERVER, ['--version']);
+		} else if (platform === 'win32') {
+			// Windows: check for gdbserver.exe
+			return this.findProgram(this.TOOL_GDBSERVER, ['--version']);
 		}
 		return { available: false };
 	}

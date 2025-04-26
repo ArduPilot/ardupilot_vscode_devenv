@@ -378,6 +378,19 @@ export class ValidateEnvironmentPanel {
             <div class="custom-path-notification"></div>
         </div>
         
+        <div class="tool-container" id="gdbserver" data-tool-id="${ProgramUtils.TOOL_GDBSERVER}">
+            <div class="tool-header">
+                <div class="tool-name">GDB Server</div>
+                <div class="tool-status status-checking">Checking...</div>
+            </div>
+            <div class="tool-version"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
+        </div>
+        
         <div class="tool-container" id="pyserial" data-tool-id="${ProgramUtils.TOOL_PYSERIAL}">
             <div class="tool-header">
                 <div class="tool-name">PySerial</div>
@@ -547,8 +560,9 @@ export class ValidateEnvironmentPanel {
 		// Check optional tools
 		const jlinkCheck = ProgramUtils.findJLinkGDBServerCLExe().catch(() => ({ available: false }));
 		const openocdCheck = ProgramUtils.findOpenOCD().catch(() => ({ available: false }));
+		const gdbserverCheck = ProgramUtils.findGDBServer().catch(() => ({ available: false }));
 
-		const [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, jlinkResult, openocdResult, pyserialResult] = await Promise.all([
+		const [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, jlinkResult, openocdResult, gdbserverResult, pyserialResult] = await Promise.all([
 			pythonCheck.catch(error => ({ available: false, error })),
 			mavproxyCheck.catch(error => ({ available: false, error })),
 			gccCheck.catch(error => ({ available: false, error })),
@@ -556,6 +570,7 @@ export class ValidateEnvironmentPanel {
 			ccacheCheck.catch(error => ({ available: false, error })),
 			jlinkCheck,
 			openocdCheck,
+			gdbserverCheck,
 			pyserialCheck.catch(error => ({ available: false, error }))
 		]);
 
@@ -567,10 +582,11 @@ export class ValidateEnvironmentPanel {
 		this._reportToolStatus('ccache', ccacheResult);
 		this._reportToolStatus('jlink', jlinkResult);
 		this._reportToolStatus('openocd', openocdResult);
+		this._reportToolStatus('gdbserver', gdbserverResult);
 		this._reportToolStatus('pyserial', pyserialResult);
 
 		// Generate summary - only include required tools in the summary
-		this._generateSummary([pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, pyserialResult]);
+		this._generateSummary([pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult]);
 	}
 
 	/**
@@ -832,6 +848,7 @@ export class ValidateEnvironmentPanel {
 					ProgramUtils.TOOL_ARM_GCC,
 					ProgramUtils.TOOL_ARM_GPP,
 					ProgramUtils.TOOL_ARM_GDB,
+					ProgramUtils.TOOL_GDBSERVER,
 					ProgramUtils.TOOL_PYSERIAL
 				];
 
