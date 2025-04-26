@@ -22,6 +22,7 @@ import { apLog } from './apLog';
 import { apWelcomeItem } from './apWelcomeItem';
 import * as fs from 'fs';
 import { simpleGit, SimpleGitProgressEvent } from 'simple-git';
+import * as child_process from 'child_process';
 
 export class CloneArdupilot extends apWelcomeItem {
 	static log = new apLog('cloneArdupilot');
@@ -33,83 +34,117 @@ export class CloneArdupilot extends apWelcomeItem {
 		vscode.commands.registerCommand('apClone', () => CloneArdupilot.run());
 	}
 
+	// Check if Git is installed
+	private static async isGitInstalled(): Promise<boolean> {
+		return new Promise<boolean>(resolve => {
+			const platform = process.platform;
+			const gitCommand = platform === 'win32' ? 'where git' : 'which git';
+
+			child_process.exec(gitCommand, (error) => {
+				if (error) {
+					this.log.log(`Git not found: ${error.message}`);
+					resolve(false);
+				} else {
+					this.log.log('Git is installed');
+					resolve(true);
+				}
+			});
+		});
+	}
+
 	static run(): void {
 		// clone the ardupilot repository
 		this.log.log('CloneArdupilot called');
-		// show open dialog box to select the directory
-		const options: vscode.OpenDialogOptions = {
-			canSelectFiles: false,
-			canSelectFolders: true,
-			canSelectMany: false,
-			openLabel: 'Select Directory to Clone Ardupilot',
-		};
-		vscode.window.showOpenDialog(options).then((uri) => {
-			if (uri) {
-				let finalUri = uri[0];
-				// ask the user to name the directory
-				vscode.window.showInputBox({
-					placeHolder: 'Enter the name of the directory to clone Ardupilot',
-					prompt: 'Enter the name of the directory to clone Ardupilot'
-				}).then((name) => {
-					if (!name) {
-						name = '';
+
+		// First check if Git is installed
+		this.isGitInstalled().then(gitInstalled => {
+			if (!gitInstalled) {
+				vscode.window.showErrorMessage(
+					'Git is not installed. Please install Git before cloning Ardupilot.',
+					'Install Instructions'
+				).then(selection => {
+					if (selection === 'Install Instructions') {
+						vscode.env.openExternal(vscode.Uri.parse('https://git-scm.com/book/en/v2/Getting-Started-Installing-Git'));
 					}
-					finalUri = vscode.Uri.joinPath(uri[0], name);
-					// create the directory if it does not exist
-					if (!fs.existsSync(finalUri.fsPath)) {
-						fs.mkdirSync(finalUri.fsPath);
-					} else {
-						// fail if the directory already exists
-						vscode.window.showErrorMessage('Directory already exists');
-					}
-
-					const abortController = new AbortController();
-
-					let progressReference: vscode.Progress<{ message?: string; increment?: number; }> | null = null;
-					let progressFinishPromiseResolve: () => void;
-					const progressFinishPromise: Promise<void> = new Promise<void>((resolve) => {
-						progressFinishPromiseResolve = resolve;
-					});
-					// show progress bar
-					vscode.window.withProgress({
-						location: vscode.ProgressLocation.Notification,
-						title: 'Cloning Ardupilot',
-						cancellable: true
-					}, (prog, token) => {
-						token.onCancellationRequested(() => {
-							this.log.log('Clone cancelled by user');
-							abortController.abort();
-						});
-						progressReference = prog;
-						return progressFinishPromise;
-					});
-					let lastProgress = 0;
-					// clone the repository using simple-git and pass the percent progress to vscode
-					const progController = ({ method, stage, progress }: SimpleGitProgressEvent) => {
-						this.log.log(`git.${method} ${stage} stage ${progress}% complete`);
-						if (method === 'clone' && progressReference && progress != lastProgress) {
-							progressReference.report({ message: `${stage}`, increment: progress - lastProgress });
-							lastProgress = progress;
-						}
-					};
-					const git = simpleGit({ baseDir: finalUri.fsPath, progress: progController, abort: abortController.signal });
-					git.clone('https://www.github.com/ardupilot/ardupilot.git', finalUri.fsPath, ['--progress'])
-						.then(() => {
-							// close the progress bar
-							progressFinishPromiseResolve();
-							// add the cloned repository to the workspace
-							vscode.workspace.updateWorkspaceFolders(vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders.length : 0, null, { uri: finalUri });
-						}, () => {
-							progressFinishPromiseResolve();
-							if (!abortController.signal.aborted) {
-								// show failed to clone
-								vscode.window.showErrorMessage('Failed to clone ardupilot');
-							}
-						});
-
-					return finalUri;
 				});
+				return;
 			}
+
+			// show open dialog box to select the directory
+			const options: vscode.OpenDialogOptions = {
+				canSelectFiles: false,
+				canSelectFolders: true,
+				canSelectMany: false,
+				openLabel: 'Select Directory to Clone Ardupilot',
+			};
+			vscode.window.showOpenDialog(options).then((uri) => {
+				if (uri) {
+					let finalUri = uri[0];
+					// ask the user to name the directory
+					vscode.window.showInputBox({
+						placeHolder: 'Enter the name of the directory to clone Ardupilot',
+						prompt: 'Enter the name of the directory to clone Ardupilot'
+					}).then((name) => {
+						if (!name) {
+							name = '';
+						}
+						finalUri = vscode.Uri.joinPath(uri[0], name);
+						// create the directory if it does not exist
+						if (!fs.existsSync(finalUri.fsPath)) {
+							fs.mkdirSync(finalUri.fsPath);
+						} else {
+							// fail if the directory already exists
+							vscode.window.showErrorMessage('Directory already exists');
+						}
+
+						const abortController = new AbortController();
+
+						let progressReference: vscode.Progress<{ message?: string; increment?: number; }> | null = null;
+						let progressFinishPromiseResolve: () => void;
+						const progressFinishPromise: Promise<void> = new Promise<void>((resolve) => {
+							progressFinishPromiseResolve = resolve;
+						});
+						// show progress bar
+						vscode.window.withProgress({
+							location: vscode.ProgressLocation.Notification,
+							title: 'Cloning Ardupilot',
+							cancellable: true
+						}, (prog, token) => {
+							token.onCancellationRequested(() => {
+								this.log.log('Clone cancelled by user');
+								abortController.abort();
+							});
+							progressReference = prog;
+							return progressFinishPromise;
+						});
+						let lastProgress = 0;
+						// clone the repository using simple-git and pass the percent progress to vscode
+						const progController = ({ method, stage, progress }: SimpleGitProgressEvent) => {
+							this.log.log(`git.${method} ${stage} stage ${progress}% complete`);
+							if (method === 'clone' && progressReference && progress != lastProgress) {
+								progressReference.report({ message: `${stage}`, increment: progress - lastProgress });
+								lastProgress = progress;
+							}
+						};
+						const git = simpleGit({ baseDir: finalUri.fsPath, progress: progController, abort: abortController.signal });
+						git.clone('https://www.github.com/ardupilot/ardupilot.git', finalUri.fsPath, ['--progress'])
+							.then(() => {
+								// close the progress bar
+								progressFinishPromiseResolve();
+								// add the cloned repository to the workspace
+								vscode.workspace.updateWorkspaceFolders(vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders.length : 0, null, { uri: finalUri });
+							}, () => {
+								progressFinishPromiseResolve();
+								if (!abortController.signal.aborted) {
+									// show failed to clone
+									vscode.window.showErrorMessage('Failed to clone ardupilot');
+								}
+							});
+
+						return finalUri;
+					});
+				}
+			});
 		});
 	}
 
