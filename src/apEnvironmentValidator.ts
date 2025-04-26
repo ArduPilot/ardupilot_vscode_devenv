@@ -116,6 +116,12 @@ export class ValidateEnvironmentPanel {
 				case 'resetAllPaths':
 					this._resetAllToolPaths();
 					break;
+				case 'launchWSL':
+					this._launchWSL();
+					break;
+				case 'openVSCodeWSL':
+					this._openVSCodeWithWSL();
+					break;
 				}
 			},
 			null,
@@ -250,10 +256,35 @@ export class ValidateEnvironmentPanel {
             margin-top: 5px;
             font-size: 12px;
         }
+        .platform-warning {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: rgba(204, 34, 34, 0.1);
+            border: 1px solid #cc2222;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .platform-warning h2 {
+            margin-top: 0;
+            color: #cc2222;
+        }
     </style>
 </head>
 <body>
     <h1>ArduPilot Environment Validation</h1>
+    
+    <div id="platform-warning" style="display:none;" class="platform-warning">
+        <h2>Unsupported Platform Detected</h2>
+        <p>ArduPilot development is only supported on macOS and Linux.</p>
+        <p>You appear to be using Windows. Please install Windows Subsystem for Linux (WSL) to continue.</p>
+        <div class="action-buttons">
+            <button id="launch-wsl-btn">Launch WSL Installation Guide</button>
+            <button id="open-vscode-wsl-btn">Open VSCode with WSL</button>
+        </div>
+    </div>
+    
     <div id="validation-results">
         <div class="tool-container" id="python" data-tool-id="${ProgramUtils.TOOL_PYTHON}">
             <div class="tool-header">
@@ -373,6 +404,9 @@ export class ValidateEnvironmentPanel {
         (function() {
             const vscode = acquireVsCodeApi();
             
+            // Platform detection - will be updated by the extension
+            let currentPlatform = null;
+            
             // Setup tool path configuration buttons
             document.querySelectorAll('.config-path-btn').forEach(btn => {
                 btn.addEventListener('click', (event) => {
@@ -385,6 +419,20 @@ export class ValidateEnvironmentPanel {
                         toolId: toolId,
                         toolName: toolName
                     });
+                });
+            });
+            
+            // Setup WSL launch button
+            document.getElementById('launch-wsl-btn').addEventListener('click', () => {
+                vscode.postMessage({
+                    command: 'launchWSL'
+                });
+            });
+            
+            // Setup Open VSCode with WSL button
+            document.getElementById('open-vscode-wsl-btn').addEventListener('click', () => {
+                vscode.postMessage({
+                    command: 'openVSCodeWSL'
                 });
             });
             
@@ -460,6 +508,18 @@ export class ValidateEnvironmentPanel {
                 } else if (message.command === 'configurationSaved') {
                     // Refresh validation after configuration is saved
                     vscode.postMessage({ command: 'checkEnvironment' });
+                } else if (message.command === 'platformCheck') {
+                    currentPlatform = message.platform;
+                    const platformWarningElement = document.getElementById('platform-warning');
+                    
+                    if (message.platform === 'win32') {
+                        platformWarningElement.style.display = 'block';
+                        // Hide or show the validation results based on platform
+                        document.getElementById('validation-results').style.display = 'none';
+                    } else {
+                        platformWarningElement.style.display = 'none';
+                        document.getElementById('validation-results').style.display = 'block';
+                    }
                 }
             });
         })();
@@ -469,6 +529,14 @@ export class ValidateEnvironmentPanel {
 	}
 
 	private async _validateEnvironment(): Promise<void> {
+		// First check if the platform is supported
+		this._checkPlatform();
+
+		// If we're on Windows, don't proceed with tool validation
+		if (process.platform === 'win32') {
+			return;
+		}
+
 		const pythonCheck = ProgramUtils.findPython();
 		const mavproxyCheck = ProgramUtils.findMavproxy();
 		const gccCheck = ProgramUtils.findArmGCC();
@@ -503,6 +571,58 @@ export class ValidateEnvironmentPanel {
 
 		// Generate summary - only include required tools in the summary
 		this._generateSummary([pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, pyserialResult]);
+	}
+
+	/**
+	 * Checks if the current platform is supported (Linux or macOS)
+	 */
+	private _checkPlatform(): void {
+		this._panel.webview.postMessage({
+			command: 'platformCheck',
+			platform: process.platform,
+			supported: process.platform === 'linux' || process.platform === 'darwin'
+		});
+	}
+
+	/**
+	 * Launch WSL installation guide when the user clicks the WSL button
+	 */
+	private _launchWSL(): void {
+		// Open Microsoft's WSL installation guide in the default browser
+		vscode.env.openExternal(vscode.Uri.parse('https://learn.microsoft.com/en-us/windows/wsl/install'));
+
+		// Also suggest the user to install VS Code Remote WSL extension
+		vscode.window.showInformationMessage(
+			'Would you like to install the VS Code Remote - WSL extension to work with ArduPilot in WSL?',
+			'Install Extension', 'Later'
+		).then(choice => {
+			if (choice === 'Install Extension') {
+				vscode.commands.executeCommand('workbench.extensions.installExtension', 'ms-vscode-remote.remote-wsl');
+			}
+		});
+	}
+
+	/**
+	 * Opens a new VS Code window connected to WSL
+	 */
+	private _openVSCodeWithWSL(): void {
+		// Execute the VS Code command to open a new window connected to WSL
+		vscode.commands.executeCommand('remote-wsl.openFolder')
+			.then(() => {
+				// Success - no action needed as VS Code will handle opening the new window
+			}, (error) => {
+				// If there's an error, it might be because the Remote WSL extension is not installed
+				vscode.window.showErrorMessage(
+					'Failed to open VS Code with WSL. Make sure the Remote - WSL extension is installed.',
+					'Install Extension'
+				).then(choice => {
+					if (choice === 'Install Extension') {
+						vscode.commands.executeCommand('workbench.extensions.installExtension', 'ms-vscode-remote.remote-wsl');
+					}
+				});
+
+				ValidateEnvironment.log.log(`Failed to open VS Code with WSL: ${error}`);
+			});
 	}
 
 	private _checkCCache(): Promise<{ available: boolean, version?: string, path?: string, info?: string }> {
