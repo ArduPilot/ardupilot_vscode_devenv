@@ -239,7 +239,7 @@
       {
         "command": "apBuildConfig.activate",
         "title": "Set as Active Configuration",
-        "icon": "$(star)"
+        "icon": "$(pass)"
       },
       {
         "command": "connected-devices.refresh",

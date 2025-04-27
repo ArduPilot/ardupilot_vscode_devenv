@@ -62,8 +62,8 @@ export class apBuildConfig extends vscode.TreeItem {
 			if (activeConfiguration &&
 				activeConfiguration.definition.configure === taskDef.configure &&
 				activeConfiguration.definition.target === taskDef.target) {
-				// Highlight active configuration
-				this.iconPath = new vscode.ThemeIcon('star-full');
+				// Highlight active configuration with blue check circle
+				this.iconPath = new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('terminal.ansiBlue'));
 				this.description = `${taskDef.target} (Active)`;
 				this.contextValue = 'apBuildConfigActive';
 			} else {
