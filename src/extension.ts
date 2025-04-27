@@ -25,9 +25,11 @@ import { apWelcomeProvider } from './apWelcomeProvider';
 import { apConnectedDevices, ConnectedDeviceDecorationProvider } from './apConnectedDevices';
 import { ToolsConfig } from './apToolsConfig';
 import { APLaunchConfigurationProvider } from './apLaunch';
+import { apActionItem, apActionsProvider, activeConfiguration, setActiveConfiguration } from './apActions';
 
 let apTaskProvider: vscode.Disposable | undefined;
 let connectedDevicesProvider: apConnectedDevices | undefined;
+let actionsProvider: apActionsProvider | undefined;
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -59,13 +61,34 @@ export function activate(_context: vscode.ExtensionContext): void {
 	const rootPath = (vscode.workspace.workspaceFolders && (vscode.workspace.workspaceFolders.length > 0))
 		? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 
+	// Register Build Config Provider
 	const apBuildConfigProviderInstance = new apBuildConfigProvider(rootPath, _context);
 	vscode.window.registerTreeDataProvider('apBuildConfig', apBuildConfigProviderInstance);
 	vscode.commands.registerCommand('apBuildConfig.refreshEntry', () => apBuildConfigProviderInstance.refresh());
 	vscode.commands.registerCommand('apBuildConfig.addEntry', () => apBuildConfigProviderInstance.add());
 	vscode.commands.registerCommand('apBuildConfig.editEntry', (item: apBuildConfig) => item.edit());
 	vscode.commands.registerCommand('apBuildConfig.deleteEntry', (item: apBuildConfig) => item.delete());
-	vscode.commands.registerCommand('apBuildConfig.buildFirmware', (item: apBuildConfig) => item.build());
+	vscode.commands.registerCommand('apBuildConfig.activate', (item: apBuildConfig) => item.activate());
+	vscode.commands.registerCommand('apBuildConfig.activateOnSelect', (item: apBuildConfig) => item.activate());
+
+	// Register Actions Provider
+	actionsProvider = new apActionsProvider(rootPath, _context);
+	vscode.window.registerTreeDataProvider('apActions', actionsProvider);
+	vscode.commands.registerCommand('apActions.refresh', () => actionsProvider?.refresh());
+	vscode.commands.registerCommand('apActions.build', (item: apActionItem) => item.performAction());
+	vscode.commands.registerCommand('apActions.debug', (item: apActionItem) => item.performAction());
+	vscode.commands.registerCommand('apActions.upload', (item: apActionItem) => item.performAction());
+	vscode.commands.registerCommand('apActions.run', (item: apActionItem) => item.performAction());
+	vscode.commands.registerCommand('apActions.configure', (item: apActionItem) => item.performAction());
+
+	// Command to set active configuration from outside apActions
+	vscode.commands.registerCommand('apActions.setActiveConfiguration', (task: vscode.Task) => {
+		if (activeConfiguration !== task) {
+			setActiveConfiguration(task);
+			actionsProvider?.refresh();
+			vscode.commands.executeCommand('apActions.configChanged');
+		}
+	});
 
 	// Register Connected Devices tree provider
 	connectedDevicesProvider = new apConnectedDevices();

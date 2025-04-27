@@ -25,6 +25,16 @@
   },
   "homepage": "https://github.com/ardupilot/ardupilot_vscode_devenv/blob/master/README.md",
   "contributes": {
+    "configuration": {
+      "title": "Ardupilot",
+      "properties": {
+        "ardupilot.activeConfiguration": {
+          "type": "string",
+          "default": null,
+          "description": "Currently active build configuration"
+        }
+      }
+    },
     "taskDefinitions": [
       {
         "type": "ardupilot",
@@ -175,6 +185,11 @@
           "name": "Build Configurations"
         },
         {
+          "id": "apActions",
+          "name": "Actions",
+          "type": "tree"
+        },
+        {
           "id": "connected-devices",
           "name": "Connected Devices",
           "type": "tree"
@@ -189,6 +204,10 @@
       {
         "view": "connected-devices",
         "contents": "No USB devices connected.\n[Refresh Devices](command:connected-devices.refresh)\n"
+      },
+      {
+        "view": "apActions",
+        "contents": "No active configuration.\n\nYou need to create or select a build configuration first.\n[Create New Configuration](command:apBuildConfig.addEntry)\n[Select Configuration](command:apActions.configure)\n"
       }
     ],
     "commands": [
@@ -218,9 +237,43 @@
         "icon": "$(tools)"
       },
       {
+        "command": "apBuildConfig.activate",
+        "title": "Set as Active Configuration",
+        "icon": "$(star)"
+      },
+      {
         "command": "connected-devices.refresh",
         "title": "Refresh Connected Devices",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "apActions.refresh",
+        "title": "Refresh Actions",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "apActions.configure",
+        "title": "Select Active Configuration"
+      },
+      {
+        "command": "apActions.build",
+        "title": "Build Firmware",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "apActions.debug",
+        "title": "Debug Firmware",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "apActions.upload",
+        "title": "Upload Firmware",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "apActions.run",
+        "title": "Run SITL Simulation",
+        "icon": "$(run)"
       }
     ],
     "menus": {
@@ -239,6 +292,11 @@
           "command": "connected-devices.refresh",
           "when": "view == connected-devices",
           "group": "navigation"
+        },
+        {
+          "command": "apActions.refresh",
+          "when": "view == apActions",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
@@ -253,8 +311,8 @@
           "group": "inline"
         },
         {
-          "command": "apBuildConfig.buildFirmware",
-          "when": "view == apBuildConfig",
+          "command": "apBuildConfig.activate",
+          "when": "view == apBuildConfig && viewItem == apBuildConfig",
           "group": "inline"
         }
       ]

@@ -20,17 +20,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { apBuildConfigPanel } from './apBuildConfigPanel';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
-
-// Interface for launch configuration
-interface LaunchConfiguration {
-	name: string;
-	type: string;
-	request: string;
-	target: string;
-	preLaunchTask: string;
-	isSITL: boolean;
-	simVehicleCommand?: string;
-}
+import { activeConfiguration, apActionItem } from './apActions';
 
 export const binToTarget : { [target: string]: string} = {
 	'bin/arducopter': 'copter',
@@ -60,13 +50,32 @@ export class apBuildConfig extends vscode.TreeItem {
 		super(label, collapsibleState);
 		if (this.task && this.task.definition) {
 			const taskDef = this.task.definition as ArdupilotTaskDefinition;
-			this.createMatchingLaunchConfig(
+			apActionItem.createMatchingLaunchConfig(
 				taskDef.configure,
 				taskDef.target,
 				taskDef.simVehicleCommand || ''
 			);
 			// Set the description to include the target name
 			this.description = taskDef.target;
+
+			// Check if this is the active configuration
+			if (activeConfiguration &&
+				activeConfiguration.definition.configure === taskDef.configure &&
+				activeConfiguration.definition.target === taskDef.target) {
+				// Highlight active configuration
+				this.iconPath = new vscode.ThemeIcon('star-full');
+				this.description = `${taskDef.target} (Active)`;
+				this.contextValue = 'apBuildConfigActive';
+			} else {
+				this.contextValue = 'apBuildConfig';
+
+				// Add command to activate configuration when clicked
+				this.command = {
+					title: 'Set as Active Configuration',
+					command: 'apBuildConfig.activateOnSelect',
+					arguments: [this]
+				};
+			}
 		}
 	}
 
@@ -77,160 +86,28 @@ export class apBuildConfig extends vscode.TreeItem {
 		}
 	}
 
-	build(): void {
-		apBuildConfig.log(`build firmware for ${this.label}`);
-		if (!this.task) {
+	// Set this configuration as the active configuration
+	activate(): void {
+		apBuildConfig.log(`Activating ${this.label} as current configuration`);
+		if (!this.task || !this.task.definition) {
 			return;
 		}
-		// Execute the build task
-		vscode.tasks.executeTask(this.task).then(taskExecution => {
-			if (!taskExecution) {
-				return;
-			}
 
-			// Create a task execution finished listener
-			const disposable = vscode.tasks.onDidEndTaskProcess(e => {
-				if (e.execution === taskExecution) {
-					disposable.dispose();  // Clean up the listener
+		const taskDef = this.task.definition as ArdupilotTaskDefinition;
 
-					if (e.exitCode === 0) {
-						vscode.window.showInformationMessage(`Build successful for ${this.label}`);
-
-						// After successful build, create matching launch configuration
-						if (this.task && this.task.definition) {
-							const taskDef = this.task.definition as ArdupilotTaskDefinition;
-							this.createMatchingLaunchConfig(
-								taskDef.configure,
-								taskDef.target,
-								taskDef.simVehicleCommand || ''
-							);
-						}
-					} else {
-						vscode.window.showErrorMessage(`Build failed for ${this.label}`);
-					}
-				}
-			});
+		// Save the selection to workspace settings
+		vscode.workspace.getConfiguration('ardupilot').update(
+			'activeConfiguration',
+			`${taskDef.configure}-${taskDef.target}`,
+			vscode.ConfigurationTarget.Workspace
+		).then(() => {
+			// Set as active configuration (this will trigger a refresh through the watcher)
+			vscode.commands.executeCommand('apActions.setActiveConfiguration', this.task);
+			vscode.window.showInformationMessage(`Activated ${taskDef.configure}-${taskDef.target} configuration`);
 		});
-	}
 
-	private createMatchingLaunchConfig(configure: string, target: string, simVehicleCommand: string): void {
-		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		if (!workspaceRoot) {
-			apBuildConfig.log('No workspace folder is open.');
-			return;
-		}
-
-		const launchPath = path.join(workspaceRoot, '.vscode', 'launch.json');
-		let launchJson: any = { configurations: [] };
-
-		if (fs.existsSync(launchPath)) {
-			try {
-				launchJson = JSON.parse(fs.readFileSync(launchPath, 'utf8'));
-			} catch (error) {
-				apBuildConfig.log(`Error reading launch.json: ${error}`);
-			}
-		}
-
-		// Check if launch.json has a version property
-		if (!launchJson.version) {
-			launchJson.version = '0.2.0';
-		}
-
-		// Check if launch.json has a configurations array
-		if (!launchJson.configurations) {
-			launchJson.configurations = [];
-		}
-
-		const isSITL = configure.toLowerCase().startsWith('sitl');
-		const launchConfigName = 'Launch Ardupilot';
-
-		// Create standard launch configuration
-		const newConfig: LaunchConfiguration = {
-			name: launchConfigName,
-			type: 'apLaunch',
-			request: 'launch',
-			target: target,
-			preLaunchTask: `${APTaskProvider.ardupilotTaskType}: ${configure}-${target}`,
-			isSITL: isSITL,
-			...(simVehicleCommand && { simVehicleCommand })
-		};
-
-		// Check if a similar configuration already exists
-		const existingConfigIndex = launchJson.configurations.findIndex((config: LaunchConfiguration) =>
-			config.type === 'apLaunch' &&
-			config.name === launchConfigName
-		);
-
-		// Only add the configuration if it doesn't already exist
-		if (existingConfigIndex >= 0) {
-			// Update the existing configuration
-			launchJson.configurations[existingConfigIndex] = newConfig;
-		} else {
-			launchJson.configurations.push(newConfig);
-		}
-
-		// Also update the task configuration with the simVehicleCommand
-		if (isSITL && simVehicleCommand) {
-			this.updateTaskWithSimVehicleCommand(configure, target, simVehicleCommand);
-		}
-
-		// Create .vscode directory if it doesn't exist
-		const vscodeDir = path.dirname(launchPath);
-		if (!fs.existsSync(vscodeDir)) {
-			fs.mkdirSync(vscodeDir, { recursive: true });
-		}
-
-		try {
-			fs.writeFileSync(launchPath, JSON.stringify(launchJson, null, 2), 'utf8');
-			apBuildConfig.log(`Updated launch configurations for ${configure}-${target}`);
-		} catch (error) {
-			apBuildConfig.log(`Error writing to launch.json: ${error}`);
-		}
-	}
-
-	/**
-	 * Updates the task configuration with the simVehicleCommand
-	 * @param configure The board name
-	 * @param target The build target
-	 * @param simVehicleCommand The simVehicleCommand to save
-	 */
-	private updateTaskWithSimVehicleCommand(configure: string, target: string, simVehicleCommand: string): void {
-		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		if (!workspaceRoot) {
-			apBuildConfig.log('No workspace folder is open.');
-			return;
-		}
-
-		// Get the tasks configuration using the VS Code API
-		const tasksConfig = vscode.workspace.getConfiguration('tasks', vscode.Uri.file(workspaceRoot));
-
-		// Get current tasks array
-		const tasks = tasksConfig.get('tasks') as Array<ArdupilotTaskDefinition> || [];
-		if (!tasks || !Array.isArray(tasks)) {
-			apBuildConfig.log('No tasks found in tasks.json');
-			return;
-		}
-
-		// Find the task with the matching board name and target
-		const taskIndex = tasks.findIndex((task: ArdupilotTaskDefinition) =>
-			task.configure === configure &&
-			task.target === target &&
-			task.type === 'ardupilot'
-		);
-
-		if (taskIndex >= 0) {
-			// Update the task with the simVehicleCommand
-			tasks[taskIndex].simVehicleCommand = simVehicleCommand;
-
-			// Update the tasks configuration
-			tasksConfig.update('tasks', tasks, vscode.ConfigurationTarget.Workspace).then(() => {
-				apBuildConfig.log(`Updated simVehicleCommand for ${configure}-${target} in tasks.json`);
-			}, (error) => {
-				apBuildConfig.log(`Error updating tasks.json: ${error}`);
-			});
-		} else {
-			apBuildConfig.log(`No task found for ${configure}-${target}`);
-		}
+		// Refresh the tree view to update UI
+		vscode.commands.executeCommand('apBuildConfig.refreshEntry');
 	}
 
 	delete(): void {
@@ -257,6 +134,20 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 
 	constructor(private workspaceRoot: string | undefined, public context: vscode.ExtensionContext) {
 		apBuildConfigProvider.log('apBuildConfigProvider constructor');
+
+		// Watch for changes to the active configuration
+		vscode.workspace.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('ardupilot.activeConfiguration')) {
+				this.refresh();
+			}
+		});
+
+		// Refresh when apActions updates the active configuration
+		context.subscriptions.push(
+			vscode.commands.registerCommand('apActions.configChanged', () => {
+				this.refresh();
+			})
+		);
 	}
 
 	getTreeItem(element: apBuildConfig): vscode.TreeItem {
