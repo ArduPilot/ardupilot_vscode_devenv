@@ -185,15 +185,15 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				// Generate a unique port for gdbserver (between 3000-4000)
 				const gdbPort = 3000 + Math.floor(Math.random() * 1000);
 
-				// check if run_in_terminal_window.sh contains TMUX_GDBSERVER
+				// check if run_in_terminal_window.sh contains TMUX_PREFIX
 				if (!fs.existsSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'))) {
 					vscode.window.showErrorMessage('run_in_terminal_window.sh not found. Please clone ArduPilot to debug SITL.');
 					return undefined;
 				} else {
-					// check file contains TMUX_GDBSERVER
+					// check file contains TMUX_PREFIX
 					const fileContent = fs.readFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), 'utf8');
-					if (!fileContent.includes('TMUX_GDBSERVER')) {
-						// if it doesn't contain TMUX_GDBSERVER, replace it with run_in_terminal_window.sh from resources, do backup of existing file
+					if (!fileContent.includes('TMUX_PREFIX')) {
+						// if it doesn't contain TMUX_PREFIX, replace it with run_in_terminal_window.sh from resources, do backup of existing file
 						const backupPath = path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh.bak');
 						if (!fs.existsSync(backupPath)) {
 							// backup the existing file
@@ -210,8 +210,8 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				// Generate a unique tmux session name
 				this.tmuxSessionName = `ardupilot_sitl_${vehicleType}_${Date.now()}`;
 
-				// Set up the environment to use gdbserver through TMUX_GDBSERVER
-				const simVehicleCmd = `tmux new-session -s "${this.tmuxSessionName}" -n "SimVehicle" 'tmux set mouse on && export TMUX_GDBSERVER="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${apConfig.simVehicleCommand || ''}'`;
+				// Set up the environment to use gdbserver through TMUX_PREFIX
+				const simVehicleCmd = `tmux new-session -s "${this.tmuxSessionName}" -n "SimVehicle" 'tmux set mouse on && export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${apConfig.simVehicleCommand || ''}'`;
 				APLaunchConfigurationProvider.log.log(`Running SITL simulation with debug: ${simVehicleCmd}`);
 
 				// Start the SITL simulation in a terminal and store the terminal reference

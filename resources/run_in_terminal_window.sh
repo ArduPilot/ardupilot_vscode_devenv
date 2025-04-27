@@ -28,8 +28,8 @@ if [ -n "$SITL_RITW_TERMINAL" ]; then
   printf "%q " "$@" >>"$FILEPATH"
   chmod +x "$FILEPATH"
   $SITL_RITW_TERMINAL "$FILEPATH" &
-elif [ -n "$TMUX_GDBSERVER" ]; then
-  tmux new-window -dn "$name" $TMUX_GDBSERVER "$*"
+elif [ -n "$TMUX_PREFIX" ]; then
+  tmux new-window -dn "$name" "$TMUX_PREFIX $*"
 elif [ -n "$TMUX" ]; then
   tmux new-window -dn "$name" "$*"
 elif [ -n "$DISPLAY" -a -n "$(which osascript)" ]; then
