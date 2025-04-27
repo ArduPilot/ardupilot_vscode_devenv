@@ -232,11 +232,6 @@
         "icon": "$(trash)"
       },
       {
-        "command": "apBuildConfig.buildFirmware",
-        "title": "Build Firmware",
-        "icon": "$(tools)"
-      },
-      {
         "command": "apBuildConfig.activate",
         "title": "Set as Active Configuration",
         "icon": "$(pass)"
