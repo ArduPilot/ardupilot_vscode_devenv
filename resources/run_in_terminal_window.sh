@@ -28,10 +28,8 @@ if [ -n "$SITL_RITW_TERMINAL" ]; then
   printf "%q " "$@" >>"$FILEPATH"
   chmod +x "$FILEPATH"
   $SITL_RITW_TERMINAL "$FILEPATH" &
-elif [ -n "$TMUX_PREFIX" ]; then
-  tmux new-window -dn "$name" "$TMUX_PREFIX $*"
 elif [ -n "$TMUX" ]; then
-  tmux new-window -dn "$name" "$*"
+  tmux new-window -dn "$name" "$TMUX_PREFIX $*"
 elif [ -n "$DISPLAY" -a -n "$(which osascript)" ]; then
   osascript -e 'tell application "Terminal" to do script "'"cd $(pwd) && clear && $* "'"'
 elif [ -n "$DISPLAY" -a -n "$(which xterm)" ]; then

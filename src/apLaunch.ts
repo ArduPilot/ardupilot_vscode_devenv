@@ -211,7 +211,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				this.tmuxSessionName = `ardupilot_sitl_${vehicleType}_${Date.now()}`;
 
 				// Set up the environment to use gdbserver through TMUX_PREFIX
-				const simVehicleCmd = `tmux new-session -s "${this.tmuxSessionName}" -n "SimVehicle" 'tmux set mouse on && export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${apConfig.simVehicleCommand || ''}'`;
+				const simVehicleCmd = `tmux new-session -s "${this.tmuxSessionName}" -n "SimVehicle" 'tmux set mouse on && export TMUX=1 && export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${apConfig.simVehicleCommand || ''}'`;
 				APLaunchConfigurationProvider.log.log(`Running SITL simulation with debug: ${simVehicleCmd}`);
 
 				// Start the SITL simulation in a terminal and store the terminal reference
