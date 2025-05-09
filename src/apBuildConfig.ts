@@ -50,11 +50,7 @@ export class apBuildConfig extends vscode.TreeItem {
 		super(label, collapsibleState);
 		if (this.task && this.task.definition) {
 			const taskDef = this.task.definition as ArdupilotTaskDefinition;
-			apActionItem.createMatchingLaunchConfig(
-				taskDef.configure,
-				taskDef.target,
-				taskDef.simVehicleCommand || ''
-			);
+
 			// Set the description to include the target name
 			this.description = taskDef.target;
 

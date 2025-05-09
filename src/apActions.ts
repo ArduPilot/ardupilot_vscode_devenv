@@ -33,10 +33,20 @@ interface LaunchConfiguration {
 
 // Store the currently active build configuration
 export let activeConfiguration: vscode.Task | undefined;
+export let activeLaunchConfig: LaunchConfiguration | null;
 
 // Function to update the active configuration
 export function setActiveConfiguration(task: vscode.Task): void {
 	activeConfiguration = task;
+	// After successful build, create matching launch configuration
+	if (activeConfiguration && activeConfiguration.definition) {
+		const taskDef = activeConfiguration.definition as ArdupilotTaskDefinition;
+		activeLaunchConfig = apActionItem.createMatchingLaunchConfig(
+			taskDef.configure,
+			taskDef.target,
+			taskDef.simVehicleCommand || ''
+		);
+	}
 }
 
 // TreeItem representing an action
@@ -126,16 +136,6 @@ export class apActionItem extends vscode.TreeItem {
 
 					if (e.exitCode === 0) {
 						vscode.window.showInformationMessage(`Build successful for ${this.label}`);
-
-						// After successful build, create matching launch configuration
-						if (activeConfiguration && activeConfiguration.definition) {
-							const taskDef = activeConfiguration.definition as ArdupilotTaskDefinition;
-							apActionItem.createMatchingLaunchConfig(
-								taskDef.configure,
-								taskDef.target,
-								taskDef.simVehicleCommand || ''
-							);
-						}
 					} else {
 						vscode.window.showErrorMessage(`Build failed for ${this.label}`);
 					}
@@ -278,19 +278,10 @@ export class apActionItem extends vscode.TreeItem {
 			vscode.window.showErrorMessage('No active configuration selected');
 			return;
 		}
-
-		const config = activeConfiguration.definition as ArdupilotTaskDefinition;
-		const isSITL = config.configure.toLowerCase().startsWith('sitl');
-
-		// Launch the debugger
-		vscode.debug.startDebugging(undefined, {
-			type: 'apLaunch',
-			request: 'launch',
-			name: 'Debug ArduPilot',
-			target: config.target,
-			preLaunchTask: `ardupilot: ${config.configure}-${config.target}`,
-			isSITL: isSITL
-		});
+		// Launch active launch configuration
+		if (activeLaunchConfig) {
+			vscode.debug.startDebugging(undefined, activeLaunchConfig);
+		}
 	}
 
 	private uploadFirmware(): void {
@@ -298,35 +289,8 @@ export class apActionItem extends vscode.TreeItem {
 			vscode.window.showErrorMessage('No active configuration selected');
 			return;
 		}
-
-		// Check if we're dealing with a SITL configuration
-		const config = activeConfiguration.definition as ArdupilotTaskDefinition;
-		const isSITL = config.configure.toLowerCase().startsWith('sitl');
-
-		if (isSITL) {
-			vscode.window.showInformationMessage('Upload is not applicable for SITL configurations');
-			return;
-		}
-
-		// For board uploads, we need to determine the appropriate upload method
-		// This would typically involve running a waf command with upload options
-		const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-		if (!workspaceRoot) {
-			vscode.window.showErrorMessage('No workspace folder is open');
-			return;
-		}
-
-		const taskDef = activeConfiguration.definition as ArdupilotTaskDefinition;
-		const launchConfig = apActionItem.createMatchingLaunchConfig(
-			taskDef.configure,
-			taskDef.target,
-			taskDef.simVehicleCommand || ''
-		);
-		if (launchConfig) {
-			// execute the launch task
-			vscode.debug.startDebugging(undefined, launchConfig);
-		} else {
-			vscode.window.showErrorMessage('Failed to create launch configuration for upload');
+		if (activeLaunchConfig) {
+			vscode.debug.startDebugging(undefined, activeLaunchConfig);
 		}
 	}
 
