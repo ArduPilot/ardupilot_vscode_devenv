@@ -21,6 +21,8 @@ import * as fs from 'fs';
 import { APTaskProvider } from './taskProvider';
 import { Uri, Webview } from 'vscode';
 import { UIHooks } from './apUIHooks';
+import { setActiveConfiguration } from './apActions';
+
 /**
  * Manages Build Configuration webview panels
  */
@@ -197,6 +199,8 @@ export class apBuildConfigPanel {
 
 			// execute the task
 			if (currentTaskDef) {
+			// set active configuration
+				setActiveConfiguration(currentTaskDef);
 				vscode.tasks.executeTask(currentTaskDef).then((execution) => {
 					vscode.tasks.onDidEndTaskProcess((e) => {
 						if (e.execution == execution) {
