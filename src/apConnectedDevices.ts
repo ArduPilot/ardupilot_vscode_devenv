@@ -445,7 +445,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			const linuxDevices = await this.getLinuxDevices();
 			devices.push(...linuxDevices);
 			// Otherwise, try to use PowerShell from WSL to access Windows devices
-			this.log.log('No devices found directly in WSL, trying Windows approach...');
+			// this.log.log('No devices found directly in WSL, trying Windows approach...');
 			devices.push(...await this.getWindowsDevices());
 			return devices;
 		} catch (error) {
