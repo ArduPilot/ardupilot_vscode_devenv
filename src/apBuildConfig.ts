@@ -20,7 +20,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { apBuildConfigPanel } from './apBuildConfigPanel';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
-import { activeConfiguration, apActionItem } from './apActions';
+import { activeConfiguration } from './apActions';
 
 export const binToTarget : { [target: string]: string} = {
 	'bin/arducopter': 'copter',
