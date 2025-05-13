@@ -27,13 +27,22 @@ interface RecentSelectionCache {
 export class TasksList {
     private static _instance: TasksList;
     private _tasklist: Task[];
-    private _boards: string[];
+    private _boards: string[] = [];
     private _boardTargets: { [board: string]: string[] } = {};
-    private _recentSelections: RecentSelectionCache;
+    private _recentSelections: RecentSelectionCache = { boards: {}, targets: {} };
 
     private constructor(taskList: string) {
         console.info(`Loading tasklist`);
-        this._tasklist = JSON.parse(taskList);
+        if (taskList === undefined) {
+            // throw error saying failed to load Ardupilot task list
+            console.error('Failed to load Ardupilot task list');
+            throw new Error(`Failed to load Ardupilot task list
+    * Ensure ardupilot project is in the workspace
+    * "./waf generate_tasklist" is executable
+    * Validate Environment is clear`);
+        } else {
+            this._tasklist = JSON.parse(taskList);
+        }
         this._loadRecentSelectionsCache();
         this.loadTargets();
     }

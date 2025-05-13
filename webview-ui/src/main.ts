@@ -17,10 +17,15 @@
 import { mount } from 'svelte';
 import App from './BuildConfig.svelte';
 import { VSCodeHooks } from './vscodeHooks';
+import { installErrorHandler } from './utils/errorSourceMap';
 
 // load tasklist
 const vscodeHooks = VSCodeHooks.getInstance();
 
+// Install the improved error handler first
+installErrorHandler();
+
+// Then initialize your application
 const app = mount(App, {
   target: document.getElementById('buildConfig')!,
   props: {

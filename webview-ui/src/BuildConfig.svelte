@@ -5,6 +5,7 @@
   import ExtraConfig from "./lib/ExtraConfig.svelte";
   import SITLConfig from "./lib/SITLConfig.svelte";
   import FeatureBlock from "./lib/FeatureBlock.svelte";
+  import ErrorBoundary from "./lib/ErrorBoundary.svelte";
   import "@vscode-elements/elements/dist/vscode-form-container/index.js";
   import "@vscode-elements/elements/dist/vscode-divider/index.js";
   import "@vscode-elements/elements/dist/vscode-button/index.js";
@@ -114,85 +115,105 @@
   $effect(() => {
     toggleFeatures();
   });
+
+  // Add a function to handle errors better
+  function handleError(detail: { error: Error | null; originalStack: string; enhancedStack?: string; location?: string }) {
+    if (detail.error) {
+      console.error("Error caught by boundary:", detail.error, "at", detail.location);
+      vscodeHooks.postMessage("error", {
+        message: detail.error.message,
+        stack: detail.enhancedStack || detail.originalStack,
+        location: detail.location || "BuildConfig",
+      });
+    } else {
+      console.error("Error caught by boundary with no error object:", detail);
+      vscodeHooks.postMessage("error", {
+        message: "Unknown error in ErrorBoundary",
+        stack: detail.enhancedStack || detail.originalStack,
+        location: detail.location || "BuildConfig",
+      });
+    }
+  }
 </script>
 
 <main>
-  {#await loadInfo()}
-    <vscode-progress-ring>Loading</vscode-progress-ring>
-  {:then}
-    <h1>
-      {isEditMode
-        ? "Edit Build Configuration"
-        : "Create a new build configuration"}
-    </h1>
-    <BoardsList
-      bind:value={board}
-      boards={tasksList.getBoards()}
-      label="Select Board:"
-      id="board"
-      {vscodeHooks}
-    />
-    <TargetsList
-      bind:value={target}
-      targets={tasksList.getTargets(board)}
-      label="Select Target:"
-      id="target"
-    />
-    {#if isSitlBoard()}
-      <SITLConfig
-        bind:value={simVehicleCommand}
-        id="sitlConfig"
-        label="SITL Command:"
+  <ErrorBoundary onerror={handleError}>
+    {#await loadInfo()}
+      <vscode-progress-ring>Loading</vscode-progress-ring>
+    {:then}
+      <h1>
+        {isEditMode
+          ? "Edit Build Configuration"
+          : "Create a new build configuration"}
+      </h1>
+      <BoardsList
+        bind:value={board}
+        boards={tasksList.getBoards()}
+        label="Select Board:"
+        id="board"
+        {vscodeHooks}
       />
-    {/if}
-    <ExtraConfig
-      bind:value={extraConfig}
-      id="extraConfig"
-      label="Configure Options:"
-    />
-    <vscode-divider></vscode-divider>
+      <TargetsList
+        bind:value={target}
+        targets={tasksList.getTargets(board)}
+        label="Select Target:"
+        id="target"
+      />
+      {#if isSitlBoard()}
+        <SITLConfig
+          bind:value={simVehicleCommand}
+          id="sitlConfig"
+          label="SITL Command:"
+        />
+      {/if}
+      <ExtraConfig
+        bind:value={extraConfig}
+        id="extraConfig"
+        label="Configure Options:"
+      />
+      <vscode-divider></vscode-divider>
 
-    <div class="feature-toggle">
-      <vscode-checkbox
-        id="enable-features-checkbox"
-        onchange={handleFeatureToggle}
-        checked={enableFeatureConfig}>Enable Feature Config</vscode-checkbox
+      <div class="feature-toggle">
+        <vscode-checkbox
+          id="enable-features-checkbox"
+          onchange={handleFeatureToggle}
+          checked={enableFeatureConfig}
+          >Enable Feature Config</vscode-checkbox
+        >
+      </div>
+
+      {#if enableFeatureConfig}
+        <h2>Features:</h2>
+        {#await loadFeatures() then}
+          {#if features.length === 0}
+            <div class="info-message">
+              <p>
+                No features loaded. Please Save Configuration & Build firmware to
+                extract initial features.
+              </p>
+            </div>
+          {:else}
+            <div class="feature-list">
+              {#each featuresGroups as featureGroup}
+                <div class="feature-group">
+                  <FeatureBlock
+                    bind:selected={features}
+                    featureGroups={featuresGroups}
+                    features={featureGroup.features}
+                    label="Select Features:"
+                  />
+                </div>
+              {/each}
+            </div>
+          {/if}
+        {/await}
+      {/if}
+      <vscode-divider></vscode-divider>
+      <vscode-button bind:this={buildButton}
+        >Save Configuration & Build</vscode-button
       >
-    </div>
-
-    {#if enableFeatureConfig}
-      <h2>Features:</h2>
-      {#await loadFeatures() then}
-        {#if features.length === 0}
-          <div class="info-message">
-            <p>
-              No features loaded. Please Save Configuration & Build firmware to
-              extract initial features.
-            </p>
-          </div>
-        {:else}
-          <div class="feature-list">
-            {#each featuresGroups as featureGroup}
-              <div class="feature-group">
-                <FeatureBlock
-                  bind:selected={features}
-                  featureGroups={featuresGroups}
-                  features={featureGroup.features}
-                  label="Select Features:"
-                />
-              </div>
-            {/each}
-          </div>
-        {/if}
-      {/await}
-    {/if}
-    <vscode-divider></vscode-divider>
-    <vscode-button bind:this={buildButton}
-      >Save Configuration & Build</vscode-button
-    >
-  {:catch error}
-    <p>{error.message}</p>
-  {/await}
+    {/await}
+  </ErrorBoundary>
 </main>
 
 <style>
