@@ -379,21 +379,26 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 		try {
 			// update features list
 			APTaskProvider.updateFeaturesList();
-			const raw = fs.readFileSync(path.join(folderString, '.vscode', 'tasks.json'), 'utf8');
-			const tasks = JSON.parse(raw);
-			// Include existing tasks from tasks.json
-			for (const task of tasks.tasks) {
-				// Only process ardupilot type tasks
-				if (task.type === 'ardupilot') {
+			const tasksPath = path.join(folderString, '.vscode', 'tasks.json');
+			let tasks = undefined;
+			if (fs.existsSync(tasksPath)) {
+				const raw = fs.readFileSync(tasksPath, 'utf8');
+				tasks = JSON.parse(raw);
+				// Include existing tasks from tasks.json
+				for (const task of tasks.tasks) {
+					// Only process ardupilot type tasks
+					if (task.type !== 'ardupilot') {
+						continue;
+					}
 					const taskDef = task as ArdupilotTaskDefinition;
+
 					const existingTask = APTaskProvider.createTask(taskDef);
-					if (existingTask) {
-						result.push(existingTask);
-						if (taskDef.group.kind === 'build') {
-							existingTask.group = vscode.TaskGroup.Build;
-						}
-						// print the json existing task
-						// APTaskProvider.log.log(`Existing task ${JSON.stringify(existingTask)}`);
+					if (!existingTask) {
+						continue;
+					}
+					result.push(existingTask);
+					if (taskDef.group.kind === 'build') {
+						existingTask.group = vscode.TaskGroup.Build;
 					}
 				}
 			}
