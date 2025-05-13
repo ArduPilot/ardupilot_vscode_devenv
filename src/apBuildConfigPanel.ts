@@ -306,26 +306,31 @@ export class apBuildConfigPanel {
 		const stylesUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'index.css']);
 		// The JS file from the Svelte build output
 		const scriptUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'index.js']);
-		// get html file from the Svelte build output
+		// The source map file
+		const sourceMapUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'index.js.map']);
 
-		const nonce = getNonce();
-
-		// Tip: Install the es6-string-html VS Code extension to enable code highlighting below
 		return /*html*/ `
-		  <!DOCTYPE html>
-		  <html lang="en">
-			<head>
-			  <title>Hello World</title>
-			  <meta charset="UTF-8" />
-			  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-			  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-			  <link href="${stylesUri}" rel="stylesheet">
-			  <script nonce="${nonce}" src="${scriptUri}" async></script>
-			</head>
-			<body>
-			<div id="buildConfig"></div>
-			</body>
-		  </html>
+			<!DOCTYPE html>
+			<html lang="en">
+				<head>
+					<title>Hello World</title>
+					<meta charset="UTF-8" />
+					<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+					<meta http-equiv="Content-Security-Policy" content="default-src 'none';
+																		style-src ${webview.cspSource};
+																		script-src ${webview.cspSource} 'unsafe-eval' 'unsafe-inline';
+																		connect-src ${webview.cspSource} vscode-resource: vscode-webview-resource: https:;">
+					<link href="${stylesUri}" rel="stylesheet">
+					<script>
+						// Make source map URL available to our error handler
+						window.SOURCE_MAP_URL = "${sourceMapUri}";
+					</script>
+					<script src="${scriptUri}" async></script>
+				</head>
+				<body>
+					<div id="buildConfig"></div>
+				</body>
+			</html>
 		`;
 	}
 
@@ -348,15 +353,6 @@ export class apBuildConfigPanel {
 			}
 		}
 	}
-}
-
-function getNonce(): string {
-	let text = '';
-	const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-	for (let i = 0; i < 32; i++) {
-		text += possible.charAt(Math.floor(Math.random() * possible.length));
-	}
-	return text;
 }
 
 function getUri(webview: Webview, extensionUri: Uri, pathList: string[]): Uri {
