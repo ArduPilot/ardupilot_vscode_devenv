@@ -59,6 +59,10 @@ export class UIHooks {
 		case 'getFeaturesList':
 			this.getFeaturesList();
 			break;
+		case 'error':
+			UIHooks.log(`Error from webview: ${message.message} at ${message.location}`);
+			UIHooks.log(`Stack: ${message.stack}`);
+			break;
 		default:
 			// respond to unknown commands with undefined
 			this._panel.webview.postMessage({ command: message.command, response: 'Bad Request' });
