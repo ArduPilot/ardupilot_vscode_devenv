@@ -781,17 +781,15 @@ export class ValidateEnvironmentPanel {
 				// Verify the file exists and is executable
 				const stat = fs.statSync(filePath);
 
-				// Check if file is executable (on Linux/Mac)
-				// On Windows, we can't easily check this, so we just check if it's a file
-				const isExecutable = process.platform === 'win32' ||
-					!!(stat.mode & fs.constants.S_IXUSR);
+				// Check if file is executable
+				const isExecutable = !(stat.mode & fs.constants.S_IXUSR);
 
 				if (!stat.isFile()) {
 					vscode.window.showErrorMessage(`${filePath} is not a file.`);
 					return;
 				}
 
-				if (!isExecutable && process.platform !== 'win32') {
+				if (!isExecutable) {
 					const makeExecutable = await vscode.window.showWarningMessage(
 						`${filePath} is not executable. Do you want to make it executable?`,
 						'Yes', 'No'

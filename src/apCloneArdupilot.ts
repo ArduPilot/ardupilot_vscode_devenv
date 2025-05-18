@@ -37,8 +37,7 @@ export class CloneArdupilot extends apWelcomeItem {
 	// Check if Git is installed
 	private static async isGitInstalled(): Promise<boolean> {
 		return new Promise<boolean>(resolve => {
-			const platform = process.platform;
-			const gitCommand = platform === 'win32' ? 'where git' : 'which git';
+			const gitCommand = 'which git';
 
 			child_process.exec(gitCommand, (error) => {
 				if (error) {

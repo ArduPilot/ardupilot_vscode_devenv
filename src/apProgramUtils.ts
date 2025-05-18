@@ -64,43 +64,39 @@ export class ProgramUtils {
 	public static readonly TOOL_PATHS: {
 		[key: string]: {
 			linux: string[];
-			win32: string[];
 			darwin: string[];
 		}
 	} = {
 			[ProgramUtils.TOOL_PYTHON]:
-				{ linux: ['python.exe', 'python3', 'python'], win32: ['python.exe', 'python'], darwin: ['python3', 'python'] },
+				{ linux: ['python.exe', 'python3', 'python'], darwin: ['python3', 'python'] },
 			[ProgramUtils.TOOL_MAVPROXY]:
-				{ linux: ['mavproxy.exe','mavproxy.py'], win32: ['mavproxy.exe'], darwin: ['mavproxy.py'] },
+				{ linux: ['mavproxy.exe','mavproxy.py'], darwin: ['mavproxy.py'] },
 			[ProgramUtils.TOOL_CCACHE]:
-				{ linux: ['ccache'], win32: ['ccache.exe'], darwin: ['ccache'] },
+				{ linux: ['ccache'], darwin: ['ccache'] },
 			[ProgramUtils.TOOL_OPENOCD]:
-				{ linux: ['openocd'], win32: ['openocd.exe'], darwin: ['openocd'] },
+				{ linux: ['openocd'], darwin: ['openocd'] },
 			[ProgramUtils.TOOL_JLINK]:
 				{ linux: ['/mnt/c/Program Files/SEGGER/JLink/JLinkGDBServerCLExe', //wsl
 					'/mnt/c/Program Files (x86)/SEGGER/JLink/JLinkGDBServerCLExe', //wsl
 					'/opt/SEGGER/JLink*/JLinkGDBServerCLExe'
-				], win32: ['JLinkGDBServerCL.exe',
-					'C:\\Program Files\\SEGGER\\JLink\\JLinkGDBServerCL.exe',
-					'C:\\Program Files (x86)\\SEGGER\\JLink\\JLinkGDBServerCL.exe'
 				], darwin: ['JLinkGDBServerCLExe',
 					'/Applications/SEGGER/JLink/JLinkGDBServerCLExe'
 				]
 				},
 			[ProgramUtils.TOOL_GCC]:
-				{ linux: ['gcc'], win32: ['gcc.exe'], darwin: ['gcc'] },
+				{ linux: ['gcc'], darwin: ['gcc'] },
 			[ProgramUtils.TOOL_GPP]:
-				{ linux: ['g++'], win32: ['g++.exe'], darwin: ['g++'] },
+				{ linux: ['g++'], darwin: ['g++'] },
 			[ProgramUtils.TOOL_GDB]:
-				{ linux: ['gdb'], win32: ['gdb.exe'], darwin: ['gdb'] },
+				{ linux: ['gdb'], darwin: ['gdb'] },
 			[ProgramUtils.TOOL_ARM_GCC]:
-				{ linux: ['arm-none-eabi-gcc'], win32: ['arm-none-eabi-gcc.exe'], darwin: ['arm-none-eabi-gcc'] },
+				{ linux: ['arm-none-eabi-gcc'], darwin: ['arm-none-eabi-gcc'] },
 			[ProgramUtils.TOOL_ARM_GPP]:
-				{ linux: ['arm-none-eabi-g++'], win32: ['arm-none-eabi-g++.exe'], darwin: ['arm-none-eabi-g++'] },
+				{ linux: ['arm-none-eabi-g++'], darwin: ['arm-none-eabi-g++'] },
 			[ProgramUtils.TOOL_ARM_GDB]:
-				{ linux: ['gdb-multiarch', 'arm-none-eabi-gdb'], win32: ['arm-none-eabi-gdb.exe'], darwin: ['arm-none-eabi-gdb'] },
+				{ linux: ['gdb-multiarch', 'arm-none-eabi-gdb'], darwin: ['arm-none-eabi-gdb'] },
 			[ProgramUtils.TOOL_GDBSERVER]:
-				{ linux: ['gdbserver'], win32: ['gdbserver.exe'], darwin: ['gdbserver'] },
+				{ linux: ['gdbserver'], darwin: ['gdbserver'] },
 		};
 
 	// find the tool path for the tool id
@@ -109,7 +105,7 @@ export class ProgramUtils {
 		if (!toolPaths) {
 			return undefined;
 		}
-		const platform = os.platform() as 'linux' | 'win32' | 'darwin';
+		const platform = os.platform() as 'linux' | 'darwin';
 		if (!toolPaths[platform]) {
 			return undefined;
 		}
@@ -133,9 +129,8 @@ export class ProgramUtils {
 					return toolPath;
 				} else {
 					// use which or where to find the tool
-					const command = platform === 'win32' ? 'where' : 'which';
 					try {
-						const result = child_process.execSync(`${command} ${toolPath}`).toString().trim();
+						const result = child_process.execSync(`which ${toolPath}`).toString().trim();
 						if (result) {
 							return result; // Return the first matching path
 						}
@@ -235,7 +230,7 @@ export class ProgramUtils {
 			return this.findProgram(this.TOOL_JLINK, ['--version'], {
 				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/
 			});
-		} else if (platform === 'win32' || this.isWSL()) {
+		} else if (this.isWSL()) {
 			// Windows/WSL: check for JLinkGDBServerCLExe.exe
 			return this.findProgram(this.TOOL_JLINK, ['-version', '-nogui'], {
 				versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/,
@@ -290,11 +285,10 @@ export class ProgramUtils {
 			if (!pythonInfo.available) {
 				// If Python is not available, include the installation instructions
 				// but for Python first, then pyserial
-				const platform = os.platform();
 				let installInstructions = '';
 
 				// Python install instructions based on platform
-				if (platform === 'win32' || this.isWSL()) {
+				if (this.isWSL()) {
 					installInstructions = 'Please install Python first, then run: pip.exe install pyserial';
 				} else {
 					installInstructions = 'Please install Python first, then run: pip install pyserial';
@@ -307,7 +301,7 @@ export class ProgramUtils {
 			}
 
 			// Use Python to check for pyserial module
-			const pythonCmd = pythonInfo.path || (os.platform() === 'win32' ? 'python.exe' : 'python3');
+			const pythonCmd = pythonInfo.path || (this.isWSL() ? 'python.exe' : 'python3');
 			const cmd = `${pythonCmd} -c "import serial; print('Serial module version:', serial.__version__)"`;
 
 			return new Promise<ProgramInfo>((resolve) => {
@@ -316,10 +310,9 @@ export class ProgramUtils {
 						this.log.log(`Pyserial check failed: ${error}`);
 
 						// Provide platform-specific installation instructions
-						const platform = os.platform();
 						let installInstructions = '';
 
-						if (platform === 'win32' || this.isWSL()) {
+						if (this.isWSL()) {
 							installInstructions = 'To install pyserial, run: pip.exe install pyserial';
 						} else {
 							installInstructions = 'To install pyserial, run: pip install pyserial';
@@ -347,10 +340,9 @@ export class ProgramUtils {
 			this.log.log(`Error finding pyserial: ${error}`);
 
 			// Provide platform-specific installation instructions on error as well
-			const platform = os.platform();
 			let installInstructions = '';
 
-			if (platform === 'win32' || this.isWSL()) {
+			if (this.isWSL()) {
 				installInstructions = 'To install pyserial, run: pip.exe install pyserial';
 			} else {
 				installInstructions = 'To install pyserial, run: pip install pyserial';
@@ -449,21 +441,11 @@ export class ProgramUtils {
 	 */
 	private static findCommandPath(command: string): string {
 		try {
-			const platform = os.platform();
-			const whichCommand = platform === 'win32' ? 'where' : 'which';
-			return child_process.execSync(`${whichCommand} ${command}`).toString().trim();
+			return child_process.execSync(`which ${command}`).toString().trim();
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		} catch (error) {
 			return 'Unknown';
 		}
-	}
-
-	/**
-	 * Gets the platform-appropriate path separator
-	 * @returns The path separator for the current platform
-	 */
-	public static getPathSeparator(): string {
-		return os.platform() === 'win32' ? ';' : ':';
 	}
 
 	/**

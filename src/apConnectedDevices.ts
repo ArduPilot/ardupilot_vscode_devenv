@@ -285,9 +285,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		// Get new devices based on platform
 		let newDevices: DeviceInfo[] = [];
 
-		if (process.platform === 'win32') {
-			newDevices = await this.getWindowsDevices();
-		} else if (this.isWSL) {
+		if (this.isWSL) {
 			newDevices = await this.getWSLDevices();
 		} else {
 			newDevices = await this.getLinuxDevices();
