@@ -44,9 +44,10 @@ export class ProgramUtils {
 	private static log = new apLog('ProgramUtils');
 
 	/**
-	 * Tool IDs for configuration
-	 */
+     * Tool IDs for configuration
+     */
 	public static readonly TOOL_PYTHON = 'python';
+	public static readonly TOOL_PYTHON_WIN = 'python_win'; // Renamed ID for Windows Python used in WSL
 	public static readonly TOOL_MAVPROXY = 'mavproxy';
 	public static readonly TOOL_CCACHE = 'ccache';
 	public static readonly TOOL_OPENOCD = 'openocd';
@@ -62,13 +63,15 @@ export class ProgramUtils {
 
 	// usual list of paths for the tools per platform per tool id
 	public static readonly TOOL_PATHS: {
-		[key: string]: {
-			linux: string[];
-			darwin: string[];
-		}
-	} = {
+        [key: string]: {
+            linux: string[];
+            darwin: string[];
+        }
+    } = {
 			[ProgramUtils.TOOL_PYTHON]:
-				{ linux: ['python.exe', 'python3', 'python'], darwin: ['python3', 'python'] },
+				{ linux: ['python3', 'python'], darwin: ['python3', 'python'] },
+			[ProgramUtils.TOOL_PYTHON_WIN]: // Paths for Python when in WSL (still 'linux' platform, but targeting Windows Python)
+				{ linux: ['python.exe'], darwin: [] }, // WSL python.exe often in path
 			[ProgramUtils.TOOL_MAVPROXY]:
 				{ linux: ['mavproxy.exe','mavproxy.py'], darwin: ['mavproxy.py'] },
 			[ProgramUtils.TOOL_CCACHE]:
@@ -207,6 +210,11 @@ export class ProgramUtils {
 		return this.findProgram(this.TOOL_PYTHON, ['--version']);
 	}
 
+	public static async findPythonWin(): Promise<ProgramInfo> {
+		// check for python in WSL
+		return this.findProgram(this.TOOL_PYTHON_WIN, ['--version']);
+	}
+
 	public static async findCcache(): Promise<ProgramInfo> {
 		// check for ccache by platform
 		const platform = os.platform();
@@ -281,17 +289,20 @@ export class ProgramUtils {
 
 	public static async findPyserial(): Promise<ProgramInfo> {
 		try {
-			const pythonInfo = await this.findPython();
-			if (!pythonInfo.available) {
+			let pythonInfo = await this.findPython();
+			if (this.isWSL()) {
+				pythonInfo = await this.findPythonWin(); // Use Windows Python in WSL
+			}
+			if (!pythonInfo.available || !pythonInfo.command) { // Check for command
 				// If Python is not available, include the installation instructions
 				// but for Python first, then pyserial
 				let installInstructions = '';
 
 				// Python install instructions based on platform
 				if (this.isWSL()) {
-					installInstructions = 'Please install Python first, then run: pip.exe install pyserial';
+					installInstructions = 'Please install Python first (e.g., python.exe accessible from WSL, or a Linux Python in WSL), then run: <python_cmd> -m pip install pyserial';
 				} else {
-					installInstructions = 'Please install Python first, then run: pip install pyserial';
+					installInstructions = 'Please install Python first, then run: python3 -m pip install pyserial';
 				}
 
 				return {
@@ -301,7 +312,7 @@ export class ProgramUtils {
 			}
 
 			// Use Python to check for pyserial module
-			const pythonCmd = pythonInfo.path || (this.isWSL() ? 'python.exe' : 'python3');
+			const pythonCmd = pythonInfo.command; // Use the command from pythonInfo
 			const cmd = `${pythonCmd} -c "import serial; print('Serial module version:', serial.__version__)"`;
 
 			return new Promise<ProgramInfo>((resolve) => {
@@ -313,9 +324,9 @@ export class ProgramUtils {
 						let installInstructions = '';
 
 						if (this.isWSL()) {
-							installInstructions = 'To install pyserial, run: pip.exe install pyserial';
+							installInstructions = `To install pyserial, run: ${pythonCmd} -m pip install pyserial (or pip.exe install pyserial if using Windows Python)`;
 						} else {
-							installInstructions = 'To install pyserial, run: pip install pyserial';
+							installInstructions = `To install pyserial, run: ${pythonCmd} -m pip install pyserial`;
 						}
 
 						resolve({
@@ -343,9 +354,9 @@ export class ProgramUtils {
 			let installInstructions = '';
 
 			if (this.isWSL()) {
-				installInstructions = 'To install pyserial, run: pip.exe install pyserial';
+				installInstructions = 'To install pyserial, run: pip.exe install pyserial or <python_cmd> -m pip install pyserial';
 			} else {
-				installInstructions = 'To install pyserial, run: pip install pyserial';
+				installInstructions = 'To install pyserial, run: pip install pyserial or python3 -m pip install pyserial';
 			}
 
 			return {

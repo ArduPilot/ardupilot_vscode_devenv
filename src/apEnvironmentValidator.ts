@@ -298,6 +298,20 @@ export class ValidateEnvironmentPanel {
             </div>
             <div class="custom-path-notification"></div>
         </div>
+
+        <div class="tool-container" id="python-win" data-tool-id="${ProgramUtils.TOOL_PYTHON_WIN}" style="display:none;">
+            <div class="tool-header">
+                <div class="tool-name">Python (Windows via WSL)</div>
+                <div class="tool-status status-checking">Checking...</div>
+            </div>
+            <div class="tool-version"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
+            <div class="tool-info">This Python is expected to be a Windows installation accessible from WSL (e.g., python.exe in your Windows PATH). It's used by tools like PySerial when running SITL in WSL.</div>
+        </div>
         
         <div class="tool-container" id="mavproxy" data-tool-id="${ProgramUtils.TOOL_MAVPROXY}">
             <div class="tool-header">
@@ -498,10 +512,14 @@ export class ValidateEnvironmentPanel {
                         
                         if (version) {
                             versionElement.textContent = 'Version: ' + version;
+                        } else {
+                            versionElement.textContent = '';
                         }
                         
                         if (path) {
                             pathElement.textContent = 'Path: ' + path;
+                        } else {
+                            pathElement.textContent = '';
                         }
                         
                         if (isCustomPath) {
@@ -510,8 +528,10 @@ export class ValidateEnvironmentPanel {
                             notificationElement.textContent = '';
                         }
                         
-                        if (info && infoElement) {
+                        if (info && infoElement) { // Check if infoElement exists
                             infoElement.innerHTML = info;
+                        } else if (infoElement) {
+                            infoElement.innerHTML = ''; // Clear if no info
                         }
                     }
                 } else if (message.command === 'validationSummary') {
@@ -524,14 +544,22 @@ export class ValidateEnvironmentPanel {
                 } else if (message.command === 'platformCheck') {
                     currentPlatform = message.platform;
                     const platformWarningElement = document.getElementById('platform-warning');
+                    const pythonWinElement = document.getElementById('python-win');
                     
                     if (message.platform === 'win32') {
                         platformWarningElement.style.display = 'block';
-                        // Hide or show the validation results based on platform
                         document.getElementById('validation-results').style.display = 'none';
+                        if (pythonWinElement) pythonWinElement.style.display = 'none';
                     } else {
                         platformWarningElement.style.display = 'none';
                         document.getElementById('validation-results').style.display = 'block';
+                        if (pythonWinElement) {
+                            if (message.isWSL) {
+                                pythonWinElement.style.display = 'block';
+                            } else {
+                                pythonWinElement.style.display = 'none';
+                            }
+                        }
                     }
                 }
             });
@@ -550,7 +578,10 @@ export class ValidateEnvironmentPanel {
 			return;
 		}
 
+		const isWSL = ProgramUtils.isWSL();
+
 		const pythonCheck = ProgramUtils.findPython();
+		const pythonWinCheck = isWSL ? ProgramUtils.findPythonWin() : Promise.resolve({ available: false, info: 'Not applicable outside WSL.' });
 		const mavproxyCheck = ProgramUtils.findMavproxy();
 		const gccCheck = ProgramUtils.findArmGCC();
 		const gdbCheck = ProgramUtils.findArmGDB();
@@ -562,20 +593,36 @@ export class ValidateEnvironmentPanel {
 		const openocdCheck = ProgramUtils.findOpenOCD().catch(() => ({ available: false }));
 		const gdbserverCheck = ProgramUtils.findGDBServer().catch(() => ({ available: false }));
 
-		const [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, jlinkResult, openocdResult, gdbserverResult, pyserialResult] = await Promise.all([
-			pythonCheck.catch(error => ({ available: false, error })),
-			mavproxyCheck.catch(error => ({ available: false, error })),
-			gccCheck.catch(error => ({ available: false, error })),
-			gdbCheck.catch(error => ({ available: false, error })),
-			ccacheCheck.catch(error => ({ available: false, error })),
+		// Await all checks
+		const [
+			pythonResult,
+			pythonWinResult,
+			mavproxyResult,
+			gccResult,
+			gdbResult,
+			ccacheResult,
+			jlinkResult,
+			openocdResult,
+			gdbserverResult,
+			pyserialResult
+		] = await Promise.all([
+			pythonCheck.catch(error => ({ available: false, error: error.message })),
+			pythonWinCheck.catch(error => ({ available: false, error: error.message })),
+			mavproxyCheck.catch(error => ({ available: false, error: error.message })),
+			gccCheck.catch(error => ({ available: false, error: error.message })),
+			gdbCheck.catch(error => ({ available: false, error: error.message })),
+			ccacheCheck.catch(error => ({ available: false, error: error.message })),
 			jlinkCheck,
 			openocdCheck,
 			gdbserverCheck,
-			pyserialCheck.catch(error => ({ available: false, error }))
+			pyserialCheck.catch(error => ({ available: false, error: error.message }))
 		]);
 
 		// Report results to webview
 		this._reportToolStatus('python', pythonResult);
+		if (isWSL) {
+			this._reportToolStatus('python-win', pythonWinResult);
+		}
 		this._reportToolStatus('mavproxy', mavproxyResult);
 		this._reportToolStatus('gcc', gccResult);
 		this._reportToolStatus('gdb', gdbResult);
@@ -586,7 +633,12 @@ export class ValidateEnvironmentPanel {
 		this._reportToolStatus('pyserial', pyserialResult);
 
 		// Generate summary - only include required tools in the summary
-		this._generateSummary([pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult]);
+		const summaryTools = [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult];
+		if (isWSL) {
+			// Add Windows Python to summary if in WSL, as it's important for SITL components like PySerial.
+			summaryTools.push(pythonWinResult);
+		}
+		this._generateSummary(summaryTools);
 	}
 
 	/**
@@ -596,7 +648,8 @@ export class ValidateEnvironmentPanel {
 		this._panel.webview.postMessage({
 			command: 'platformCheck',
 			platform: process.platform,
-			supported: process.platform === 'linux' || process.platform === 'darwin'
+			supported: process.platform === 'linux' || process.platform === 'darwin',
+			isWSL: ProgramUtils.isWSL()
 		});
 	}
 
@@ -836,6 +889,7 @@ export class ValidateEnvironmentPanel {
 				// Get all tool IDs from the ProgramUtils
 				const toolIds = [
 					ProgramUtils.TOOL_PYTHON,
+					ProgramUtils.TOOL_PYTHON_WIN,
 					ProgramUtils.TOOL_MAVPROXY,
 					ProgramUtils.TOOL_CCACHE,
 					ProgramUtils.TOOL_OPENOCD,
@@ -880,6 +934,9 @@ export class ValidateEnvironmentPanel {
 		switch (tool) {
 		case 'python':
 			toolId = ProgramUtils.TOOL_PYTHON;
+			break;
+		case 'python-win':
+			toolId = ProgramUtils.TOOL_PYTHON_WIN;
 			break;
 		case 'mavproxy':
 			toolId = ProgramUtils.TOOL_MAVPROXY;
