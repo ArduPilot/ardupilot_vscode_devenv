@@ -61,6 +61,7 @@ export class ProgramUtils {
 	public static readonly TOOL_ARM_GDB = 'arm-gdb';
 	public static readonly TOOL_GDBSERVER = 'gdbserver';
 	public static readonly TOOL_PYSERIAL = 'pyserial';
+	public static readonly TOOL_TMUX = 'tmux';
 
 	// usual list of paths for the tools per platform per tool id
 	public static readonly TOOL_PATHS: {
@@ -101,6 +102,8 @@ export class ProgramUtils {
 				{ linux: ['gdb-multiarch', 'arm-none-eabi-gdb'], darwin: ['arm-none-eabi-gdb'] },
 			[ProgramUtils.TOOL_GDBSERVER]:
 				{ linux: ['gdbserver'], darwin: ['gdbserver'] },
+			[ProgramUtils.TOOL_TMUX]:
+				{ linux: ['tmux'], darwin: ['tmux'] },
 		};
 
 	// find the tool path for the tool id
@@ -390,6 +393,12 @@ export class ProgramUtils {
 				info: installInstructions
 			};
 		}
+	}
+
+	// find tmux
+	public static async findTmux(): Promise<ProgramInfo> {
+		// check for tmux
+		return this.findProgram(this.TOOL_TMUX, ['-V']);
 	}
 
 	/**

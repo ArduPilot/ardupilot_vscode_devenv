@@ -58,15 +58,19 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 		vscode.debug.onDidTerminateDebugSession(this.handleDebugSessionTermination.bind(this));
 	}
 
-	private handleDebugSessionTermination(session: vscode.DebugSession) {
+	private async handleDebugSessionTermination(session: vscode.DebugSession) {
 		// Only handle termination of our own debug sessions (SITL)
 		if (session.configuration.type === 'cppdbg' && this.tmuxSessionName && this.debugSessionTerminal) {
 			APLaunchConfigurationProvider.log.log(`Debug session terminated, cleaning up tmux session: ${this.tmuxSessionName}`);
 
+			// Find tmux path
+			const tmux = await ProgramUtils.findTmux();
+			const tmuxPath = tmux.available && tmux.path ? tmux.path : 'tmux';
+
 			// Kill the tmux session
 			// Create a separate terminal to kill the tmux session
 			const cleanupTerminal = vscode.window.createTerminal('ArduPilot SITL Cleanup');
-			cleanupTerminal.sendText(`tmux kill-session -t "${this.tmuxSessionName}"`);
+			cleanupTerminal.sendText(`"${tmuxPath}" kill-session -t "${this.tmuxSessionName}"`);
 			cleanupTerminal.sendText('exit'); // Close the cleanup terminal when done
 
 			// Close the debug session terminal as well
@@ -178,6 +182,13 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					return undefined;
 				}
 
+				// Check if tmux is available
+				const tmux = await ProgramUtils.findTmux();
+				if (!tmux.available || !tmux.path) {
+					vscode.window.showErrorMessage('tmux not found. Please install tmux to debug SITL.');
+					return undefined;
+				}
+
 				// Find the binary path for the vehicle
 				const binaryPath = path.join(workspaceRoot, 'build', 'sitl', targetToBin[vehicleType]);
 				APLaunchConfigurationProvider.log.log(`Debug binary path: ${binaryPath}`);
@@ -211,7 +222,8 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				this.tmuxSessionName = `ardupilot_sitl_${vehicleType}_${Date.now()}`;
 
 				// Set up the environment to use gdbserver through TMUX_PREFIX
-				const tmuxCommand = `tmux new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
+				const tmuxPath = tmux.path; // Use the discovered tmux path
+				const tmuxCommand = `"${tmuxPath}" new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
 				const simVehicleCmd = `export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${apConfig.simVehicleCommand || ''}`;
 				APLaunchConfigurationProvider.log.log(`Running SITL simulation with debug: ${simVehicleCmd}`);
 
@@ -219,10 +231,10 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				this.debugSessionTerminal = vscode.window.createTerminal('ArduPilot SITL');
 				this.debugSessionTerminal.sendText(`cd ${workspaceRoot}`);
 				// Check if tmux session already exists before creating it
-				this.debugSessionTerminal.sendText(`if ! tmux has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
+				this.debugSessionTerminal.sendText(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
 				this.debugSessionTerminal.sendText('sleep 1'); // Give tmux a moment to start
-				this.debugSessionTerminal.sendText(`if ! tmux has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
-				this.debugSessionTerminal.sendText('tmux set mouse on');
+				this.debugSessionTerminal.sendText(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
+				this.debugSessionTerminal.sendText(`"${tmuxPath}" set mouse on`);
 				this.debugSessionTerminal.sendText(simVehicleCmd);
 
 				this.debugSessionTerminal.show();

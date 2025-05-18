@@ -423,6 +423,19 @@ export class ValidateEnvironmentPanel {
             <div class="tool-info"></div>
         </div>
         
+        <div class="tool-container" id="tmux" data-tool-id="${ProgramUtils.TOOL_TMUX}">
+            <div class="tool-header">
+                <div class="tool-name">tmux</div>
+                <div class="tool-status status-checking">Checking...</div>
+            </div>
+            <div class="tool-version"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+            </div>
+            <div class="custom-path-notification"></div>
+        </div>
+        
         <div id="summary"></div>
         
         <div class="action-buttons">
@@ -600,6 +613,7 @@ export class ValidateEnvironmentPanel {
 		const gdbCheck = ProgramUtils.findArmGDB();
 		const ccacheCheck = this._checkCCache();
 		const pyserialCheck = ProgramUtils.findPyserial();
+		const tmuxCheck = ProgramUtils.findTmux();
 
 		// Check optional tools
 		const jlinkCheck = ProgramUtils.findJLinkGDBServerCLExe().catch(() => ({ available: false }));
@@ -617,7 +631,8 @@ export class ValidateEnvironmentPanel {
 			jlinkResult,
 			openocdResult,
 			gdbserverResult,
-			pyserialResult
+			pyserialResult,
+			tmuxResult
 		] = await Promise.all([
 			pythonCheck.catch(error => ({ available: false, error: error.message })),
 			pythonWinCheck.catch(error => ({ available: false, error: error.message })),
@@ -628,7 +643,8 @@ export class ValidateEnvironmentPanel {
 			jlinkCheck,
 			openocdCheck,
 			gdbserverCheck,
-			pyserialCheck.catch(error => ({ available: false, error: error.message }))
+			pyserialCheck.catch(error => ({ available: false, error: error.message })),
+			tmuxCheck.catch(error => ({ available: false, error: error.message }))
 		]);
 
 		// Report results to webview
@@ -644,9 +660,10 @@ export class ValidateEnvironmentPanel {
 		this._reportToolStatus('openocd', openocdResult);
 		this._reportToolStatus('gdbserver', gdbserverResult);
 		this._reportToolStatus('pyserial', pyserialResult);
+		this._reportToolStatus('tmux', tmuxResult);
 
 		// Generate summary - only include required tools in the summary
-		const summaryTools = [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult];
+		const summaryTools = [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult, tmuxResult];
 		if (isWSL) {
 			// Add Windows Python to summary if in WSL, as it's important for SITL components like PySerial.
 			summaryTools.push(pythonWinResult);
@@ -971,6 +988,9 @@ export class ValidateEnvironmentPanel {
 			break;
 		case 'pyserial':
 			toolId = ProgramUtils.TOOL_PYSERIAL;
+			break;
+		case 'tmux':
+			toolId = ProgramUtils.TOOL_TMUX;
 			break;
 		default:
 			toolId = '';
