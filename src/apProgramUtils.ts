@@ -16,10 +16,11 @@
 
 import * as child_process from 'child_process';
 import * as os from 'os';
-import * as glob from 'fast-glob';
-import { apLog } from './apLog';
-import { ToolsConfig } from './apToolsConfig';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as glob from 'fast-glob';
+import { ToolsConfig } from './apToolsConfig';
+import { apLog } from './apLog';
 
 /**
  * Interface for program information
@@ -206,7 +207,32 @@ export class ProgramUtils {
 	}
 
 	public static async findPython(): Promise<ProgramInfo> {
-		// check for python
+		// First check if there's a Python interpreter configured via the Microsoft Python extension
+		try {
+			const pythonExtension = vscode.extensions.getExtension('ms-python.python');
+			if (pythonExtension && pythonExtension.isActive) {
+				const pythonApi = pythonExtension.exports;
+				const interpreterPath = pythonApi.settings.getExecutionDetails().execCommand[0];
+
+				if (interpreterPath && fs.existsSync(interpreterPath)) {
+					this.log.log(`Using Python interpreter from MS Python extension: ${interpreterPath}`);
+
+					// Try using this interpreter
+					const result = await this._tryExecuteCommand(interpreterPath, ['--version']);
+					if (result) {
+						result.command = interpreterPath;
+						result.path = interpreterPath;
+						result.info = 'Selected via Microsoft Python Extension';
+						return result;
+					}
+				}
+			}
+		} catch (error) {
+			this.log.log(`Error getting Python interpreter from extension: ${error}`);
+			// Fall back to standard search
+		}
+
+		// Fall back to standard Python search
 		return this.findProgram(this.TOOL_PYTHON, ['--version']);
 	}
 
@@ -477,6 +503,123 @@ export class ProgramUtils {
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		} catch (error) {
 			return false;
+		}
+	}
+
+	/**
+	 * Opens the Python interpreter selection dialog using Microsoft's Python extension
+	 * and returns the selected interpreter path
+	 * @returns Promise resolving to the selected Python interpreter path or undefined if cancelled
+	 */
+	public static async selectPythonInterpreter(): Promise<string | undefined> {
+		this.log.log('Opening Python interpreter selection dialog');
+
+		// Check if ms-python.python extension is installed and active
+		const pythonExtension = vscode.extensions.getExtension('ms-python.python');
+		if (!pythonExtension) {
+			vscode.window.showErrorMessage('Microsoft Python extension is not installed. Please install it to use this feature.');
+			return undefined;
+		}
+
+		if (!pythonExtension.isActive) {
+			this.log.log('Activating Python extension');
+			await pythonExtension.activate();
+		}
+
+		try {
+			// Show the interpreter picker
+			await vscode.commands.executeCommand('python.setInterpreter');
+
+			// Get the selected interpreter path after the user makes a selection
+			// Access the path properly based on the Python extension API
+			const selectedInterpreter = await this.findPython();
+
+			if (selectedInterpreter) {
+				this.log.log(`Selected Python interpreter: ${selectedInterpreter}`);
+				return selectedInterpreter.path; // Return the path of the selected interpreter
+			} else {
+				this.log.log('No Python interpreter selected');
+				return undefined;
+			}
+		} catch (error) {
+			this.log.log(`Error selecting Python interpreter: ${error}`);
+			vscode.window.showErrorMessage(`Failed to select Python interpreter: ${error}`);
+			return undefined;
+		}
+	}
+
+	/**
+	 * Gets the path of the currently selected Python interpreter from the Python extension API
+	 * @param pythonApi The Python extension API
+	 * @returns Promise resolving to the interpreter path or undefined if not available
+	 */
+	private static async getPythonInterpreterPath(pythonApi: unknown): Promise<string | undefined> {
+		try {
+			this.log.log('Getting Python interpreter path');
+
+			// Type guard and safe access patterns for the Python API
+			if (!pythonApi || typeof pythonApi !== 'object') {
+				return undefined;
+			}
+
+			// Try the newer API structure first (settings.getActiveInterpreterPath)
+			if ('settings' in pythonApi &&
+				pythonApi.settings &&
+				typeof pythonApi.settings === 'object' &&
+				'getActiveInterpreterPath' in pythonApi.settings) {
+
+				const getPath = (pythonApi.settings as { getActiveInterpreterPath: () => string }).getActiveInterpreterPath;
+				if (typeof getPath === 'function') {
+					const path = getPath();
+					if (path && typeof path === 'string') {
+						this.log.log(`Found interpreter via getActiveInterpreterPath: ${path}`);
+						return path;
+					}
+				}
+			}
+
+			// Try alternative API path (environments.getActiveEnvironmentPath)
+			if ('environments' in pythonApi &&
+				pythonApi.environments &&
+				typeof pythonApi.environments === 'object' &&
+				'getActiveEnvironmentPath' in pythonApi.environments) {
+
+				const getEnvPath = (pythonApi.environments as {
+					getActiveEnvironmentPath: () => Promise<{ path: string }>
+				}).getActiveEnvironmentPath;
+
+				if (typeof getEnvPath === 'function') {
+					try {
+						const envPath = await getEnvPath();
+						if (envPath && typeof envPath === 'object' && 'path' in envPath) {
+							this.log.log(`Found interpreter via getActiveEnvironmentPath: ${envPath.path}`);
+							return envPath.path as string;
+						}
+					} catch (e) {
+						this.log.log(`Error getting environment path: ${e}`);
+					}
+				}
+			}
+
+			// Fall back to VS Code settings
+			const pythonConfig = vscode.workspace.getConfiguration('python');
+			const defaultPath = pythonConfig.get<string>('defaultInterpreterPath');
+			if (defaultPath) {
+				this.log.log(`Found interpreter via settings (defaultInterpreterPath): ${defaultPath}`);
+				return defaultPath;
+			}
+
+			const legacyPath = pythonConfig.get<string>('pythonPath');
+			if (legacyPath) {
+				this.log.log(`Found interpreter via settings (pythonPath): ${legacyPath}`);
+				return legacyPath;
+			}
+
+			this.log.log('Could not determine Python interpreter path from extension API');
+			return undefined;
+		} catch (error) {
+			this.log.log(`Error getting Python interpreter path: ${error}`);
+			return undefined;
 		}
 	}
 }

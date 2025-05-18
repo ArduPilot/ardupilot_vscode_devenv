@@ -18,10 +18,11 @@
 	ValidateEnvironment.ts
 	Validates the development environment for ArduPilot.
 */
+
 import * as vscode from 'vscode';
-import { apLog } from './apLog';
 import * as child_process from 'child_process';
 import { apWelcomeItem } from './apWelcomeItem';
+import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { ToolsConfig } from './apToolsConfig';
 import * as fs from 'fs';
@@ -121,6 +122,9 @@ export class ValidateEnvironmentPanel {
 					break;
 				case 'openVSCodeWSL':
 					this._openVSCodeWithWSL();
+					break;
+				case 'selectPythonInterpreter':
+					this._selectPythonInterpreter();
 					break;
 				}
 			},
@@ -294,7 +298,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-version"></div>
             <div class="tool-path">
                 <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
+                <button class="config-button select-interpreter-btn" style="margin-left: 5px;">Select Interpreter</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -445,6 +449,15 @@ export class ValidateEnvironmentPanel {
                         command: 'configureToolPath',
                         toolId: toolId,
                         toolName: toolName
+                    });
+                });
+            });
+            
+            // Setup Python interpreter selection button
+            document.querySelectorAll('.select-interpreter-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    vscode.postMessage({
+                        command: 'selectPythonInterpreter'
                     });
                 });
             });
@@ -976,6 +989,28 @@ export class ValidateEnvironmentPanel {
 			info: result.info,
 			isCustomPath
 		});
+	}
+
+	/**
+	 * Opens the Python interpreter selection dialog using Microsoft's Python extension
+	 * and updates the tool path configuration
+	 */
+	private async _selectPythonInterpreter(): Promise<void> {
+		try {
+			const interpreterPath = await ProgramUtils.selectPythonInterpreter();
+			if (interpreterPath) {
+				// Save the selected interpreter path as the Python tool path
+				ToolsConfig.setToolPath(ProgramUtils.TOOL_PYTHON, interpreterPath);
+
+				vscode.window.showInformationMessage(`Python interpreter set to: ${interpreterPath}`);
+
+				// Refresh the validation to show the new interpreter
+				this._validateEnvironment();
+			}
+		} catch (error) {
+			ValidateEnvironmentPanel.log.log(`Error selecting Python interpreter: ${error}`);
+			vscode.window.showErrorMessage(`Failed to select Python interpreter: ${error}`);
+		}
 	}
 
 	public dispose(): void {
