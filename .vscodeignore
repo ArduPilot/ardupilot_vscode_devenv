@@ -1,9 +1,7 @@
 .vscode/**
-.vscode-test/**
-out/test/**
-test/**
 src/**
 **/*.map
 .gitignore
 tsconfig.json
-vsc-extension-quickstart.md
+.git/*
+webview-ui/node_modules/**
