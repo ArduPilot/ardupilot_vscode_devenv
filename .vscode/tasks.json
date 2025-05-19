@@ -1,31 +1,27 @@
-
 // See https://go.microsoft.com/fwlink/?LinkId=733558
 // for the documentation about the tasks.json format
 {
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "npm: compile",
 			"type": "npm",
-			"script": "watch",
-			"problemMatcher": "$tsc-watch",
-			"isBackground": true,
-			"presentation": {
-				"reveal": "never",
-				"panel": "dedicated"
-			},
+			"script": "compile",
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": {
 				"kind": "build",
 				"isDefault": true
-			}
+			},
+			"detail": "Compiles the extension."
 		},
 		{
+			"label": "npm: package",
 			"type": "npm",
-			"script": "compile",
-			"problemMatcher": "$tsc",
-			"presentation": {
-				"reveal": "never",
-				"panel": "dedicated"
-			}
+			"script": "package",
+			"problemMatcher": [],
+			"detail": "Compiles and packages the extension into ardupilot-devenv.vsix."
 		}
 	]
 }

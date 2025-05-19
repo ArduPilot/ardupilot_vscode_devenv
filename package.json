@@ -318,7 +318,8 @@
     "compile": "cd webview-ui && npm run build && cd .. && tsc -b",
     "watch": "tsc -b -w",
     "lint": "eslint src --ext ts",
-    "lint:fix": "eslint src --ext ts --fix"
+    "lint:fix": "eslint src --ext ts --fix",
+    "package": "npm run compile && vsce package --out ardupilot-devenv.vsix"
   },
   "devDependencies": {
     "@types/node": "^12.12.0",
