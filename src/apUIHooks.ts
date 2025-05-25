@@ -81,8 +81,13 @@ export class UIHooks {
 			this._panel.webview.postMessage({ command: 'getTasksList', tasksList: undefined });
 			return;
 		}
-		const data = fs.readFileSync(taskslistfile, 'utf8');
-		this._panel.webview.postMessage({ command: 'getTasksList', tasksList: data });
+		try {
+			const data = fs.readFileSync(taskslistfile, 'utf8');
+			this._panel.webview.postMessage({ command: 'getTasksList', tasksList: data });
+		} catch (error) {
+			UIHooks.log(`Error reading tasklist.json: ${error}`);
+			this._panel.webview.postMessage({ command: 'getTasksList', tasksList: undefined });
+		}
 	}
 
 	public getFeaturesList(): void {

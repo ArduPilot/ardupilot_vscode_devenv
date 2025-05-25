@@ -27,14 +27,25 @@ import { ToolsConfig } from './apToolsConfig';
 import { APLaunchConfigurationProvider } from './apLaunch';
 import { apActionItem, apActionsProvider, activeConfiguration, setActiveConfiguration } from './apActions';
 
-let apTaskProvider: vscode.Disposable | undefined;
-let connectedDevicesProvider: apConnectedDevices | undefined;
-let actionsProvider: apActionsProvider | undefined;
+export interface APExtensionContext {
+	apTaskProvider?: vscode.Disposable;
+	connectedDevicesProvider?: apConnectedDevices;
+	actionsProvider?: apActionsProvider;
+	apBuildConfigProviderInstance?: apBuildConfigProvider;
+	vscodeContext?: vscode.ExtensionContext;
+	active?: Promise<boolean>;
+}
 
+const apExtensionContext: APExtensionContext = {};
+let resolveActive: (value: boolean | PromiseLike<boolean>) => void;
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
-export function activate(_context: vscode.ExtensionContext): void {
+export async function activate(_context: vscode.ExtensionContext): Promise<APExtensionContext | undefined> {
 
+	apExtensionContext.vscodeContext = _context;
+	apExtensionContext.active = new Promise((resolve) => {
+		resolveActive = resolve;
+	});
 	// Initialize ToolsConfig
 	ToolsConfig.initialize(_context);
 
@@ -42,15 +53,15 @@ export function activate(_context: vscode.ExtensionContext): void {
 
 	vscode.window.registerTreeDataProvider('apWelcome', apWelcomeProviderInstance);
 
-	const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+	const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0 ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 	if (!workspaceRoot) {
-		return;
+		return apExtensionContext;
 	}
 
 	const log = new apLog('extension');
 
 	log.log('ardupilot-devenv extension started');
-	apTaskProvider = vscode.tasks.registerTaskProvider(APTaskProvider.ardupilotTaskType, new APTaskProvider(workspaceRoot, _context.extensionUri));
+	apExtensionContext.apTaskProvider = vscode.tasks.registerTaskProvider(APTaskProvider.ardupilotTaskType, new APTaskProvider(workspaceRoot, _context.extensionUri));
 
 	// Register the APLaunch debug type
 	const apLaunchProvider = new APLaunchConfigurationProvider();
@@ -62,19 +73,22 @@ export function activate(_context: vscode.ExtensionContext): void {
 		? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 
 	// Register Build Config Provider
-	const apBuildConfigProviderInstance = new apBuildConfigProvider(rootPath, _context);
-	vscode.window.registerTreeDataProvider('apBuildConfig', apBuildConfigProviderInstance);
-	vscode.commands.registerCommand('apBuildConfig.refreshEntry', () => apBuildConfigProviderInstance.refresh());
-	vscode.commands.registerCommand('apBuildConfig.addEntry', () => apBuildConfigProviderInstance.add());
+	apExtensionContext.apBuildConfigProviderInstance = new apBuildConfigProvider(rootPath, _context);
+	vscode.window.registerTreeDataProvider('apBuildConfig', apExtensionContext.apBuildConfigProviderInstance);
+	// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+	vscode.commands.registerCommand('apBuildConfig.refreshEntry', () => apExtensionContext.apBuildConfigProviderInstance!.refresh());
+	// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+	vscode.commands.registerCommand('apBuildConfig.addEntry', () => apExtensionContext.apBuildConfigProviderInstance!.add());
 	vscode.commands.registerCommand('apBuildConfig.editEntry', (item: apBuildConfig) => item.edit());
 	vscode.commands.registerCommand('apBuildConfig.deleteEntry', (item: apBuildConfig) => item.delete());
 	vscode.commands.registerCommand('apBuildConfig.activate', (item: apBuildConfig) => item.activate());
 	vscode.commands.registerCommand('apBuildConfig.activateOnSelect', (item: apBuildConfig) => item.activate());
 
 	// Register Actions Provider
-	actionsProvider = new apActionsProvider(rootPath, _context);
-	vscode.window.registerTreeDataProvider('apActions', actionsProvider);
-	vscode.commands.registerCommand('apActions.refresh', () => actionsProvider?.refresh());
+	apExtensionContext.actionsProvider = new apActionsProvider(rootPath, _context);
+	vscode.window.registerTreeDataProvider('apActions', apExtensionContext.actionsProvider);
+	// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+	vscode.commands.registerCommand('apActions.refresh', () => apExtensionContext.actionsProvider!.refresh());
 	vscode.commands.registerCommand('apActions.build', (item: apActionItem) => item.performAction());
 	vscode.commands.registerCommand('apActions.debug', (item: apActionItem) => item.performAction());
 	vscode.commands.registerCommand('apActions.upload', (item: apActionItem) => item.performAction());
@@ -85,14 +99,14 @@ export function activate(_context: vscode.ExtensionContext): void {
 	vscode.commands.registerCommand('apActions.setActiveConfiguration', (task: vscode.Task) => {
 		if (activeConfiguration !== task) {
 			setActiveConfiguration(task);
-			actionsProvider?.refresh();
+			apExtensionContext.actionsProvider?.refresh();
 			vscode.commands.executeCommand('apActions.configChanged');
 		}
 	});
 
 	// Register Connected Devices tree provider
-	connectedDevicesProvider = new apConnectedDevices();
-	vscode.window.registerTreeDataProvider('connected-devices', connectedDevicesProvider);
+	apExtensionContext.connectedDevicesProvider = new apConnectedDevices();
+	vscode.window.registerTreeDataProvider('connected-devices', apExtensionContext.connectedDevicesProvider);
 
 	// Register decoration provider for connected devices
 	const connectedDeviceDecorationProvider = new ConnectedDeviceDecorationProvider();
@@ -101,25 +115,36 @@ export function activate(_context: vscode.ExtensionContext): void {
 	);
 
 	vscode.commands.registerCommand('connected-devices.refresh', () => {
-		connectedDevicesProvider?.refresh();
+		apExtensionContext.connectedDevicesProvider?.refresh();
 		// Also refresh decorations
 		connectedDeviceDecorationProvider.refresh();
 	});
 	// Register the MAVProxy connection command
 	vscode.commands.registerCommand('connected-devices.connectMAVProxy',
-		(device) => connectedDevicesProvider?.connectMAVProxy(device));
+		(device) => apExtensionContext.connectedDevicesProvider?.connectMAVProxy(device));
 	// Register the MAVProxy disconnection command
 	vscode.commands.registerCommand('connected-devices.disconnectMAVProxy',
-		(device) => connectedDevicesProvider?.disconnectDevice(device));
+		(device) => apExtensionContext.connectedDevicesProvider?.disconnectDevice(device));
+
+	resolveActive(true);
+	return apExtensionContext;
 }
 
 // this method is called when your extension is deactivated
-export function deactivate(): void {
-	if (apTaskProvider) {
-		apTaskProvider.dispose();
+export async function deactivate(): Promise<void> {
+	let apExtensionContext: APExtensionContext = {};
+	const extension: vscode.Extension<any> | undefined = vscode.extensions.getExtension('ardupilot-org.ardupilot-devenv');
+	if (!extension?.isActive) {
+		return;
+	} else {
+		apExtensionContext = extension.exports;
 	}
 
-	if (connectedDevicesProvider) {
-		connectedDevicesProvider.dispose();
+	if (apExtensionContext.apTaskProvider) {
+		apExtensionContext.apTaskProvider.dispose();
+	}
+
+	if (apExtensionContext.connectedDevicesProvider) {
+		apExtensionContext.connectedDevicesProvider.dispose();
 	}
 }

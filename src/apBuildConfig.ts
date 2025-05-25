@@ -111,7 +111,7 @@ export class apBuildConfig extends vscode.TreeItem {
 		apBuildConfig.log(`delete ${this.label}`);
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		try {
-			fs.rmdirSync(workspaceRoot + '/build/' + this.label, { recursive: true });
+			fs.rmSync(workspaceRoot + '/build/' + this.label, { recursive: true });
 			// also remove c4che/{board}_cache.py
 			fs.unlinkSync(workspaceRoot + '/build/c4che/' + this.label + '_cache.py');
 		} catch (err) {
