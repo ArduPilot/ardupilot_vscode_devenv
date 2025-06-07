@@ -199,14 +199,6 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 								target = targetList[0].split('/')[1];
 							}
 
-							// Load features if features.txt exists
-							let features: string[] = [];
-							const featuresPath = path.join(buildDir.fsPath, file, 'features.txt');
-							if (fs.existsSync(featuresPath)) {
-								features = fs.readFileSync(featuresPath, 'utf8')
-									.split('\n')
-									.filter(feature => feature.trim());
-							}
 
 							// Get configure options and simVehicleCommand from existing task configuration
 							let configureOptions: string = '';
@@ -237,12 +229,10 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 								file,
 								target,
 								configureOptions,
-								features,
-								undefined,
 								simVehicleCommand
 							);
 
-							apBuildConfigProvider.log(`getOrCreateBuildConfig ${file} ${target} with ${features.length} features` +
+							apBuildConfigProvider.log(`getOrCreateBuildConfig ${file} ${target}` +
 								(simVehicleCommand ? ` and simVehicleCommand: ${simVehicleCommand}` : ''));
 
 							buildConfigList = [new apBuildConfig(this, file, vscode.TreeItemCollapsibleState.None, task), ...buildConfigList];

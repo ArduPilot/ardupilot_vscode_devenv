@@ -19,7 +19,6 @@ import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
-import { targetToBin } from './apBuildConfig';
 
 export class APTaskProvider implements vscode.TaskProvider {
 	static ardupilotTaskType = 'ardupilot';
@@ -27,7 +26,6 @@ export class APTaskProvider implements vscode.TaskProvider {
 	private static log = new apLog('apBuildConfigPanel');
 	private static _extensionUri: vscode.Uri;
 	private log = APTaskProvider.log.log;
-	private static featureDetails: Record<string, unknown>;
 
 	constructor(workspaceRoot: string, extensionUri: vscode.Uri) {
 		const pattern = path.join(workspaceRoot, 'tasklist.json');
@@ -45,7 +43,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		return this.ardupilotPromise;
 	}
 
-	public static getOrCreateBuildConfig(board: string, target: string, configureOptions?: string, features?: string[], enableFeatureConfig?: boolean, simVehicleCommand?: string): vscode.Task | undefined {
+	public static getOrCreateBuildConfig(board: string, target: string, configureOptions?: string, simVehicleCommand?: string): vscode.Task | undefined {
 		// create a new task definition in tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		APTaskProvider.log.log(`Creating new build configuration for ${board} ${target} @ ${workspaceRoot}`);
@@ -60,19 +58,13 @@ export class APTaskProvider implements vscode.TaskProvider {
 			fs.mkdirSync(vscodeFolder, { recursive: true });
 		}
 
-		if (enableFeatureConfig === false) {
-			features = [];
-		}
-
-		// Create task definition with features
+		// Create task definition
 		const taskDef: ArdupilotTaskDefinition = {
 			type: 'ardupilot',
 			configure: board,
 			target: target,
 			configureOptions: configureOptions === undefined ? '' : configureOptions,
 			buildOptions: '',
-			features: features || [],
-			enableFeatureConfig: (features && features.length > 0) ? true : (enableFeatureConfig === undefined ? false : enableFeatureConfig),
 			group: {
 				kind: 'build',
 			}
@@ -154,26 +146,6 @@ export class APTaskProvider implements vscode.TaskProvider {
 		return task;
 	}
 
-	static updateFeaturesList(): void {
-		this.featureDetails = getFeaturesList(APTaskProvider._extensionUri);
-	}
-
-	static updateFeaturesDat(buildFolder: string ,features: string[]): string {
-		// open extra_hwdef.dat and update features
-		const extra_hwdef = path.join(buildFolder, 'extra_hwdef.dat');
-		let feature_define = '';
-		for (let feature of features) {
-			feature = feature.replace(/\s/g, '');
-			if (feature.startsWith('!')) {
-				feature_define += `undef ${feature.slice(1)}\ndefine ${feature.slice(1)} 0\n`;
-			} else if (feature.length > 0) {
-				feature_define += `undef ${feature}\ndefine ${feature} 1\n`;
-			}
-		}
-		fs.writeFileSync(extra_hwdef, feature_define, 'utf8');
-		return `--extra-hwdef=${buildFolder}/extra_hwdef.dat`;
-	}
-
 	static createTask(definition: ArdupilotTaskDefinition): vscode.Task | undefined {
 		const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
 		if (!workspaceRoot) {
@@ -187,29 +159,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			definition.nm = 'arm-none-eabi-nm';
 		}
 		// convert target to binary
-		definition.target_output = targetToBin[definition.target];
-		const target_dir = `${workspaceRoot.uri.fsPath}/build/${definition.configure}`;
-		const target_binary = `${target_dir}/${definition.target_output}`;
 		const task_name = definition.configure + '-' + definition.target;
-		const featureOptions = definition.features && definition.features.length > 0 ?
-			APTaskProvider.updateFeaturesDat(target_dir, definition.features) : '';
-
-		// check if extract_features.py uses -nm or --nm by running with --help
-		const extractFeaturesHelp = cp.spawnSync('python3', [`${workspaceRoot.uri.fsPath}/Tools/scripts/extract_features.py`, '--help']);
-		let nmArg = '';
-		const extractFeaturesHelpOutput = extractFeaturesHelp.stdout.toString();
-		if (extractFeaturesHelpOutput.includes('--nm')) {
-			nmArg = '--nm';
-		} else if (extractFeaturesHelpOutput.includes('-nm')) {
-			nmArg = '-nm';
-		} else {
-			APTaskProvider.log.log('Error: extract_features.py does not support --nm or -nm');
-			return undefined;
-		}
-		// Conditionally add the extract_features.py script call based on enableFeatureConfig flag
-		const extractFeaturesCmd = definition.enableFeatureConfig === true ?
-			`&& python3 Tools/scripts/extract_features.py ${target_binary} ${nmArg} ${definition.nm} > ${target_dir}/features.txt` :
-			'';
 
 		return new vscode.Task(
 			definition,
@@ -217,7 +167,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			task_name,
 			'ardupilot',
 			new vscode.ShellExecution(
-				`python3 ${definition.waffile} configure --board=${definition.configure} ${featureOptions} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions} && rm -f ${target_dir}/features.txt ${extractFeaturesCmd}`
+				`python3 ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions}`
 			),
 			'$apgcc'
 		);
@@ -297,14 +247,6 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	 */
 	nm?: string;
 	/**
-	 * features
-	 */
-	features?: string[];
-	/**
-	 * enable features
-	 */
-	enableFeatureConfig?: boolean;
-	/**
 	 * sim_vehicle.py command for SITL builds
 	 */
 	simVehicleCommand?: string;
@@ -377,8 +319,6 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 		console.log('Generating Tasklist');
 		const commandLine = './waf generate_tasklist';
 		try {
-			// update features list
-			APTaskProvider.updateFeaturesList();
 			const tasksPath = path.join(folderString, '.vscode', 'tasks.json');
 			let tasks = undefined;
 			if (fs.existsSync(tasksPath)) {

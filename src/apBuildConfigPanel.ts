@@ -39,16 +39,7 @@ export class apBuildConfigPanel {
 	private readonly _extensionUri: vscode.Uri;
 	private _disposables: vscode.Disposable[] = [];
 	private _currentTask: vscode.Task | undefined;
-	private _currentFeaturesList: string[] = [];
 	private _uiHooks: UIHooks;
-
-	private fileUri = (fp: string): vscode.Uri => {
-		const fragments = fp.split('/');
-
-		return vscode.Uri.file(
-			path.join(this._extensionUri.path, ...fragments)
-		);
-	};
 
 	/**
 	 * Looks for existing task configurations for the given board
@@ -139,24 +130,9 @@ export class apBuildConfigPanel {
 		this._extensionUri = extensionUri;
 		this._currentTask = currentTask;
 
-		// load features.txt from build/<board> directory
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
 			throw new Error('No workspace folder is open.');
-		} else if (this._currentTask) {
-			const featuresPath = path.join(workspaceRoot, 'build', this._currentTask.definition.configure, 'features.txt');
-			if (fs.existsSync(featuresPath)) {
-				const features = fs.readFileSync(featuresPath, 'utf8').split('\n')
-					.filter(feature => feature.trim()); // Filter out empty lines
-				for (const feature of features) {
-					this._currentFeaturesList.push(feature);
-				}
-			}
-			// Ensure the task definition has the features array
-			if (!this._currentTask.definition.features) {
-				this._currentTask.definition.features = [];
-			}
-			this._currentTask.definition.features = this._currentFeaturesList;
 		}
 
 		this._uiHooks = new UIHooks(panel, extensionUri);
@@ -179,17 +155,13 @@ export class apBuildConfigPanel {
 				configure: message.board as string,
 				target: message.target as string,
 				configureOptions: message.extraConfig as string || '',
-				buildOptions: '',
-				features: message.features as string[] || [],
-				enableFeatureConfig: message.enableFeatureConfig as boolean,
+				buildOptions: ''
 			};
 
 			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
 				taskDefinition.configure,
 				taskDefinition.target,
 				taskDefinition.configureOptions,
-				taskDefinition.features,
-				taskDefinition.enableFeatureConfig,
 				message?.simVehicleCommand as string || '',
 			);
 
@@ -248,40 +220,14 @@ export class apBuildConfigPanel {
 	 */
 	public updateCurrentTask(task: vscode.Task): void {
 		this._currentTask = task;
-		this._currentFeaturesList = [];
 
 		// Update the panel title to reflect we're in edit mode
 		this._panel.title = 'Edit Build Configuration';
 
-		// Load features for the new task
-		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		let featuresFileExists = false;
-
-		if (workspaceRoot) {
-			const featuresPath = path.join(workspaceRoot, 'build', task.definition.configure, 'features.txt');
-			featuresFileExists = fs.existsSync(featuresPath);
-
-			if (featuresFileExists) {
-				const features = fs.readFileSync(featuresPath, 'utf8').split('\n');
-				for (const feature of features) {
-					if (feature.trim()) { // Only add non-empty features
-						this._currentFeaturesList.push(feature);
-					}
-				}
-			}
-			task.definition.features = this._currentFeaturesList;
-		}
-
-		// Update the enableFeatureConfig flag based on if features.txt exists
-		if (task.definition.enableFeatureConfig === undefined) {
-			task.definition.enableFeatureConfig = featuresFileExists;
-		}
-
 		// Notify the webview about the updated task
 		this._panel.webview.postMessage({
 			command: 'getCurrentTask',
-			task: this._currentTask.definition,
-			featuresFileExists: featuresFileExists
+			task: this._currentTask.definition
 		});
 
 		apBuildConfigPanel.log(`Updated current task to: ${this._currentTask.definition.configure}`);
@@ -292,7 +238,6 @@ export class apBuildConfigPanel {
 	 */
 	public switchToAddMode(): void {
 		this._currentTask = undefined;
-		this._currentFeaturesList = [];
 		this._panel.title = 'New Build Configuration';
 
 		// Notify the webview that we're now in add mode

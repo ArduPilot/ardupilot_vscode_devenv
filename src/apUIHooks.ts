@@ -19,6 +19,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { apLog } from './apLog';
 import { getFeaturesList } from './taskProvider';
+import * as cp from 'child_process';
+import { targetToBin } from './apBuildConfig';
 
 export class UIHooks {
 	_panel: vscode.WebviewPanel;
@@ -59,6 +61,9 @@ export class UIHooks {
 		case 'getFeaturesList':
 			this.getFeaturesList();
 			break;
+		case 'extractFeatures':
+			this.extractFeatures(message);
+			break;
 		case 'error':
 			UIHooks.log(`Error from webview: ${message.message} at ${message.location}`);
 			UIHooks.log(`Stack: ${message.stack}`);
@@ -92,6 +97,88 @@ export class UIHooks {
 
 	public getFeaturesList(): void {
 		this._panel.webview.postMessage({ command: 'getFeaturesList', featuresList: getFeaturesList(this._extensionUri) });
+	}
+
+	public extractFeatures(message: Record<string, unknown>): void {
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			this._panel.webview.postMessage({ command: 'extractFeatures', features: [], error: 'No workspace folder found' });
+			return;
+		}
+
+		const board = message.board as string;
+		const target = message.target as string;
+
+		if (!board || !target) {
+			this._panel.webview.postMessage({ command: 'extractFeatures', features: [], error: 'Board and target are required' });
+			return;
+		}
+
+		try {
+			const targetDir = path.join(workspaceRoot, 'build', board);
+			const binaryFile = this.findBinaryFile(targetDir, target);
+
+			if (!binaryFile || !fs.existsSync(binaryFile)) {
+				this._panel.webview.postMessage({
+					command: 'extractFeatures',
+					features: [],
+					error: `Binary file not found for ${board}-${target}. Please build the firmware first.`
+				});
+				return;
+			}
+
+			const extractFeaturesScript = path.join(workspaceRoot, 'Tools', 'scripts', 'extract_features.py');
+			if (!fs.existsSync(extractFeaturesScript)) {
+				this._panel.webview.postMessage({
+					command: 'extractFeatures',
+					features: [],
+					error: 'extract_features.py script not found'
+				});
+				return;
+			}
+			let nm = 'arm-none-eabi-nm';
+			if (board.toLowerCase().includes('sitl')) {
+				nm = 'nm'; // Use 'nm' for SITL targets
+			}
+			const result = cp.spawnSync('python3', [extractFeaturesScript, '--nm', nm, binaryFile]);
+			if (result.status !== 0) {
+				UIHooks.log(`extract_features.py failed: ${result.stderr?.toString()}`);
+				this._panel.webview.postMessage({
+					command: 'extractFeatures',
+					features: [],
+					error: `Failed to extract features: ${result.stderr?.toString() || 'Unknown error'}`
+				});
+				return;
+			}
+
+			const output = result.stdout?.toString() || '';
+			const lines = output.split('\n').filter((line: string) => line.trim());
+			const features = lines.map((line: string) => line.trim());
+
+			this._panel.webview.postMessage({
+				command: 'extractFeatures',
+				features: features
+			});
+
+		} catch (error) {
+			UIHooks.log(`Error extracting features: ${error}`);
+			this._panel.webview.postMessage({
+				command: 'extractFeatures',
+				features: [],
+				error: `Error extracting features: ${error}`
+			});
+		}
+	}
+
+	private findBinaryFile(targetDir: string, target: string): string | null {
+		const target_output = targetToBin[target];
+		const target_binary = `${targetDir}/${target_output}`;
+
+		if (fs.existsSync(target_binary)) {
+			return target_binary;
+		}
+
+		return null;
 	}
 
 	public on(event: string, listener: (data: Record<string, unknown>) => void): void {
