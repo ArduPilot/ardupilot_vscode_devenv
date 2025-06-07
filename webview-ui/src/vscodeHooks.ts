@@ -40,9 +40,9 @@ export class VSCodeHooks {
         return VSCodeHooks._instance;
     }
 
-    public async request(command: string): Promise<VSCodeMessage> {
+    public async request(command: string, data?: Record<string, unknown>): Promise<VSCodeMessage> {
         return new Promise((resolve, reject) => {
-            this._vscode.postMessage({ command });
+            this._vscode.postMessage({ command, ...data });
             window.addEventListener('message', (event: MessageEvent<VSCodeMessage>) => {
                 const message = event.data;
                 if (message.command === command && message.response !== 'Failed') {
