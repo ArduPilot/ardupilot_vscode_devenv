@@ -85,10 +85,9 @@ jobs:
       - name: Setup Python virtual environment (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install virtualenv
-          python3 -m virtualenv venv
+          python3 -m venv venv
           source venv/bin/activate
+          python3 -m pip install --upgrade pip
           echo "VIRTUAL_ENV=$PWD/venv" >> $GITHUB_ENV
           echo "$PWD/venv/bin" >> $GITHUB_PATH
 
