@@ -106,7 +106,10 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
-
+      
+      - name: Install webview dependencies
+        run: cd webview-ui && npm ci && cd ..
+      
       - name: Compile TypeScript
         run: npm run compile
 
@@ -165,6 +168,9 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
+      
+      - name: Install webview dependencies
+        run: cd webview-ui && npm ci && cd ..
 
       - name: Compile TypeScript
         run: npm run compile
