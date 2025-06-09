@@ -1,5 +1,8 @@
 # ArduPilot VS Code Development Environment
 
+[![Tests](https://github.com/ardupilot/ardupilot_vscode_devenv/actions/workflows/tests.yml/badge.svg)](https://github.com/ardupilot/ardupilot_vscode_devenv/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/ardupilot/ardupilot_vscode_devenv/branch/master/graph/badge.svg)](https://codecov.io/gh/ardupilot/ardupilot_vscode_devenv)
+
 This extension is developed to provide set of tools to improve quality of life for devs using Visual Studio Code for development. Currently only basic function to generate build tasks is added. Contributions, recommendations and issue reports are welcome!
 
 ## Table of Contents

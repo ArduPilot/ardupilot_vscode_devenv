@@ -1,0 +1,188 @@
+name: Tests
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        test-suite: [
+          apActions,
+          apBuildConfig,
+          apBuildConfigPanel,
+          apCloneArdupilot,
+          apConnectedDevices,
+          apEnvironmentValidator,
+          apLaunch,
+          apLog,
+          apProgramUtils,
+          apToolsConfig,
+          apUIHooks,
+          apWelcomeItem,
+          apWelcomeProvider,
+          taskProvider
+        ]
+
+    name: Test ${{ matrix.test-suite }} (${{ matrix.os }})
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          # Update package lists
+          sudo apt-get update
+          
+          # Install core development tools
+          sudo apt-get install -y gcc g++ gdb ccache tmux python3 python3-pip
+          
+          # Install ARM cross-compilation toolchain
+          sudo apt-get install -y gcc-arm-none-eabi gdb-multiarch
+          
+          # Install optional tools
+          sudo apt-get install -y openocd gdbserver
+          
+          # Install J-Link from local package
+          sudo dpkg -i ci-tools/JLink_Linux_V788g_x86_64.deb || sudo apt-get install -f -y
+          
+          # Add J-Link to PATH
+          echo "/opt/SEGGER/JLink" >> $GITHUB_PATH
+
+      - name: Install system dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Install Homebrew packages
+          brew install gcc gdb ccache tmux python3 arm-none-eabi-gcc openocd
+          
+          # Install J-Link from local package
+          sudo installer -pkg ci-tools/JLink_MacOSX_V840_universal.pkg -target /
+          
+          # Add J-Link to PATH
+          echo "/Applications/SEGGER/JLink" >> $GITHUB_PATH
+
+      - name: Install Python packages
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pyserial mavproxy
+
+      - name: Verify tool installation
+        run: |
+          echo "=== Tool Verification ==="
+          python3 --version
+          gcc --version | head -1
+          g++ --version | head -1
+          gdb --version | head -1
+          arm-none-eabi-gcc --version | head -1
+          ccache --version | head -1
+          tmux -V
+          openocd --version 2>&1 | head -1
+          echo "=== J-Link Verification ==="
+          which JLinkGDBServerCLExe || echo "JLinkGDBServerCLExe not in PATH"
+          find /opt/SEGGER /Applications/SEGGER -name "JLinkGDBServerCLExe" 2>/dev/null || echo "J-Link: Manual path search"
+          JLinkGDBServerCLExe -version 2>&1 | head -3 || echo "J-Link: Version check (may fail normally)"
+          echo "=== Python Packages ==="
+          python3 -c "import serial; print('PySerial version:', serial.__version__)"
+          mavproxy.py --version 2>&1 | head -1 || echo "MAVProxy: Version check"
+          echo "=== Verification Complete ==="
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Run test suite - ${{ matrix.test-suite }}
+        run: npm run test:${{ matrix.test-suite }}
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.test-suite }}-${{ matrix.os }}
+          path: |
+            test-results/
+            coverage/
+            *.log
+          retention-days: 30
+
+  coverage:
+    runs-on: ubuntu-latest
+    name: Coverage Report
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install system dependencies (Ubuntu)
+        run: |
+          # Update package lists
+          sudo apt-get update
+          
+          # Install core development tools
+          sudo apt-get install -y gcc g++ gdb ccache tmux python3 python3-pip
+          
+          # Install ARM cross-compilation toolchain
+          sudo apt-get install -y gcc-arm-none-eabi gdb-multiarch
+          
+          # Install optional tools
+          sudo apt-get install -y openocd gdbserver
+          
+          # Install J-Link from local package
+          sudo dpkg -i ci-tools/JLink_Linux_V788g_x86_64.deb || sudo apt-get install -f -y
+          
+          # Add J-Link to PATH
+          echo "/opt/SEGGER/JLink" >> $GITHUB_PATH
+
+      - name: Install Python packages
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pyserial mavproxy
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
