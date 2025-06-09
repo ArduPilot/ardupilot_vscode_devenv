@@ -1,7 +1,10 @@
 name: Pre-release to Marketplace on Push to Master
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Tests"]
+    types:
+      - completed
     branches:
       - master
 
@@ -9,6 +12,7 @@ jobs:
   pre-release:
     name: Create Marketplace Pre-release
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     
     steps:
       - name: Checkout code
