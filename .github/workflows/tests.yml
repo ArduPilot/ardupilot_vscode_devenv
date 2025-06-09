@@ -18,20 +18,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         test-suite: [
-          apActions,
-          apBuildConfig,
-          apBuildConfigPanel,
-          apCloneArdupilot,
-          apConnectedDevices,
-          apEnvironmentValidator,
-          apLaunch,
-          apLog,
-          apProgramUtils,
-          apToolsConfig,
-          apUIHooks,
-          apWelcomeItem,
-          apWelcomeProvider,
-          taskProvider
+          runner1-config-build,
+          runner2-actions-execution,
+          runner3-environment-setup,
+          runner4-ui-welcome
         ]
 
     name: Test ${{ matrix.test-suite }} (${{ matrix.os }})
@@ -133,11 +123,29 @@ jobs:
 
       - name: Run test suite - ${{ matrix.test-suite }}
         run: |
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            xvfb-run -a npm run test:${{ matrix.test-suite }}
-          else
-            npm run test:${{ matrix.test-suite }}
-          fi
+          case "${{ matrix.test-suite }}" in
+            "runner1-config-build")
+              SUITES="apBuildConfig apBuildConfigPanel apToolsConfig taskProvider"
+              ;;
+            "runner2-actions-execution")
+              SUITES="apActions apLaunch apProgramUtils"
+              ;;
+            "runner3-environment-setup")
+              SUITES="apCloneArdupilot apEnvironmentValidator apConnectedDevices"
+              ;;
+            "runner4-ui-welcome")
+              SUITES="apUIHooks apWelcomeItem apWelcomeProvider apLog"
+              ;;
+          esac
+          
+          for suite in $SUITES; do
+            echo "Running test suite: $suite"
+            if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+              xvfb-run -a npm run test:$suite
+            else
+              npm run test:$suite
+            fi
+          done
 
       - name: Upload test results
         if: failure()
