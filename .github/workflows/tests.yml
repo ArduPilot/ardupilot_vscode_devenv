@@ -79,13 +79,29 @@ jobs:
           # Add J-Link to PATH
           echo "/Applications/SEGGER/JLink" >> $GITHUB_PATH
 
+      - name: Setup Python virtual environment (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install virtualenv
+          python3 -m virtualenv venv
+          source venv/bin/activate
+          echo "VIRTUAL_ENV=$PWD/venv" >> $GITHUB_ENV
+          echo "$PWD/venv/bin" >> $GITHUB_PATH
+
       - name: Install Python packages
         run: |
+          if [ "${{ matrix.os }}" == "macos-latest" ]; then
+            source venv/bin/activate
+          fi
           python3 -m pip install --upgrade pip
           python3 -m pip install pyserial mavproxy
 
       - name: Verify tool installation
         run: |
+          if [ "${{ matrix.os }}" == "macos-latest" ]; then
+            source venv/bin/activate
+          fi
           echo "=== Tool Verification ==="
           python3 --version
           gcc --version | head -1
@@ -161,8 +177,18 @@ jobs:
           # Add J-Link to PATH
           echo "/opt/SEGGER/JLink" >> $GITHUB_PATH
 
+      - name: Setup Python virtual environment (Ubuntu)
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install virtualenv
+          python3 -m virtualenv venv
+          source venv/bin/activate
+          echo "VIRTUAL_ENV=$PWD/venv" >> $GITHUB_ENV
+          echo "$PWD/venv/bin" >> $GITHUB_PATH
+
       - name: Install Python packages
         run: |
+          source venv/bin/activate
           python3 -m pip install --upgrade pip
           python3 -m pip install pyserial mavproxy
 
@@ -176,7 +202,9 @@ jobs:
         run: npm run compile
 
       - name: Run tests with coverage
-        run: npm run test:coverage
+        run: |
+          source venv/bin/activate
+          npm run test:coverage
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
