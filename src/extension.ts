@@ -34,6 +34,7 @@ export interface APExtensionContext {
 	apBuildConfigProviderInstance?: apBuildConfigProvider;
 	vscodeContext?: vscode.ExtensionContext;
 	active?: Promise<boolean>;
+	apWelcomeProviderInstance?: apWelcomeProvider;
 }
 
 const apExtensionContext: APExtensionContext = {};
@@ -49,9 +50,9 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	// Initialize ToolsConfig
 	ToolsConfig.initialize(_context);
 
-	const apWelcomeProviderInstance = new apWelcomeProvider();
+	apExtensionContext.apWelcomeProviderInstance = new apWelcomeProvider();
 
-	vscode.window.registerTreeDataProvider('apWelcome', apWelcomeProviderInstance);
+	vscode.window.registerTreeDataProvider('apWelcome', apExtensionContext.apWelcomeProviderInstance);
 
 	const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0 ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 	if (!workspaceRoot) {

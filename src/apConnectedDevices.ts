@@ -156,6 +156,10 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	private isWSL = false;
 	private activeConnections: Map<string, { process: cp.ChildProcess | null, terminal: vscode.Terminal | null }> = new Map();
 
+	public setIsWSL(isWSL: boolean): void {
+		this.isWSL = isWSL;
+	}
+
 	constructor() {
 		this.log.log('apConnectedDevices constructor');
 		this.isWSL = this.checkIsWSL();

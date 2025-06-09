@@ -3,13 +3,23 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as sinon from 'sinon';
 import { apLog } from '../../apLog';
+import { APExtensionContext } from '../../extension';
+import { getApExtApi } from './common';
 
 suite('apLog Test Suite', () => {
+	let workspaceFolder: vscode.WorkspaceFolder | undefined;
+	let mockContext: vscode.ExtensionContext;
+	let sandbox: sinon.SinonSandbox;
 	let originalCreateOutputChannel: typeof vscode.window.createOutputChannel;
 	let mockOutputChannel: vscode.OutputChannel;
 
-	suiteSetup(() => {
+	suiteSetup(async () => {
+
+		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		assert(workspaceFolder);
+
 		// Store original method
 		originalCreateOutputChannel = vscode.window.createOutputChannel;
 
@@ -43,8 +53,13 @@ suite('apLog Test Suite', () => {
 	});
 
 	setup(() => {
+		sandbox = sinon.createSandbox();
 		// Reset static channel before each test
 		(apLog as any)._channel = undefined;
+	});
+
+	teardown(() => {
+		sandbox.restore();
 	});
 
 	suite('Constructor', () => {

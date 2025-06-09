@@ -199,7 +199,6 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 								target = targetList[0].split('/')[1];
 							}
 
-
 							// Get configure options and simVehicleCommand from existing task configuration
 							let configureOptions: string = '';
 							let simVehicleCommand: string = '';

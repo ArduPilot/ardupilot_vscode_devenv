@@ -55,7 +55,13 @@ export class APTaskProvider implements vscode.TaskProvider {
 		// Prepare .vscode folder if it doesn't exist
 		const vscodeFolder = path.join(workspaceRoot, '.vscode');
 		if (!fs.existsSync(vscodeFolder)) {
-			fs.mkdirSync(vscodeFolder, { recursive: true });
+			try {
+				fs.mkdirSync(vscodeFolder, { recursive: true });
+			} catch (error) {
+				APTaskProvider.log.log(`Failed to create .vscode directory: ${error}`);
+				vscode.window.showErrorMessage(`Failed to create .vscode directory: ${error}`);
+				return undefined;
+			}
 		}
 
 		// Create task definition

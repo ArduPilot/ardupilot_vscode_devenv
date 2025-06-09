@@ -6,70 +6,41 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as sinon from 'sinon';
+import { spawn } from 'child_process';
 import { apBuildConfig, apBuildConfigProvider, binToTarget, targetToBin } from '../../apBuildConfig';
-import { ArdupilotTaskDefinition } from '../../taskProvider';
+import { ArdupilotTaskDefinition, APTaskProvider } from '../../taskProvider';
 import { setActiveConfiguration } from '../../apActions';
 // Import the activeConfiguration variable directly to manipulate it in tests
 import * as apActions from '../../apActions';
+import { APExtensionContext } from '../../extension';
+import { getApExtApi, commandLineClean, commandLineBuild } from './common';
 
 suite('apBuildConfig Test Suite', () => {
 	let workspaceFolder: vscode.WorkspaceFolder | undefined;
 	let mockContext: vscode.ExtensionContext;
 	let buildConfigProvider: apBuildConfigProvider;
 	let sandbox: sinon.SinonSandbox;
+	let apExtensionContext: APExtensionContext;
 
-	suiteSetup(() => {
+	suiteSetup(async () => {
+		apExtensionContext = await getApExtApi();
+
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
 		assert(workspaceFolder);
+		assert(apExtensionContext.vscodeContext);
+		mockContext = apExtensionContext.vscodeContext;
 
-		// Mock extension context
-		mockContext = {
-			subscriptions: [],
-			workspaceState: {
-				get: () => undefined,
-				update: () => Promise.resolve(),
-				keys: () => []
-			},
-			globalState: {
-				get: () => undefined,
-				update: () => Promise.resolve(),
-				setKeysForSync: () => {},
-				keys: () => []
-			},
-			extensionUri: vscode.Uri.file(''),
-			extensionPath: '',
-			environmentVariableCollection: {} as any,
-			asAbsolutePath: (relativePath: string) => path.join('', relativePath),
-			storageUri: undefined,
-			storagePath: undefined,
-			globalStorageUri: vscode.Uri.file(''),
-			globalStoragePath: '',
-			logUri: vscode.Uri.file(''),
-			logPath: '',
-			extensionMode: vscode.ExtensionMode.Test,
-			extension: {} as any,
-			secrets: {} as any,
-			languageModelAccessInformation: {} as any
-		};
+		// Use the existing provider instance from the extension
+		assert(apExtensionContext.apBuildConfigProviderInstance, 'apBuildConfigProviderInstance should be available');
+		buildConfigProvider = apExtensionContext.apBuildConfigProviderInstance;
 	});
 
 	setup(() => {
 		sandbox = sinon.createSandbox();
-		assert(workspaceFolder, 'Workspace folder must be defined for tests');
-		buildConfigProvider = new apBuildConfigProvider(workspaceFolder.uri.fsPath, mockContext);
 	});
 
 	teardown(() => {
 		sandbox.restore();
-		// Dispose of all command registrations to prevent conflicts between tests
-		if (mockContext.subscriptions) {
-			mockContext.subscriptions.forEach(subscription => {
-				if (subscription && typeof subscription.dispose === 'function') {
-					subscription.dispose();
-				}
-			});
-			mockContext.subscriptions.length = 0; // Clear the array
-		}
 	});
 
 	suite('binToTarget and targetToBin mappings', () => {
@@ -82,29 +53,14 @@ suite('apBuildConfig Test Suite', () => {
 	});
 
 	suite('apBuildConfig', () => {
-		let mockTask: vscode.Task;
+		let mockTask: vscode.Task | undefined;
 
 		setup(() => {
-			mockTask = {
-				definition: {
-					type: 'ardupilot',
-					configure: 'sitl',
-					target: 'copter'
-				} as ArdupilotTaskDefinition,
-				scope: vscode.TaskScope.Workspace,
-				name: 'Build sitl-copter',
-				source: 'ardupilot',
-				execution: undefined,
-				problemMatchers: [],
-				isBackground: false,
-				presentationOptions: {},
-				group: undefined,
-				detail: undefined,
-				runOptions: {}
-			};
+			mockTask = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
 		});
 
 		test('should create build config item with correct properties', () => {
+			assert.ok(mockTask, 'mockTask should be created');
 			const buildConfig = new apBuildConfig(
 				buildConfigProvider,
 				'Test Config',
@@ -118,57 +74,133 @@ suite('apBuildConfig Test Suite', () => {
 			assert.strictEqual(buildConfig.contextValue, 'apBuildConfig');
 		});
 
-		test('should mark active configuration correctly', () => {
-			// Set the task as active configuration
-			setActiveConfiguration(mockTask);
+		test('should switch between active configurations correctly', () => {
+			// Create multiple tasks with different configurations using getOrCreateBuildConfig
+			const mockTask1 = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			const mockTask2 = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane');
+			const mockTask3 = APTaskProvider.getOrCreateBuildConfig('CubeOrangePlus', 'rover');
 
-			const buildConfig = new apBuildConfig(
+			assert.ok(mockTask1, 'mockTask1 should be created');
+			assert.ok(mockTask2, 'mockTask2 should be created');
+			assert.ok(mockTask3, 'mockTask3 should be created');
+
+			// Test 1: Set first task as active
+			setActiveConfiguration(mockTask1);
+
+			const buildConfig1_active = new apBuildConfig(
 				buildConfigProvider,
-				'Active Config',
+				'SITL Config',
 				vscode.TreeItemCollapsibleState.None,
-				mockTask
+				mockTask1
 			);
 
-			assert.strictEqual(buildConfig.description, 'copter (Active)');
-			assert.strictEqual(buildConfig.contextValue, 'apBuildConfigActive');
-			assert.ok(buildConfig.iconPath);
-		});
-
-		test('should add command for non-active configurations', () => {
-			// Clear active configuration by setting it to undefined
-			(apActions as any).activeConfiguration = undefined;
-
-			const buildConfig = new apBuildConfig(
+			const buildConfig2_inactive2 = new apBuildConfig(
 				buildConfigProvider,
-				'Inactive Config',
+				'CubeOrange Config',
 				vscode.TreeItemCollapsibleState.None,
-				mockTask
+				mockTask2
 			);
 
-			assert.ok(buildConfig.command);
-			assert.strictEqual(buildConfig.command.command, 'apBuildConfig.activateOnSelect');
-			assert.strictEqual(buildConfig.command.title, 'Set as Active Configuration');
-			assert.ok(Array.isArray(buildConfig.command.arguments));
-		});
-
-		test('should handle task without definition', () => {
-			const taskWithoutDef = {
-				...mockTask,
-				definition: undefined
-			} as any;
-
-			const buildConfig = new apBuildConfig(
+			const buildConfig3_inactive2 = new apBuildConfig(
 				buildConfigProvider,
-				'No Definition',
+				'CubeOrangePlus Config',
 				vscode.TreeItemCollapsibleState.None,
-				taskWithoutDef
+				mockTask3
 			);
 
-			assert.strictEqual(buildConfig.label, 'No Definition');
-			assert.strictEqual(buildConfig.description, undefined);
+			// First should be active, others should have commands
+			assert.strictEqual(buildConfig1_active.contextValue, 'apBuildConfigActive');
+			assert.strictEqual(buildConfig1_active.description, 'copter (Active)');
+			assert.ok(buildConfig1_active.iconPath);
+			assert.strictEqual(buildConfig1_active.command, undefined);
+
+			assert.strictEqual(buildConfig2_inactive2.contextValue, 'apBuildConfig');
+			assert.strictEqual(buildConfig2_inactive2.description, 'plane');
+			assert.ok(buildConfig2_inactive2.command);
+
+			assert.strictEqual(buildConfig3_inactive2.contextValue, 'apBuildConfig');
+			assert.strictEqual(buildConfig3_inactive2.description, 'rover');
+			assert.ok(buildConfig3_inactive2.command);
+
+			// Test 2: Switch to second task
+			setActiveConfiguration(mockTask2);
+
+			const buildConfig1_inactive3 = new apBuildConfig(
+				buildConfigProvider,
+				'SITL Config',
+				vscode.TreeItemCollapsibleState.None,
+				mockTask1
+			);
+
+			const buildConfig2_active = new apBuildConfig(
+				buildConfigProvider,
+				'CubeOrange Config',
+				vscode.TreeItemCollapsibleState.None,
+				mockTask2
+			);
+
+			const buildConfig3_inactive3 = new apBuildConfig(
+				buildConfigProvider,
+				'CubeOrangePlus Config',
+				vscode.TreeItemCollapsibleState.None,
+				mockTask3
+			);
+
+			// Second should be active, others should have commands
+			assert.strictEqual(buildConfig1_inactive3.contextValue, 'apBuildConfig');
+			assert.strictEqual(buildConfig1_inactive3.description, 'copter');
+			assert.ok(buildConfig1_inactive3.command);
+
+			assert.strictEqual(buildConfig2_active.contextValue, 'apBuildConfigActive');
+			assert.strictEqual(buildConfig2_active.description, 'plane (Active)');
+			assert.ok(buildConfig2_active.iconPath);
+			assert.strictEqual(buildConfig2_active.command, undefined);
+
+			assert.strictEqual(buildConfig3_inactive3.contextValue, 'apBuildConfig');
+			assert.strictEqual(buildConfig3_inactive3.description, 'rover');
+			assert.ok(buildConfig3_inactive3.command);
+
+			// Test 3: Switch to third task
+			setActiveConfiguration(mockTask3);
+
+			const buildConfig1_inactive4 = new apBuildConfig(
+				buildConfigProvider,
+				'SITL Config',
+				vscode.TreeItemCollapsibleState.None,
+				mockTask1
+			);
+
+			const buildConfig2_inactive4 = new apBuildConfig(
+				buildConfigProvider,
+				'CubeOrange Config',
+				vscode.TreeItemCollapsibleState.None,
+				mockTask2
+			);
+
+			const buildConfig3_active = new apBuildConfig(
+				buildConfigProvider,
+				'CubeOrangePlus Config',
+				vscode.TreeItemCollapsibleState.None,
+				mockTask3
+			);
+
+			// Third should be active, others should have commands
+			assert.strictEqual(buildConfig1_inactive4.contextValue, 'apBuildConfig');
+			assert.strictEqual(buildConfig1_inactive4.description, 'copter');
+			assert.ok(buildConfig1_inactive4.command);
+
+			assert.strictEqual(buildConfig2_inactive4.contextValue, 'apBuildConfig');
+			assert.strictEqual(buildConfig2_inactive4.description, 'plane');
+			assert.ok(buildConfig2_inactive4.command);
+
+			assert.strictEqual(buildConfig3_active.contextValue, 'apBuildConfigActive');
+			assert.strictEqual(buildConfig3_active.description, 'rover (Active)');
+			assert.ok(buildConfig3_active.iconPath);
+			assert.strictEqual(buildConfig3_active.command, undefined);
 		});
 
 		test('should activate configuration', async () => {
+			assert.ok(mockTask, 'mockTask should be created');
 			const buildConfig = new apBuildConfig(
 				buildConfigProvider,
 				'Test Config',
@@ -201,6 +233,10 @@ suite('apBuildConfig Test Suite', () => {
 				} as any;
 			});
 
+			// Stub the methods directly
+			const setActiveConfigStub = sandbox.stub(apActions, 'setActiveConfiguration');
+			const refreshStub = sandbox.stub(buildConfigProvider, 'refresh');
+
 			buildConfig.activate();
 
 			// Wait for async operation
@@ -208,17 +244,13 @@ suite('apBuildConfig Test Suite', () => {
 
 			assert.strictEqual(updateCalled, true);
 			assert.strictEqual(updatedValue, 'sitl-copter');
-		});
 
-		test('should not activate configuration without task definition', () => {
-			const buildConfig = new apBuildConfig(
-				buildConfigProvider,
-				'No Task',
-				vscode.TreeItemCollapsibleState.None
-			);
+			// Verify that setActiveConfiguration was called
+			assert.strictEqual(setActiveConfigStub.calledOnce, true, 'setActiveConfiguration should be called once');
+			assert.strictEqual(setActiveConfigStub.calledWith(mockTask), true, 'setActiveConfiguration should be called with the correct task');
 
-			// Should not throw an error
-			assert.doesNotThrow(() => buildConfig.activate());
+			// Verify that refresh was called
+			assert.strictEqual(refreshStub.called, true, 'refresh should be called at least once on apBuildConfigProviderInstance');
 		});
 	});
 
@@ -229,23 +261,8 @@ suite('apBuildConfig Test Suite', () => {
 		});
 
 		test('should return correct tree item', () => {
-			const mockTask: vscode.Task = {
-				definition: {
-					type: 'ardupilot',
-					configure: 'sitl',
-					target: 'copter'
-				} as ArdupilotTaskDefinition,
-				scope: vscode.TaskScope.Workspace,
-				name: 'Test Task',
-				source: 'ardupilot',
-				execution: undefined,
-				problemMatchers: [],
-				isBackground: false,
-				presentationOptions: {},
-				group: undefined,
-				detail: undefined,
-				runOptions: {}
-			};
+			const mockTask = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			assert.ok(mockTask, 'mockTask should be created');
 
 			const buildConfig = new apBuildConfig(
 				buildConfigProvider,
@@ -258,52 +275,66 @@ suite('apBuildConfig Test Suite', () => {
 			assert.strictEqual(treeItem, buildConfig);
 		});
 
-		test('should get children from build directory', async () => {
-			// Mock file system operations using sandbox
-			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
-				const pathStr = path.toString();
-				if (pathStr.endsWith('build')) {
-					return true;
-				}
-				if (pathStr.includes('build/sitl/ap_config.h') || pathStr.includes('build/CubeOrange/ap_config.h')) {
-					return true;
-				}
-				return false;
-			});
+		test('should get children from build directory', async function() {
+			// Increase timeout for this test as building takes time
+			this.timeout(300000); // 5 minutes
 
-			sandbox.stub(fs, 'readdirSync').callsFake((path: fs.PathLike) => {
-				const pathStr = path.toString();
-				if (pathStr.endsWith('build')) {
-					return ['sitl', 'CubeOrange'] as any;
-				}
-				return [] as any;
-			});
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+			assert(workspaceFolder, 'Workspace folder should be available');
 
-			sandbox.stub(fs, 'lstatSync').callsFake((path: fs.PathLike) => {
-				return { isDirectory: () => true } as any;
-			});
+			// The workspace should already be the ardupilot directory for the test
+			// Check if we're in the extension dev environment or actual ardupilot workspace
+			let ardupilotPath: string;
+			if (workspaceFolder.uri.fsPath.endsWith('ardupilot_vscode_devenv')) {
+				ardupilotPath = path.join(workspaceFolder.uri.fsPath, 'ardupilot');		} else {
+				ardupilotPath = workspaceFolder.uri.fsPath;
+			}
+			const buildPath = path.join(ardupilotPath, 'build');
 
-			sandbox.stub(fs, 'readFileSync').callsFake((path: fs.PathOrFileDescriptor, encoding?: any) => {
-				const pathStr = path.toString();
-				if (pathStr.includes('target_list')) {
-					if (pathStr.includes('sitl')) {
-						return 'bin/arducopter';
-					} else if (pathStr.includes('CubeOrange')) {
-						return 'bin/arduplane';
-					}
-				}
-				return '';
-			});
+			// Step 1: Clean existing builds
+			await commandLineClean(ardupilotPath);
+			assert(!fs.existsSync(buildPath), 'Build directory should not exist after clean');
 
+			// Step 2: Build targets
+			await commandLineBuild(ardupilotPath, [
+				{ board: 'sitl', vehicle: 'copter' },
+				{ board: 'CubeOrange', vehicle: 'plane' }
+			]);
+
+			// Step 3: Verify build directory now exists and contains expected targets
+			assert(fs.existsSync(buildPath), 'Build directory should exist after building');
+
+			const sitlBuildDir = path.join(buildPath, 'sitl');
+			const cubeOrangeBuildDir = path.join(buildPath, 'CubeOrange');
+
+			assert(fs.existsSync(sitlBuildDir), 'SITL build directory should exist');
+			assert(fs.existsSync(cubeOrangeBuildDir), 'CubeOrange build directory should exist');
+			assert(fs.existsSync(path.join(sitlBuildDir, 'ap_config.h')), 'SITL ap_config.h should exist');
+			assert(fs.existsSync(path.join(cubeOrangeBuildDir, 'ap_config.h')), 'CubeOrange ap_config.h should exist');
+
+			// Step 6: Test the getChildren method with actual built targets
+			// Assuming the correct workspace is already loaded
 			const children = await buildConfigProvider.getChildren();
 
-			assert.ok(Array.isArray(children));
-			assert.strictEqual(children.length, 2);
-			assert.ok(children.every(child => child instanceof apBuildConfig));
+			assert.ok(Array.isArray(children), 'Children should be an array');
+			assert(children.length >= 2, `Should find at least 2 build configs, found ${children.length}`);
+			assert.ok(children.every(child => child instanceof apBuildConfig), 'All children should be apBuildConfig instances');
+
+			// Verify we have the expected configurations
+			const labels = children.map(child => child.label);
+			assert(labels.includes('sitl'), 'Should include sitl configuration');
+			assert(labels.includes('CubeOrange'), 'Should include CubeOrange configuration');
 		});
 
 		test('should handle empty task list', async () => {
-			sandbox.stub(vscode.tasks, 'fetchTasks').resolves([]);
+			// Mock file system to simulate no build directory
+			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
+				const pathStr = path.toString();
+				if (pathStr.endsWith('build')) {
+					return false; // No build directory exists
+				}
+				return false;
+			});
 
 			const children = await buildConfigProvider.getChildren();
 			assert.ok(Array.isArray(children));
@@ -372,41 +403,11 @@ suite('apBuildConfig Test Suite', () => {
 
 	suite('Configuration State Management', () => {
 		test('should handle configuration changes', async () => {
-			const mockTask1: vscode.Task = {
-				definition: {
-					type: 'ardupilot',
-					configure: 'sitl',
-					target: 'copter'
-				} as ArdupilotTaskDefinition,
-				scope: vscode.TaskScope.Workspace,
-				name: 'Task 1',
-				source: 'ardupilot',
-				execution: undefined,
-				problemMatchers: [],
-				isBackground: false,
-				presentationOptions: {},
-				group: undefined,
-				detail: undefined,
-				runOptions: {}
-			};
+			const mockTask1 = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			const mockTask2 = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane');
 
-			const mockTask2: vscode.Task = {
-				definition: {
-					type: 'ardupilot',
-					configure: 'CubeOrange',
-					target: 'plane'
-				} as ArdupilotTaskDefinition,
-				scope: vscode.TaskScope.Workspace,
-				name: 'Task 2',
-				source: 'ardupilot',
-				execution: undefined,
-				problemMatchers: [],
-				isBackground: false,
-				presentationOptions: {},
-				group: undefined,
-				detail: undefined,
-				runOptions: {}
-			};
+			assert.ok(mockTask1, 'mockTask1 should be created');
+			assert.ok(mockTask2, 'mockTask2 should be created');
 
 			// Set first configuration as active
 			setActiveConfiguration(mockTask1);

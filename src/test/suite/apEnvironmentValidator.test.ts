@@ -1,416 +1,452 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
+
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
-import * as child_process from 'child_process';
 import { ValidateEnvironment, ValidateEnvironmentPanel } from '../../apEnvironmentValidator';
 import { ProgramUtils } from '../../apProgramUtils';
 import { ToolsConfig } from '../../apToolsConfig';
+import { APExtensionContext } from '../../extension';
+import { apWelcomeProvider } from '../../apWelcomeProvider';
+import { getApExtApi } from './common';
 
 suite('apEnvironmentValidator Test Suite', () => {
+	let apExtensionContext: APExtensionContext;
+	let welcomeProvider: apWelcomeProvider;
+	let validateEnvironment: ValidateEnvironment;
 	let sandbox: sinon.SinonSandbox;
-	let mockPanel: sinon.SinonStubbedInstance<vscode.WebviewPanel>;
-	let mockWebview: sinon.SinonStubbedInstance<vscode.Webview>;
 
-	setup(() => {
+	suiteSetup(async () => {
+		apExtensionContext = await getApExtApi();
+		assert(apExtensionContext.apWelcomeProviderInstance);
+		welcomeProvider = apExtensionContext.apWelcomeProviderInstance;
+	});
+
+	setup(async () => {
 		sandbox = sinon.createSandbox();
 
-		// Mock webview
-		mockWebview = {
-			html: '',
-			cspSource: 'mock-csp-source',
-			postMessage: sandbox.stub(),
-			asWebviewUri: sandbox.stub().callsFake((uri) => uri),
-			onDidReceiveMessage: sandbox.stub()
-		} as any;
-
-		// Mock webview panel
-		mockPanel = {
-			webview: mockWebview,
-			title: '',
-			reveal: sandbox.stub(),
-			dispose: sandbox.stub(),
-			onDidDispose: sandbox.stub().callsFake((/* eslint-disable-next-line @typescript-eslint/no-unused-vars */ callback) => {
-				return { dispose: sandbox.stub() };
-			}),
-			viewColumn: vscode.ViewColumn.One
-		} as any;
-
-		// Mock VS Code APIs
-		sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel as any);
-		sandbox.stub(vscode.commands, 'registerCommand');
-		sandbox.stub(vscode.window, 'activeTextEditor').value(undefined);
+		const children = await welcomeProvider.getChildren();
+		validateEnvironment = children.find(child =>
+			child.label === 'Validate Environment'
+		) as ValidateEnvironment;
+		assert(validateEnvironment instanceof ValidateEnvironment);
 	});
 
 	teardown(() => {
 		sandbox.restore();
-		// Clean up any existing panels
 		if ((ValidateEnvironmentPanel as any).currentPanel) {
 			(ValidateEnvironmentPanel as any).currentPanel = undefined;
 		}
 	});
 
-	suite('ValidateEnvironment', () => {
-		test('should create instance with correct properties', () => {
-			const validateEnv = new ValidateEnvironment(
-				'Validate Environment',
-				vscode.TreeItemCollapsibleState.None
-			);
-
-			assert.strictEqual(validateEnv.label, 'Validate Environment');
-			assert.strictEqual(validateEnv.collapsibleState, vscode.TreeItemCollapsibleState.None);
-			assert.strictEqual(validateEnv.contextValue, 'validateEnvironment');
-			assert(validateEnv.iconPath instanceof vscode.ThemeIcon);
-			assert.strictEqual((validateEnv.iconPath as vscode.ThemeIcon).id, 'inspect');
-			assert(validateEnv.command);
-			assert.strictEqual(validateEnv.command.command, 'apValidateEnv');
-		});
-
-		test('should register command on construction', () => {
-			new ValidateEnvironment(
-				'Validate Environment',
-				vscode.TreeItemCollapsibleState.None
-			);
-
-			assert(vscode.commands.registerCommand.calledWith('apValidateEnv', sinon.match.func));
-		});
-
-		test('should run validation when command executed', () => {
+	suite('Core Functionality', () => {
+		test('should execute validation through VS Code command', async () => {
 			const createOrShowSpy = sandbox.spy(ValidateEnvironmentPanel, 'createOrShow');
 
-			ValidateEnvironment.run();
+			await vscode.commands.executeCommand('apValidateEnv');
 
 			assert(createOrShowSpy.calledOnce);
 		});
-	});
 
-	suite('ValidateEnvironmentPanel', () => {
-		suite('createOrShow', () => {
-			test('should create new panel when none exists', () => {
-				ValidateEnvironmentPanel.createOrShow(vscode.ViewColumn.Two);
+		test('should implement singleton pattern for webview panel', () => {
+			const mockWebview = {
+				html: '',
+				postMessage: sandbox.stub(),
+				onDidReceiveMessage: sandbox.stub(),
+				asWebviewUri: sandbox.stub().returnsArg(0)
+			} as any;
 
-				assert(vscode.window.createWebviewPanel.calledOnce);
-				assert((vscode.window.createWebviewPanel as sinon.SinonStub).calledWith(
-					'validateEnvironmentPanel',
-					'ArduPilot Environment Validation',
-					vscode.ViewColumn.Two,
-					{ enableScripts: true }
-				));
-			});
+			const mockPanel = {
+				webview: mockWebview,
+				reveal: sandbox.stub(),
+				dispose: sandbox.stub(),
+				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
+			} as any;
 
-			test('should use default column when none provided', () => {
-				ValidateEnvironmentPanel.createOrShow();
+			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
 
-				assert((vscode.window.createWebviewPanel as sinon.SinonStub).calledWith(
-					'validateEnvironmentPanel',
-					'ArduPilot Environment Validation',
-					vscode.ViewColumn.One,
-					{ enableScripts: true }
-				));
-			});
+			ValidateEnvironmentPanel.createOrShow();
+			ValidateEnvironmentPanel.createOrShow(vscode.ViewColumn.Two);
 
-			test('should reveal existing panel instead of creating new one', () => {
-				// Create first panel
-				ValidateEnvironmentPanel.createOrShow();
-				const revealStub = mockPanel.reveal;
-
-				// Try to create second panel
-				ValidateEnvironmentPanel.createOrShow(vscode.ViewColumn.Two);
-
-				assert(revealStub.calledOnce);
-				assert(revealStub.calledWith(vscode.ViewColumn.Two));
-				assert.strictEqual((vscode.window.createWebviewPanel as sinon.SinonStub).callCount, 1);
-			});
-		});
-
-		suite('constructor and initialization', () => {
-			test('should initialize panel with webview content', () => {
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Verify panel was created and content was set
-				assert((ValidateEnvironmentPanel as any).currentPanel);
-				assert(typeof mockWebview.html === 'string');
-				assert(mockWebview.html.length > 0);
-			});
-
-			test('should set up dispose handler', () => {
-				ValidateEnvironmentPanel.createOrShow();
-
-				assert(mockPanel.onDidDispose.calledOnce);
-
-				// Simulate panel disposal
-				const disposeCallback = mockPanel.onDidDispose.firstCall.args[0];
-				disposeCallback();
-
-				// Should clean up current panel reference
-				assert.strictEqual((ValidateEnvironmentPanel as any).currentPanel, undefined);
-			});
-		});
-
-		suite('environment validation logic', () => {
-			test('should validate Python installation', async () => {
-				// Mock child_process.exec for Python check
-				const execStub = sandbox.stub(child_process, 'exec');
-				execStub.callsArgWith(1, null, 'Python 3.9.0', '');
-
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Verify that validation would check Python
-				// Note: Actual validation logic would need to be extracted and tested separately
-				assert(execStub.called || !execStub.called); // Placeholder for actual test
-			});
-
-			test('should validate Git installation', async () => {
-				// Mock child_process.exec for Git check
-				const execStub = sandbox.stub(child_process, 'exec');
-				execStub.callsArgWith(1, null, 'git version 2.30.0', '');
-
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Verify that validation would check Git
-				assert(execStub.called || !execStub.called); // Placeholder for actual test
-			});
-
-			test('should handle validation errors gracefully', async () => {
-				// Mock child_process.exec to simulate error
-				const execStub = sandbox.stub(child_process, 'exec');
-				execStub.callsArgWith(1, new Error('Command not found'), '', 'Command not found');
-
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Should not throw and should handle error
-				assert(execStub.called || !execStub.called); // Placeholder for actual test
-			});
-		});
-
-		suite('webview communication', () => {
-			test('should send validation results to webview', () => {
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Mock validation results
-				const mockResults = {
-					python: { installed: true, version: '3.9.0' },
-					git: { installed: true, version: '2.30.0' },
-					waf: { installed: false, error: 'Not found' }
-				};
-
-				// Simulate sending results to webview
-				const panel = (ValidateEnvironmentPanel as any).currentPanel;
-				if (panel && panel._panel) {
-					panel._panel.webview.postMessage({
-						command: 'validationResults',
-						results: mockResults
-					});
-				}
-
-				// Verify message was sent
-				assert(mockWebview.postMessage.called);
-			});
-
-			test('should handle webview messages', () => {
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Mock message from webview requesting re-validation
-				const panel = (ValidateEnvironmentPanel as any).currentPanel;
-
-				// Simulate webview message handling
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
-				const mockMessage = { command: 'revalidate' };
-
-				// Since actual message handling setup depends on implementation,
-				// this is a placeholder for the test structure
-				assert(panel);
-			});
-		});
-
-		suite('tool validation', () => {
-			test('should validate ArduPilot build tools', () => {
-				// Mock ToolsConfig and ProgramUtils (note: ToolsConfig methods are static)
-				sandbox.stub(ToolsConfig, 'getToolPath').returns('/usr/bin/gcc');
-				sandbox.stub(ProgramUtils, 'findProgram').resolves('/usr/bin/python3');
-
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Verify tool validation would be performed
-				assert(ToolsConfig.getToolPath.called || !ToolsConfig.getToolPath.called);
-				assert(ProgramUtils.findProgram.called || !ProgramUtils.findProgram.called);
-			});
-
-			test('should check for required Python packages', async () => {
-				const execStub = sandbox.stub(child_process, 'exec');
-
-				// Mock pip list output
-				execStub.withArgs('python3 -m pip list').callsArgWith(1, null,
-					'Package      Version\n' +
-                    'pymavlink    2.4.8\n' +
-                    'empy         3.3.4\n', '');
-
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Verify package checking would be performed
-				assert(execStub.called || !execStub.called);
-			});
-
-			test('should validate workspace configuration', () => {
-				// Mock workspace folder
-				sandbox.stub(vscode.workspace, 'workspaceFolders').value([{
-					uri: vscode.Uri.file('/mock/ardupilot'),
-					name: 'ardupilot',
-					index: 0
-				}]);
-
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Verify workspace validation
-				assert(vscode.workspace.workspaceFolders);
-			});
-		});
-
-		suite('error handling', () => {
-			test('should handle panel creation errors', () => {
-				// Restore the existing stub first, then create a new one
-				sandbox.restore();
-				const newSandbox = sinon.createSandbox();
-				newSandbox.stub(vscode.window, 'createWebviewPanel').throws(new Error('Panel creation failed'));
-
-				assert.throws(() => {
-					ValidateEnvironmentPanel.createOrShow();
-				}, /Panel creation failed/);
-
-				// Clean up
-				newSandbox.restore();
-				// Recreate the sandbox for remaining tests
-				sandbox = sinon.createSandbox();
-				// Re-setup basic mocks
-				sandbox.stub(vscode.commands, 'registerCommand');
-				sandbox.stub(vscode.window, 'activeTextEditor').value(undefined);
-			});
-
-			test('should handle webview content generation errors', () => {
-				// Mock error in content generation
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Should still create panel even if content has issues
-				assert((ValidateEnvironmentPanel as any).currentPanel);
-			});
-
-			test('should handle command execution timeouts', async () => {
-				const execStub = sandbox.stub(child_process, 'exec');
-
-				// Mock timeout
-				execStub.callsArgWith(1, new Error('TIMEOUT'), '', 'Command timed out');
-
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Should handle timeout gracefully
-				assert(execStub.called || !execStub.called);
-			});
-		});
-
-		suite('validation reporting', () => {
-			test('should generate detailed validation report', () => {
-				ValidateEnvironmentPanel.createOrShow();
-
-				const mockValidationData = {
-					environment: {
-						os: process.platform,
-						arch: process.arch,
-						nodeVersion: process.version
-					},
-					tools: {
-						python: { version: '3.9.0', path: '/usr/bin/python3' },
-						git: { version: '2.30.0', path: '/usr/bin/git' },
-						gcc: { version: '9.4.0', path: '/usr/bin/gcc' }
-					},
-					packages: {
-						pymavlink: '2.4.8',
-						empy: '3.3.4'
-					}
-				};
-
-				// Simulate report generation
-				const report = JSON.stringify(mockValidationData, null, 2);
-
-				assert(report.includes('python'));
-				assert(report.includes('git'));
-				assert(report.includes('gcc'));
-			});
-
-			test('should provide recommendations for missing tools', () => {
-				const mockMissingTools = [
-					{ name: 'python3', recommendation: 'Install Python 3.7 or later' },
-					{ name: 'git', recommendation: 'Install Git version control system' }
-				];
-
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Simulate recommendation generation
-				const recommendations = mockMissingTools.map(tool =>
-					`Missing ${tool.name}: ${tool.recommendation}`
-				);
-
-				assert(recommendations.length === 2);
-				assert(recommendations[0].includes('Python'));
-				assert(recommendations[1].includes('Git'));
-			});
-		});
-
-		suite('cleanup and disposal', () => {
-			test('should dispose panel correctly', () => {
-				ValidateEnvironmentPanel.createOrShow();
-				const panel = (ValidateEnvironmentPanel as any).currentPanel;
-
-				// Access dispose method if available
-				if (panel && typeof panel.dispose === 'function') {
-					panel.dispose();
-				}
-
-				assert(mockPanel.dispose.called);
-			});
-
-			test('should clean up resources on panel close', () => {
-				ValidateEnvironmentPanel.createOrShow();
-
-				// Simulate panel being closed by user
-				const disposeCallback = mockPanel.onDidDispose.firstCall.args[0];
-				disposeCallback();
-
-				assert.strictEqual((ValidateEnvironmentPanel as any).currentPanel, undefined);
-			});
+			assert(mockPanel.reveal.calledOnce);
+			assert(mockPanel.reveal.calledWith(vscode.ViewColumn.Two));
 		});
 	});
 
-	suite('integration tests', () => {
-		test('should integrate with VS Code command system', () => {
-			new ValidateEnvironment('Test', vscode.TreeItemCollapsibleState.None);
+	suite('Platform and Tool Validation', () => {
+		let mockWebview: sinon.SinonStubbedInstance<vscode.Webview>;
+		let mockPanel: sinon.SinonStubbedInstance<vscode.WebviewPanel>;
 
-			// Verify command was registered
-			assert(vscode.commands.registerCommand.calledWith('apValidateEnv', sinon.match.func));
+		setup(() => {
+			mockWebview = {
+				html: '',
+				postMessage: sandbox.stub(),
+				onDidReceiveMessage: sandbox.stub(),
+				asWebviewUri: sandbox.stub().returnsArg(0)
+			} as any;
 
-			// Get registered command function
-			const commandCallback = (vscode.commands.registerCommand as sinon.SinonStub).firstCall.args[1];
+			mockPanel = {
+				webview: mockWebview,
+				reveal: sandbox.stub(),
+				dispose: sandbox.stub(),
+				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
+			} as any;
 
-			// Execute command and verify it calls ValidateEnvironment.run
-			const runSpy = sandbox.spy(ValidateEnvironment, 'run');
-			commandCallback();
-
-			assert(runSpy.calledOnce);
+			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
 		});
 
-		test('should work with tree view provider', () => {
-			const validateEnv = new ValidateEnvironment(
-				'Validate Environment',
-				vscode.TreeItemCollapsibleState.None
+		test('should skip tool validation on Windows platform', () => {
+			const originalPlatform = process.platform;
+			Object.defineProperty(process, 'platform', { value: 'win32' });
+
+			const findPythonSpy = sandbox.spy(ProgramUtils, 'findPython');
+
+			ValidateEnvironmentPanel.createOrShow();
+
+			Object.defineProperty(process, 'platform', { value: originalPlatform });
+
+			assert(findPythonSpy.notCalled);
+		});
+
+		test('should validate multiple development tools and report results', async () => {
+			const originalPlatform = process.platform;
+			if (originalPlatform === 'win32') {
+				Object.defineProperty(process, 'platform', { value: 'linux' });
+			}
+
+			sandbox.stub(ProgramUtils, 'findPython').resolves({
+				available: true,
+				version: '3.9.0',
+				path: '/usr/bin/python3'
+			});
+			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({
+				available: true,
+				version: '1.8.0'
+			});
+			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: true });
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true });
+			sandbox.stub(ProgramUtils, 'findCcache').rejects(new Error('ccache not found'));
+			sandbox.stub(ProgramUtils, 'isWSL').returns(false);
+
+			// Clear any existing panels
+			if ((ValidateEnvironmentPanel as any).currentPanel) {
+				(ValidateEnvironmentPanel as any).currentPanel = undefined;
+			}
+
+			ValidateEnvironmentPanel.createOrShow();
+
+			// Wait for the 500ms timeout + validation to complete
+			await new Promise(resolve => setTimeout(resolve, 800));
+
+			// Verify postMessage was called
+			assert(mockWebview.postMessage.called, 'webview.postMessage should have been called');
+
+			// Check if platform check message was sent
+			const platformCalls = mockWebview.postMessage.getCalls().filter(call =>
+				call.args[0] && call.args[0].command === 'platformCheck'
 			);
+			assert(platformCalls.length > 0, 'Platform check message should be sent');
 
-			// Verify tree item properties are set correctly for tree view
-			assert.strictEqual(validateEnv.label, 'Validate Environment');
-			assert.strictEqual(validateEnv.collapsibleState, vscode.TreeItemCollapsibleState.None);
-			assert(validateEnv.iconPath);
-			assert(validateEnv.command);
+			// Check if validationResult messages were sent for tools
+			const validationResultCalls = mockWebview.postMessage.getCalls().filter(call =>
+				call.args[0] && call.args[0].command === 'validationResult'
+			);
+			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
+
+			// Verify validationResult messages for all expected tools
+			const expectedTools = ['python', 'mavproxy', 'gcc', 'gdb', 'ccache', 'jlink', 'openocd', 'gdbserver', 'pyserial', 'tmux'];
+			for (const toolName of expectedTools) {
+				const toolValidationCall = validationResultCalls.find(call =>
+					call.args[0].tool === toolName
+				);
+				assert(toolValidationCall, `${toolName} validation result should be sent`);
+				assert(typeof toolValidationCall.args[0].available === 'boolean', `${toolName} should have available property`);
+			}
+
+			// Verify specific validationResult for Python tool
+			const pythonValidationCall = validationResultCalls.find(call =>
+				call.args[0].tool === 'python'
+			);
+			assert(pythonValidationCall, 'Python validation result should be sent');
+			assert.strictEqual(pythonValidationCall.args[0].available, true);
+			assert.strictEqual(pythonValidationCall.args[0].version, '3.9.0');
+			assert.strictEqual(pythonValidationCall.args[0].path, '/usr/bin/python3');
+
+			// Verify specific validationResult for MAVProxy tool
+			const mavproxyValidationCall = validationResultCalls.find(call =>
+				call.args[0].tool === 'mavproxy'
+			);
+			assert(mavproxyValidationCall, 'MAVProxy validation result should be sent');
+			assert.strictEqual(mavproxyValidationCall.args[0].available, true);
+			assert.strictEqual(mavproxyValidationCall.args[0].version, '1.8.0');
+
+			if (originalPlatform === 'win32') {
+				Object.defineProperty(process, 'platform', { value: originalPlatform });
+			}
+		});
+
+		test('should handle tool validation failures gracefully', async () => {
+			const originalPlatform = process.platform;
+			if (originalPlatform === 'win32') {
+				Object.defineProperty(process, 'platform', { value: 'linux' });
+			}
+
+			sandbox.stub(ProgramUtils, 'findPython').rejects(new Error('Python not found'));
+			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findCcache').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'isWSL').returns(false);
+
+			// Clear any existing panels
+			if ((ValidateEnvironmentPanel as any).currentPanel) {
+				(ValidateEnvironmentPanel as any).currentPanel = undefined;
+			}
+
+			ValidateEnvironmentPanel.createOrShow();
+
+			await new Promise(resolve => setTimeout(resolve, 800));
+
+			// Verify that webview received messages (including platform check)
+			assert(mockWebview.postMessage.called, 'webview.postMessage should have been called');
+
+			// Check if validationResult messages were sent even with failures
+			const validationResultCalls = mockWebview.postMessage.getCalls().filter(call =>
+				call.args[0] && call.args[0].command === 'validationResult'
+			);
+			assert(validationResultCalls.length > 0, 'Validation result messages should be sent even with failures');
+
+			if (originalPlatform === 'win32') {
+				Object.defineProperty(process, 'platform', { value: originalPlatform });
+			}
+		});
+	});
+
+	suite('Configuration Management', () => {
+		let mockWebview: sinon.SinonStubbedInstance<vscode.Webview>;
+		let messageHandler: (message: any) => void;
+
+		setup(() => {
+			mockWebview = {
+				html: '',
+				postMessage: sandbox.stub(),
+				onDidReceiveMessage: sandbox.stub().callsFake((handler) => {
+					messageHandler = handler;
+					return { dispose: sandbox.stub() };
+				}),
+				asWebviewUri: sandbox.stub().returnsArg(0)
+			} as any;
+
+			const mockPanel = {
+				webview: mockWebview,
+				reveal: sandbox.stub(),
+				dispose: sandbox.stub(),
+				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
+			} as any;
+
+			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
+		});
+
+		test('should handle tool path configuration through ToolsConfig', async () => {
+			const customPath = '/custom/bin/python';
+			const setToolPathSpy = sandbox.spy(ToolsConfig, 'setToolPath');
+
+			// Test the functionality that the configuration uses
+			ToolsConfig.setToolPath(ProgramUtils.TOOL_PYTHON, customPath);
+
+			assert(setToolPathSpy.calledWith(ProgramUtils.TOOL_PYTHON, customPath));
+		});
+
+		test('should handle Python interpreter selection', async () => {
+			const interpreterPath = '/usr/bin/python3.9';
+			sandbox.stub(ProgramUtils, 'selectPythonInterpreter').resolves(interpreterPath);
+			const setToolPathSpy = sandbox.spy(ToolsConfig, 'setToolPath');
+			sandbox.stub(vscode.window, 'showInformationMessage');
+
+			ValidateEnvironmentPanel.createOrShow();
+
+			messageHandler({ command: 'selectPythonInterpreter' });
+
+			await new Promise(resolve => setTimeout(resolve, 50));
+
+			assert(setToolPathSpy.calledWith(ProgramUtils.TOOL_PYTHON, interpreterPath));
+		});
+
+		test('should detect custom tool paths correctly', async () => {
+			const originalPlatform = process.platform;
+			if (originalPlatform === 'win32') {
+				Object.defineProperty(process, 'platform', { value: 'linux' });
+			}
+
+			const customPath = '/custom/bin/python';
+
+			// Mock all ProgramUtils methods first
+			sandbox.stub(ProgramUtils, 'findPython').resolves({
+				available: true,
+				version: '3.9.0',
+				path: customPath
+			});
+			sandbox.stub(ProgramUtils, 'isWSL').returns(false);
+			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findCcache').resolves({ available: false });
+
+			// Set up ToolsConfig stub to return the custom path for Python
+			const getToolPathStub = sandbox.stub(ToolsConfig, 'getToolPath');
+			getToolPathStub.callsFake((toolId: string) => {
+				if (toolId === ProgramUtils.TOOL_PYTHON) {
+					return customPath;
+				}
+				return undefined;
+			});
+
+			// Clear any existing panels
+			if ((ValidateEnvironmentPanel as any).currentPanel) {
+				(ValidateEnvironmentPanel as any).currentPanel = undefined;
+			}
+
+			ValidateEnvironmentPanel.createOrShow();
+
+			await new Promise(resolve => setTimeout(resolve, 800));
+
+			// Verify that webview received messages
+			assert(mockWebview.postMessage.called, 'webview.postMessage should have been called');
+
+			// Check if validationResult messages were sent
+			const validationResultCalls = mockWebview.postMessage.getCalls().filter(call =>
+				call.args[0] && call.args[0].command === 'validationResult'
+			);
+			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
+
+			// Verify Python validationResult includes custom path information
+			const pythonValidationCall = validationResultCalls.find(call =>
+				call.args[0].tool === 'python'
+			);
+			assert(pythonValidationCall, 'Python validation result should be sent');
+			assert.strictEqual(pythonValidationCall.args[0].path, customPath);
+			assert.strictEqual(pythonValidationCall.args[0].isCustomPath, true);
+
+			if (originalPlatform === 'win32') {
+				Object.defineProperty(process, 'platform', { value: originalPlatform });
+			}
+		});
+	});
+
+	suite('WSL Integration', () => {
+		let mockWebview: sinon.SinonStubbedInstance<vscode.Webview>;
+		let messageHandler: (message: any) => void;
+
+		setup(() => {
+			mockWebview = {
+				html: '',
+				postMessage: sandbox.stub(),
+				onDidReceiveMessage: sandbox.stub().callsFake((handler) => {
+					messageHandler = handler;
+					return { dispose: sandbox.stub() };
+				}),
+				asWebviewUri: sandbox.stub().returnsArg(0)
+			} as any;
+
+			const mockPanel = {
+				webview: mockWebview,
+				reveal: sandbox.stub(),
+				dispose: sandbox.stub(),
+				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
+			} as any;
+
+			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
+		});
+
+		test('should handle WSL installation guide launch', () => {
+			const openExternalStub = sandbox.stub(vscode.env, 'openExternal');
+			sandbox.stub(vscode.window, 'showInformationMessage').resolves('Later' as any);
+
+			ValidateEnvironmentPanel.createOrShow();
+
+			messageHandler({ command: 'launchWSL' });
+
+			assert(openExternalStub.calledWith(vscode.Uri.parse('https://learn.microsoft.com/en-us/windows/wsl/install')));
+		});
+
+		test('should handle VSCode WSL connection', async () => {
+			const executeCommandStub = sandbox.stub(vscode.commands, 'executeCommand').resolves();
+
+			ValidateEnvironmentPanel.createOrShow();
+
+			messageHandler({ command: 'openVSCodeWSL' });
+
+			await new Promise(resolve => setTimeout(resolve, 50));
+
+			assert(executeCommandStub.calledWith('remote-wsl.openFolder'));
+		});
+	});
+
+	suite('Error Handling', () => {
+		test('should handle Python interpreter selection failures', async () => {
+			const mockWebview = {
+				html: '',
+				postMessage: sandbox.stub(),
+				onDidReceiveMessage: sandbox.stub().callsFake((handler) => {
+					setTimeout(() => handler({ command: 'selectPythonInterpreter' }), 0);
+					return { dispose: sandbox.stub() };
+				}),
+				asWebviewUri: sandbox.stub().returnsArg(0)
+			} as any;
+
+			const mockPanel = {
+				webview: mockWebview,
+				reveal: sandbox.stub(),
+				dispose: sandbox.stub(),
+				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
+			} as any;
+
+			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
+			sandbox.stub(ProgramUtils, 'selectPythonInterpreter')
+				.rejects(new Error('Selection failed'));
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			ValidateEnvironmentPanel.createOrShow();
+
+			await new Promise(resolve => setTimeout(resolve, 50));
+
+			assert(showErrorStub.calledWith(sinon.match(/Failed to select Python interpreter/)));
+		});
+
+		test('should handle WSL command failures', async () => {
+			const mockWebview = {
+				html: '',
+				postMessage: sandbox.stub(),
+				onDidReceiveMessage: sandbox.stub().callsFake((handler) => {
+					setTimeout(() => handler({ command: 'openVSCodeWSL' }), 0);
+					return { dispose: sandbox.stub() };
+				}),
+				asWebviewUri: sandbox.stub().returnsArg(0)
+			} as any;
+
+			const mockPanel = {
+				webview: mockWebview,
+				reveal: sandbox.stub(),
+				dispose: sandbox.stub(),
+				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
+			} as any;
+
+			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
+			sandbox.stub(vscode.commands, 'executeCommand')
+				.rejects(new Error('WSL command failed'));
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			ValidateEnvironmentPanel.createOrShow();
+
+			await new Promise(resolve => setTimeout(resolve, 50));
+
+			assert(showErrorStub.calledWith(sinon.match(/Failed to open VS Code with WSL/)));
 		});
 	});
 });

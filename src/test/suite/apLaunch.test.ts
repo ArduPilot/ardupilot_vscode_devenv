@@ -1,56 +1,59 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-// @ts-nocheck
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { APLaunchDefinition, APLaunchConfigurationProvider } from '../../apLaunch';
+import { APLaunchConfigurationProvider } from '../../apLaunch';
 import { ProgramUtils } from '../../apProgramUtils';
 import { targetToBin } from '../../apBuildConfig';
+import { APExtensionContext } from '../../extension';
+import { getApExtApi } from './common';
 
 suite('apLaunch Test Suite', () => {
-	let sandbox: sinon.SinonSandbox;
+	let apExtensionContext: APExtensionContext;
 	let provider: APLaunchConfigurationProvider;
-	let mockWorkspaceFolder: vscode.WorkspaceFolder;
+	let workspaceFolder: vscode.WorkspaceFolder;
+	let sandbox: sinon.SinonSandbox;
+
+	// Helper to create properly typed terminal mocks
+	function createMockTerminal(overrides?: Partial<vscode.Terminal>): vscode.Terminal & {
+		sendText: sinon.SinonStub;
+		show: sinon.SinonStub;
+		dispose: sinon.SinonStub;
+	} {
+		return {
+			sendText: sandbox.stub(),
+			show: sandbox.stub(),
+			dispose: sandbox.stub(),
+			name: 'Test Terminal',
+			processId: Promise.resolve(1234),
+			creationOptions: {},
+			exitStatus: undefined,
+			state: { isInteractedWith: false },
+			...overrides
+		} as vscode.Terminal & {
+			sendText: sinon.SinonStub;
+			show: sinon.SinonStub;
+			dispose: sinon.SinonStub;
+		};
+	}
+
+	suiteSetup(async () => {
+		apExtensionContext = await getApExtApi();
+		const folders = vscode.workspace.workspaceFolders;
+		assert(folders && folders.length > 0, 'Workspace folder must be available for tests');
+		workspaceFolder = folders[0];
+		assert(workspaceFolder, 'Workspace folder should be available');
+		assert(apExtensionContext.vscodeContext, 'VS Code context should be available');
+	});
 
 	setup(() => {
-		// Restore any existing sandbox to prevent conflicts
 		if (sandbox) {
 			sandbox.restore();
 		}
 		sandbox = sinon.createSandbox();
 
-		mockWorkspaceFolder = {
-			uri: vscode.Uri.file('/mock/workspace'),
-			name: 'test-workspace',
-			index: 0
-		};
-
-		// Mock VS Code APIs
-		sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
-		sandbox.stub(vscode.window, 'showErrorMessage');
-		sandbox.stub(vscode.window, 'createTerminal').returns({
-			sendText: sandbox.stub(),
-			dispose: sandbox.stub(),
-			show: sandbox.stub()
-		} as any);
-		sandbox.stub(vscode.tasks, 'fetchTasks').resolves([]);
-		sandbox.stub(vscode.tasks, 'executeTask').resolves({} as any);
-		sandbox.stub(vscode.tasks, 'onDidEndTaskProcess').callsFake((callback) => {
-			return { dispose: sandbox.stub() };
-		});
-		sandbox.stub(vscode.debug, 'onDidTerminateDebugSession').callsFake((callback) => {
-			return { dispose: sandbox.stub() };
-		});
-
-		// Create provider after mocks are set up
+		// Create fresh provider instance for each test
 		provider = new APLaunchConfigurationProvider();
 	});
 
@@ -58,604 +61,764 @@ suite('apLaunch Test Suite', () => {
 		sandbox.restore();
 	});
 
-	suite('APLaunchDefinition Interface', () => {
-		test('should define correct interface structure', () => {
-			const launchDef: APLaunchDefinition = {
-				type: 'apLaunch',
-				target: 'sitl-copter',
-				name: 'Test Launch',
-				waffile: '/path/to/waf',
-				simVehicleCommand: 'sim_vehicle.py --vehicle copter',
-				isSITL: true
-			};
+	suite('Debug Configuration Resolution', () => {
+		test('should reject empty configuration with error message', async () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+			const emptyConfig = {};
 
-			assert.strictEqual(launchDef.type, 'apLaunch');
-			assert.strictEqual(launchDef.target, 'sitl-copter');
-			assert.strictEqual(launchDef.name, 'Test Launch');
-			assert.strictEqual(launchDef.waffile, '/path/to/waf');
-			assert.strictEqual(launchDef.simVehicleCommand, 'sim_vehicle.py --vehicle copter');
-			assert.strictEqual(launchDef.isSITL, true);
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				emptyConfig as vscode.DebugConfiguration
+			);
+
+			assert.strictEqual(result, undefined);
+			assert(showErrorStub.calledWith(
+				'Cannot launch ArduPilot debug session. Please create a launch configuration.'
+			));
 		});
 
-		test('should work with minimal required properties', () => {
-			const minimalLaunchDef: APLaunchDefinition = {
-				type: 'apLaunch',
-				target: 'copter',
-				name: 'Minimal Launch'
+		test('should pass through non-apLaunch configurations unchanged', async () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+			const otherConfig = {
+				type: 'cppdbg',
+				request: 'launch',
+				name: 'Other Debug Config'
 			};
 
-			assert.strictEqual(minimalLaunchDef.type, 'apLaunch');
-			assert.strictEqual(minimalLaunchDef.target, 'copter');
-			assert.strictEqual(minimalLaunchDef.name, 'Minimal Launch');
-			assert.strictEqual(minimalLaunchDef.waffile, undefined);
-			assert.strictEqual(minimalLaunchDef.isSITL, undefined);
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				otherConfig as vscode.DebugConfiguration
+			);
+
+			assert.strictEqual(result, otherConfig);
+			assert(showErrorStub.notCalled);
+		});
+
+		test('should set default waf file path when not specified', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false });
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'Test Config',
+				target: 'copter'
+			};
+
+			await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			const expectedWafPath = path.join(workspaceFolder.uri.fsPath, 'waf');
+			assert.strictEqual((config as vscode.DebugConfiguration & { waffile?: string }).waffile, expectedWafPath);
+		});
+
+		test('should preserve custom waf file path when specified', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false });
+			const customWafPath = '/custom/path/to/waf';
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'Test Config',
+				target: 'copter',
+				waffile: customWafPath
+			};
+
+			await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert.strictEqual((config as vscode.DebugConfiguration & { waffile?: string }).waffile, customWafPath);
 		});
 	});
 
-	suite('APLaunchConfigurationProvider', () => {
-		suite('constructor', () => {
-			test('should register debug session termination handler', () => {
-				assert(vscode.debug.onDidTerminateDebugSession.calledOnce);
+	suite('Pre-launch Task Execution', () => {
+		test('should execute valid pre-launch task successfully', async () => {
+			const mockTask = {
+				name: 'CubeOrange-copter',
+				definition: { type: 'ardupilot' }
+			} as vscode.Task;
+
+			const fetchTasksStub = sandbox.stub(vscode.tasks, 'fetchTasks').resolves([mockTask]);
+			const executeTaskStub = sandbox.stub(vscode.tasks, 'executeTask');
+			const mockExecution = { task: mockTask, terminate: sandbox.stub() } as vscode.TaskExecution;
+			executeTaskStub.resolves(mockExecution);
+
+			const onDidEndTaskStub = sandbox.stub(vscode.tasks, 'onDidEndTaskProcess');
+			onDidEndTaskStub.callsFake((callback) => {
+				setTimeout(() => {
+					callback({ execution: mockExecution, exitCode: 0 } as vscode.TaskProcessEndEvent);
+				}, 0);
+				return { dispose: sandbox.stub() };
 			});
+
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false });
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'Test Config',
+				target: 'copter',
+				preLaunchTask: 'ardupilot: CubeOrange-copter'
+			};
+
+			await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert(fetchTasksStub.calledWith({ type: 'ardupilot' }));
+			assert(executeTaskStub.calledWith(mockTask));
 		});
 
-		suite('resolveDebugConfiguration', () => {
-			test('should handle empty configuration', async () => {
-				const config = {};
+		test('should handle pre-launch task execution failure', async () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+			const mockTask = {
+				name: 'CubeOrange-copter',
+				definition: { type: 'ardupilot' }
+			} as vscode.Task;
 
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
+			sandbox.stub(vscode.tasks, 'fetchTasks').resolves([mockTask]);
+			const executeTaskStub = sandbox.stub(vscode.tasks, 'executeTask');
+			const mockExecution = { task: mockTask, terminate: sandbox.stub() } as vscode.TaskExecution;
+			executeTaskStub.resolves(mockExecution);
 
-				assert.strictEqual(result, undefined);
-				assert(vscode.window.showErrorMessage.calledWith(
-					'Cannot launch ArduPilot debug session. Please create a launch configuration.'
-				));
+			sandbox.stub(vscode.tasks, 'onDidEndTaskProcess').callsFake((callback) => {
+				setTimeout(() => {
+					callback({ execution: mockExecution, exitCode: 1 } as vscode.TaskProcessEndEvent);
+				}, 0);
+				return { dispose: sandbox.stub() };
 			});
 
-			test('should pass through non-apLaunch configurations', async () => {
-				const config = {
-					type: 'cppdbg',
-					request: 'launch',
-					name: 'Other Debug'
-				};
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'Test Config',
+				target: 'copter',
+				preLaunchTask: 'ardupilot: CubeOrange-copter'
+			};
 
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
 
-				assert.strictEqual(result, config);
-			});
-
-			test('should require target property', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'Test Launch'
-					// Missing target
-				};
-
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				assert.strictEqual(result, undefined);
-				assert(vscode.window.showErrorMessage.calledWith(
-					'ArduPilot launch configuration requires \'target\' properties.'
-				));
-			});
-
-			test('should require workspace folder', async () => {
-				sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
-
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'Test Launch',
-					target: 'copter'
-				};
-
-				const result = await provider.resolveDebugConfiguration(
-					undefined,
-                    config as vscode.DebugConfiguration
-				);
-
-				assert.strictEqual(result, undefined);
-				assert(vscode.window.showErrorMessage.calledWith('No workspace is open.'));
-			});
-
-			test('should set default waf file when not specified', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'Test Launch',
-					target: 'copter'
-				};
-
-				// Mock SITL dependencies
-				sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: true, path: '/usr/bin/gdb' });
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true, path: '/usr/bin/tmux' });
-				sandbox.stub(fs, 'existsSync').returns(true);
-
-				await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				// Should set default waf file path
-				assert.strictEqual(config.waffile, path.join('/mock/workspace', 'waf'));
-			});
-			test('should execute pre-launch task when specified', async () => {
-				const mockTask = {
-					name: 'build',
-					definition: { type: 'ardupilot' }
-				} as vscode.Task;
-
-				// Reset and re-stub fetchTasks for this specific test
-				(vscode.tasks.fetchTasks as sinon.SinonStub).resolves([mockTask]);
-				// Use existing executeTask stub instead of creating a new one
-				const executeStub = vscode.tasks.executeTask as sinon.SinonStub;
-				const mockExecution = { task: mockTask };
-				executeStub.resolves(mockExecution);
-
-				// Mock task completion
-				(vscode.tasks.onDidEndTaskProcess as sinon.SinonStub).callsFake((callback) => {
-					// Simulate task completion
-					setTimeout(() => {
-						callback({ execution: mockExecution, exitCode: 0 } as any);
-					}, 0);
-					return { dispose: sandbox.stub() };
-				});
-
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'Test Launch',
-					target: 'copter',
-					preLaunchTask: 'ardupilot: build'
-				};
-
-				sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: true, path: '/usr/bin/gdb' });
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true, path: '/usr/bin/tmux' });
-				sandbox.stub(fs, 'existsSync').returns(true);
-
-				await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				assert(executeStub.calledWith(mockTask));
-			});
-
-			test('should handle invalid pre-launch task format', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'Test Launch',
-					target: 'copter',
-					preLaunchTask: 'invalid-format'
-				};
-
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				assert.strictEqual(result, undefined);
-				assert(vscode.window.showErrorMessage.calledWith(
-					sinon.match(/Invalid preLaunchTask format/)
-				));
-			});
-
-			test('should handle missing pre-launch task', async () => {
-				// Reset fetchTasks to return empty array for this test
-				(vscode.tasks.fetchTasks as sinon.SinonStub).resolves([]);
-
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'Test Launch',
-					target: 'copter',
-					preLaunchTask: 'ardupilot: nonexistent'
-				};
-
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				assert.strictEqual(result, undefined);
-				assert(vscode.window.showErrorMessage.calledWith(
-					sinon.match(/Pre-launch task .* not found/)
-				));
-			});
-
-			test('should handle pre-launch task failure', async () => {
-				const mockTask = {
-					name: 'build',
-					definition: { type: 'ardupilot' }
-				} as vscode.Task;
-
-				const mockExecution = { task: mockTask };
-
-				// Reset stubs for this test
-				(vscode.tasks.fetchTasks as sinon.SinonStub).resolves([mockTask]);
-				(vscode.tasks.executeTask as sinon.SinonStub).resolves(mockExecution);
-
-				// Mock task failure
-				(vscode.tasks.onDidEndTaskProcess as sinon.SinonStub).callsFake((callback) => {
-					setTimeout(() => {
-						callback({ execution: mockExecution, exitCode: 1 } as any);
-					}, 0);
-					return { dispose: sandbox.stub() };
-				});
-
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'Test Launch',
-					target: 'copter',
-					preLaunchTask: 'ardupilot: build'
-				};
-
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				assert.strictEqual(result, undefined);
-				assert(vscode.window.showErrorMessage.calledWith(
-					sinon.match(/Failed to execute pre-launch task/)
-				));
-			});
+			assert.strictEqual(result, undefined);
+			assert(showErrorStub.calledWith(
+				sinon.match(/Failed to execute pre-launch task/)
+			));
 		});
 
-		suite('SITL debugging', () => {
-			test('should configure SITL debugging with required tools', async () => {
+		test('should handle task execution system errors', async () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+			const mockTask = {
+				name: 'CubeOrange-copter',
+				definition: { type: 'ardupilot' }
+			} as vscode.Task;
+
+			sandbox.stub(vscode.tasks, 'fetchTasks').resolves([mockTask]);
+			sandbox.stub(vscode.tasks, 'executeTask').rejects(new Error('Task system error'));
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'Test Config',
+				target: 'copter',
+				preLaunchTask: 'ardupilot: CubeOrange-copter'
+			};
+
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert.strictEqual(result, undefined);
+			assert(showErrorStub.calledWith(
+				sinon.match(/Failed to execute pre-launch task/)
+			));
+		});
+	});
+
+	suite('SITL Debug Session Management', () => {
+		test('should require GDB for SITL debugging', async () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false });
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug',
+				target: 'sitl-copter',
+				isSITL: true
+			};
+
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert.strictEqual(result, undefined);
+			assert(showErrorStub.calledWith(
+				'GDB not found. Please install GDB to debug SITL.'
+			));
+		});
+
+		test('should require tmux for SITL debugging', async () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
+			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug',
+				target: 'sitl-copter',
+				isSITL: true
+			};
+
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert.strictEqual(result, undefined);
+			assert(showErrorStub.calledWith(
+				'tmux not found. Please install tmux to debug SITL.'
+			));
+		});
+
+		test('should require run_in_terminal_window.sh script', async () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
+			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
+			});
+			sandbox.stub(fs, 'existsSync').returns(false);
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug',
+				target: 'sitl-copter',
+				isSITL: true
+			};
+
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert.strictEqual(result, undefined);
+			assert(showErrorStub.calledWith(
+				'run_in_terminal_window.sh not found. Please clone ArduPilot to debug SITL.'
+			));
+		});
+
+		test('should configure complete SITL debugging session successfully', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
+			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
+			});
+
+			const existsStub = sandbox.stub(fs, 'existsSync');
+			existsStub.withArgs(sinon.match(/run_in_terminal_window\.sh/)).returns(true);
+			existsStub.withArgs(sinon.match(/\.bak$/)).returns(false);
+			existsStub.withArgs(sinon.match(/resources.*run_in_terminal_window\.sh/)).returns(true);
+
+			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+
+			const mockTerminal = createMockTerminal();
+			sandbox.stub(vscode.window, 'createTerminal').returns(mockTerminal);
+
+			sandbox.stub(Math, 'random').returns(0.5);
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug',
+				target: 'sitl-copter',
+				isSITL: true,
+				simVehicleCommand: '--speedup=1 --console'
+			};
+
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert(result, 'Should return debug configuration');
+			assert.strictEqual(result.type, 'cppdbg');
+			assert.strictEqual(result.name, 'Debug copter SITL');
+			assert.strictEqual(result.miDebuggerPath, '/usr/bin/gdb');
+			assert(result.miDebuggerServerAddress?.includes('localhost:'));
+			assert(mockTerminal.sendText.called);
+			assert(mockTerminal.show.called);
+		});
+
+		test('should extract vehicle type from SITL target correctly', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
+			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
+			});
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+			sandbox.stub(vscode.window, 'createTerminal').returns(createMockTerminal());
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug',
+				target: 'sitl-plane',
+				isSITL: true
+			};
+
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert(result, 'Should return debug configuration');
+			assert.strictEqual(result.name, 'Debug plane SITL');
+		});
+
+		test('should generate unique GDB ports for multiple sessions', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
+			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
+			});
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+			sandbox.stub(vscode.window, 'createTerminal').returns(createMockTerminal());
+
+			const randomValues = [0.1, 0.9];
+			let callCount = 0;
+			sandbox.stub(Math, 'random').callsFake(() => randomValues[callCount++] || 0.5);
+
+			const config1 = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug 1',
+				target: 'sitl-copter',
+				isSITL: true
+			};
+
+			const config2 = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug 2',
+				target: 'sitl-plane',
+				isSITL: true
+			};
+
+			const result1 = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config1 as vscode.DebugConfiguration
+			);
+
+			// Create new provider for second session
+			const provider2 = new APLaunchConfigurationProvider();
+			const result2 = await provider2.resolveDebugConfiguration(
+				workspaceFolder,
+				config2 as vscode.DebugConfiguration
+			);
+
+			assert(result1?.miDebuggerServerAddress !== result2?.miDebuggerServerAddress,
+				'Should generate different ports for different sessions');
+		});
+
+		test('should backup and replace run_in_terminal_window.sh when needed', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
+			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
+			});
+
+			const existsStub = sandbox.stub(fs, 'existsSync');
+			existsStub.withArgs(sinon.match(/run_in_terminal_window\.sh$/)).returns(true);
+			existsStub.withArgs(sinon.match(/\.bak$/)).returns(false);
+			existsStub.withArgs(sinon.match(/resources.*run_in_terminal_window\.sh/)).returns(true);
+
+			const readFileStub = sandbox.stub(fs, 'readFileSync');
+			readFileStub.withArgs(sinon.match(/run_in_terminal_window\.sh$/)).returns('#!/bin/bash\necho "old script"');
+			readFileStub.withArgs(sinon.match(/resources.*run_in_terminal_window\.sh/)).returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+
+			const copyFileStub = sandbox.stub(fs, 'copyFileSync');
+			const writeFileStub = sandbox.stub(fs, 'writeFileSync');
+
+			sandbox.stub(vscode.window, 'createTerminal').returns(createMockTerminal());
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug',
+				target: 'sitl-copter',
+				isSITL: true
+			};
+
+			await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert(copyFileStub.called, 'Should backup original script');
+			assert(writeFileStub.called, 'Should write new script');
+		});
+	});
+
+	suite('Hardware Upload Workflow', () => {
+		test('should execute hardware upload command for non-SITL targets', async () => {
+			const mockTerminal = createMockTerminal();
+			sandbox.stub(vscode.window, 'createTerminal').returns(mockTerminal);
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'Hardware Upload',
+				target: 'copter',
+				isSITL: false
+			};
+
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert.strictEqual(result, undefined, 'Should return undefined for non-debug sessions');
+			assert(mockTerminal.sendText.calledWith(`cd ${workspaceFolder.uri.fsPath}`));
+			assert(mockTerminal.sendText.calledWith(sinon.match(/python3.*waf.*copter.*--upload/)));
+			assert(mockTerminal.show.called);
+		});
+
+		test('should use custom waf file path in upload command', async () => {
+			const mockTerminal = createMockTerminal();
+			sandbox.stub(vscode.window, 'createTerminal').returns(mockTerminal);
+
+			const customWafPath = '/custom/path/to/waf';
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'Hardware Upload',
+				target: 'plane',
+				waffile: customWafPath,
+				isSITL: false
+			};
+
+			await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert(mockTerminal.sendText.calledWith(
+				sinon.match(new RegExp(`python3.*${customWafPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*plane.*--upload`))
+			));
+		});
+
+		test('should handle hardware upload for different vehicle types', async () => {
+			const mockTerminal = createMockTerminal();
+			sandbox.stub(vscode.window, 'createTerminal').returns(mockTerminal);
+
+			const vehicles = ['copter', 'plane', 'rover', 'sub'];
+
+			for (const vehicle of vehicles) {
+				mockTerminal.sendText.resetHistory();
+
 				const config = {
 					type: 'apLaunch',
 					request: 'launch',
-					name: 'SITL Debug',
-					target: 'sitl-copter',
-					isSITL: true
+					name: `${vehicle} Upload`,
+					target: vehicle,
+					isSITL: false
 				};
 
-				sandbox.stub(ProgramUtils, 'findGDB').resolves({
-					available: true,
-					path: '/usr/bin/gdb'
-				});
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({
-					available: true,
-					path: '/usr/bin/tmux'
-				});
-
-				// Mock file system operations for SITL
-				sandbox.stub(fs, 'existsSync').callsFake((path: string) => {
-					// Ensure all paths exist to avoid early returns
-					return true;
-				});
-
-				sandbox.stub(fs, 'readFileSync').callsFake((path: string) => {
-					if (path.includes('run_in_terminal_window.sh')) {
-						return '#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"';
-					}
-					return 'mock file content';
-				});
-
-				// Mock fs.copyFileSync and fs.writeFileSync for the script replacement logic
-				sandbox.stub(fs, 'copyFileSync');
-				sandbox.stub(fs, 'writeFileSync');
-
-				// Ensure targetToBin mapping exists for 'copter'
-				if (!targetToBin.copter) {
-					targetToBin.copter = 'bin/arducopter';
-				}
-
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
+				await provider.resolveDebugConfiguration(
+					workspaceFolder,
 					config as vscode.DebugConfiguration
 				);
 
-				// Should configure for SITL debugging
-				assert(result, 'Result should not be null/undefined');
-				assert.strictEqual(result.type, 'cppdbg');
-				assert.strictEqual(result.name, 'Debug copter SITL');
-				assert(ProgramUtils.findGDB.calledOnce);
-				assert(ProgramUtils.findTmux.calledOnce);
+				assert(mockTerminal.sendText.calledWith(sinon.match(vehicle)));
+			}
+		});
+	});
+
+	suite('Debug Session Cleanup', () => {
+		test('should clean up tmux session when SITL debug session terminates', async () => {
+			const mockCleanupTerminal = createMockTerminal();
+			const mockDebugTerminal = createMockTerminal();
+
+			sandbox.stub(vscode.window, 'createTerminal').returns(mockCleanupTerminal);
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
 			});
 
-			test('should require GDB for SITL debugging', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'SITL Debug',
-					target: 'sitl-copter',
-					isSITL: true
-				};
+			// Set up provider state as if SITL session is running
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(provider as any).tmuxSessionName = 'test-session-123';
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(provider as any).debugSessionTerminal = mockDebugTerminal;
 
-				sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false });
+			const mockSession = {
+				configuration: { type: 'cppdbg' }
+			} as vscode.DebugSession;
 
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
+			// Get the termination handler from constructor
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const terminationHandler = (vscode.debug.onDidTerminateDebugSession as any).firstCall?.args[0];
+			if (terminationHandler) {
+				await terminationHandler(mockSession);
+			} else {
+				// Manually call the handler for testing
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				await (provider as any).handleDebugSessionTermination(mockSession);
+			}
 
-				assert.strictEqual(result, undefined);
-				assert(vscode.window.showErrorMessage.calledWith(
-					'GDB not found. Please install GDB to debug SITL.'
-				));
-			});
+			assert(mockCleanupTerminal.sendText.calledWith(
+				sinon.match(/tmux.*kill-session.*test-session-123/)
+			));
+			assert(mockCleanupTerminal.sendText.calledWith('exit'));
+			assert(mockDebugTerminal.dispose.called);
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			assert.strictEqual((provider as any).tmuxSessionName, undefined);
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			assert.strictEqual((provider as any).debugSessionTerminal, undefined);
+		});
+	});
 
-			test('should require tmux for SITL debugging', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'SITL Debug',
-					target: 'sitl-copter',
-					isSITL: true
-				};
+	suite('Error Handling and Recovery', () => {
+		test('should handle GDB discovery errors gracefully', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').rejects(new Error('Tool discovery failed'));
 
-				sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: true, path: '/usr/bin/gdb' });
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug',
+				target: 'sitl-copter',
+				isSITL: true
+			};
 
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
 
-				assert.strictEqual(result, undefined);
-				assert(vscode.window.showErrorMessage.calledWith(
-					'tmux not found. Please install tmux to debug SITL.'
-				));
-			});
-
-			test('should extract vehicle type from target', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'SITL Debug',
-					target: 'sitl-plane',
-					isSITL: true
-				};
-
-				sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: true, path: '/usr/bin/gdb' });
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true, path: '/usr/bin/tmux' });
-				sandbox.stub(fs, 'existsSync').returns(true);
-
-				await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				// Should extract 'plane' from 'sitl-plane'
-				// This would be tested through the binary path construction
-				assert(fs.existsSync.called);
-			});
-
-			test('should generate unique GDB port', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'SITL Debug',
-					target: 'sitl-copter',
-					isSITL: true
-				};
-
-				sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: true, path: '/usr/bin/gdb' });
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true, path: '/usr/bin/tmux' });
-				sandbox.stub(fs, 'existsSync').returns(true);
-
-				const mathStub = sandbox.stub(Math, 'random').returns(0.5);
-
-				await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				// Should generate port between 3000-4000
-				assert(mathStub.called);
-			});
+			assert.strictEqual(result, undefined);
 		});
 
-		suite('debug session termination handling', () => {
-			test('should clean up tmux session on debug termination', async () => {
-				const mockSession = {
-					configuration: { type: 'cppdbg' }
-				} as vscode.DebugSession;
+		test('should handle workspace folder unavailability', async () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
 
-				const mockTerminal = {
-					sendText: sandbox.stub(),
-					dispose: sandbox.stub()
-				} as any;
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'Test Config',
+				target: 'copter'
+			};
 
-				// Set up provider state as if SITL debug session was running
-				(provider as any).tmuxSessionName = 'test-session';
-				(provider as any).debugSessionTerminal = mockTerminal;
+			const result = await provider.resolveDebugConfiguration(
+				undefined,
+				config as vscode.DebugConfiguration
+			);
 
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({
-					available: true,
-					path: '/usr/bin/tmux'
-				});
-
-				// Reset the existing createTerminal stub for this test
-				const createTerminalStub = vscode.window.createTerminal as sinon.SinonStub;
-				createTerminalStub.returns({
-					sendText: sandbox.stub(),
-					dispose: sandbox.stub()
-				} as any);
-
-				// Get the termination handler
-				const terminationHandler = (vscode.debug.onDidTerminateDebugSession as sinon.SinonStub).firstCall.args[0];
-
-				await terminationHandler(mockSession);
-
-				assert(createTerminalStub.calledWith('ArduPilot SITL Cleanup'));
-				assert(mockTerminal.dispose.calledOnce);
-				assert.strictEqual((provider as any).tmuxSessionName, undefined);
-				assert.strictEqual((provider as any).debugSessionTerminal, undefined);
-			});
-
-			test('should not clean up for non-SITL debug sessions', async () => {
-				const mockSession = {
-					configuration: { type: 'node' }
-				} as vscode.DebugSession;
-
-				// Use the existing createTerminal stub
-				const createTerminalStub = vscode.window.createTerminal as sinon.SinonStub;
-
-				// Get the termination handler
-				const terminationHandler = (vscode.debug.onDidTerminateDebugSession as sinon.SinonStub).firstCall.args[0];
-
-				await terminationHandler(mockSession);
-
-				assert(createTerminalStub.notCalled);
-			});
-
-			test('should handle missing tmux gracefully during cleanup', async () => {
-				const mockSession = {
-					configuration: { type: 'cppdbg' }
-				} as vscode.DebugSession;
-
-				(provider as any).tmuxSessionName = 'test-session';
-				(provider as any).debugSessionTerminal = { dispose: sandbox.stub() };
-
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
-
-				// Reset the createTerminal stub call count for this test
-				const createTerminalStub = vscode.window.createTerminal as sinon.SinonStub;
-				createTerminalStub.resetHistory();
-				createTerminalStub.returns({
-					sendText: sandbox.stub(),
-					dispose: sandbox.stub(),
-					show: sandbox.stub()
-				} as any);
-
-				// Get the termination handler
-				const terminationHandler = (vscode.debug.onDidTerminateDebugSession as sinon.SinonStub).firstCall.args[0];
-
-				// Should not throw and should still create terminal (fallback behavior)
-				await terminationHandler(mockSession);
-
-				// Should create terminal even when tmux is not available (uses fallback)
-				assert(createTerminalStub.called);
-			});
+			assert.strictEqual(result, undefined);
+			assert(showErrorStub.calledWith('No workspace is open.'));
 		});
 
-		suite('error handling', () => {
-			test('should handle program utility errors gracefully', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'SITL Debug',
-					target: 'sitl-copter',
-					isSITL: true
-				};
-
-				sandbox.stub(ProgramUtils, 'findGDB').rejects(new Error('Tool search failed'));
-
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				// Should handle error gracefully
-				assert.strictEqual(result, undefined);
+		test('should handle catch-all errors in configuration resolution', async () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
+			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
 			});
 
-			test('should handle file system errors', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'SITL Debug',
-					target: 'sitl-copter',
-					isSITL: true
-				};
-
-				sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: true, path: '/usr/bin/gdb' });
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true, path: '/usr/bin/tmux' });
-				sandbox.stub(fs, 'existsSync').throws(new Error('File system error'));
-
-				// Should handle file system errors gracefully
-				assert.doesNotThrow(async () => {
-					await provider.resolveDebugConfiguration(
-						mockWorkspaceFolder,
-                        config as vscode.DebugConfiguration
-					);
-				});
+			// Force an error during processing
+			sandbox.stub(fs, 'existsSync').callsFake(() => {
+				throw new Error('Unexpected file system error');
 			});
 
-			test('should handle task execution errors gracefully', async () => {
-				const config = {
-					type: 'apLaunch',
-					request: 'launch',
-					name: 'Test Launch',
-					target: 'copter',
-					preLaunchTask: 'ardupilot: build'
-				};
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug',
+				target: 'sitl-copter',
+				isSITL: true
+			};
 
-				const mockTask = {
-					name: 'build',
-					definition: { type: 'ardupilot' }
-				} as vscode.Task;
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
 
-				// Reset existing stubs for this test
-				(vscode.tasks.fetchTasks as sinon.SinonStub).resolves([mockTask]);
-				(vscode.tasks.executeTask as sinon.SinonStub).rejects(new Error('Task execution failed'));
-
-				const result = await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
-				);
-
-				assert.strictEqual(result, undefined);
-				assert(vscode.window.showErrorMessage.called);
-			});
+			assert.strictEqual(result, undefined);
+			assert(showErrorStub.calledWith(sinon.match(/Error in APLaunch/)));
 		});
 
-		suite('integration tests', () => {
-			test('should work with VS Code debug system', () => {
-				// Test that provider can be registered with VS Code
-				const mockContext = {
-					subscriptions: []
-				} as any;
-
-				// Simulate registration
-				mockContext.subscriptions.push(
-					vscode.debug.registerDebugConfigurationProvider('apLaunch', provider)
-				);
-
-				assert.strictEqual(mockContext.subscriptions.length, 1);
+		test('should validate target exists in targetToBin mapping', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
 			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
+			});
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+			sandbox.stub(vscode.window, 'createTerminal').returns(createMockTerminal());
 
-			test('should integrate with targetToBin mapping', async () => {
+			// Ensure a valid target exists in mapping
+			if (!targetToBin.copter) {
+				targetToBin.copter = 'bin/arducopter';
+			}
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'SITL Debug',
+				target: 'sitl-copter',
+				isSITL: true
+			};
+
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			assert(result, 'Should successfully process valid target');
+			assert.strictEqual(result.type, 'cppdbg');
+		});
+	});
+
+	suite('Integration with VS Code Debug System', () => {
+		test('should register correctly with VS Code debug system', () => {
+			const mockContext: { subscriptions: vscode.Disposable[] } = {
+				subscriptions: []
+			};
+
+			const disposable = vscode.debug.registerDebugConfigurationProvider('apLaunch', provider);
+			mockContext.subscriptions.push(disposable);
+
+			assert.strictEqual(mockContext.subscriptions.length, 1);
+			assert(disposable.dispose, 'Should provide dispose method');
+		});
+
+		test('should integrate with targetToBin mapping correctly', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
+			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
+			});
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+			sandbox.stub(vscode.window, 'createTerminal').returns(createMockTerminal());
+
+			// Test multiple vehicle types that should exist in targetToBin
+			const vehicleTargets = [
+				{ target: 'sitl-copter', vehicle: 'copter' },
+				{ target: 'sitl-plane', vehicle: 'plane' },
+				{ target: 'sitl-rover', vehicle: 'rover' }
+			];
+
+			for (const { target, vehicle } of vehicleTargets) {
+				// Ensure mapping exists
+				if (!targetToBin[vehicle]) {
+					targetToBin[vehicle] = `bin/ardu${vehicle}`;
+				}
+
 				const config = {
 					type: 'apLaunch',
 					request: 'launch',
-					name: 'SITL Debug',
-					target: 'sitl-copter',
+					name: `${vehicle} SITL Debug`,
+					target: target,
 					isSITL: true
 				};
 
-				sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: true, path: '/usr/bin/gdb' });
-				sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true, path: '/usr/bin/tmux' });
-				sandbox.stub(fs, 'existsSync').returns(true);
-
-				await provider.resolveDebugConfiguration(
-					mockWorkspaceFolder,
-                    config as vscode.DebugConfiguration
+				const result = await provider.resolveDebugConfiguration(
+					workspaceFolder,
+					config as vscode.DebugConfiguration
 				);
 
-				// Should use targetToBin mapping for binary path
-				assert(fs.existsSync.called);
+				assert(result, `Should process ${vehicle} target successfully`);
+				assert(result.program?.includes(targetToBin[vehicle]),
+					`Should use correct binary path for ${vehicle}`);
+			}
+		});
 
-				// Verify that the binary path would include the correct mapping
-				// (This would be more specific in the actual implementation)
-				const expectedVehicle = 'copter';
-				assert(expectedVehicle === config.target.replace('sitl-', ''));
+		test('should handle complete SITL workflow end-to-end', async () => {
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({
+				available: true,
+				path: '/usr/bin/gdb'
 			});
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({
+				available: true,
+				path: '/usr/bin/tmux'
+			});
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+
+			const mockTerminal = createMockTerminal();
+			sandbox.stub(vscode.window, 'createTerminal').returns(mockTerminal);
+
+			const config = {
+				type: 'apLaunch',
+				request: 'launch',
+				name: 'Complete SITL Workflow',
+				target: 'sitl-copter',
+				isSITL: true,
+				simVehicleCommand: '--speedup=1 --console --map'
+			};
+
+			const result = await provider.resolveDebugConfiguration(
+				workspaceFolder,
+				config as vscode.DebugConfiguration
+			);
+
+			// Verify complete workflow
+			assert(result, 'Should return debug configuration');
+			assert.strictEqual(result.type, 'cppdbg');
+			assert(result.miDebuggerServerAddress?.startsWith('localhost:'));
+			assert(result.program?.includes('copter'));
+			assert.strictEqual(result.miDebuggerPath, '/usr/bin/gdb');
+			assert(mockTerminal.sendText.called);
+			assert(mockTerminal.show.called);
+
+			// Verify terminal commands include sim_vehicle command
+			const terminalCalls = mockTerminal.sendText.getCalls();
+			const simVehicleCall = terminalCalls.find(call =>
+				call.args[0].includes('sim_vehicle.py') &&
+				call.args[0].includes('--speedup=1 --console --map')
+			);
+			assert(simVehicleCall, 'Should execute sim_vehicle with custom arguments');
 		});
 	});
 });

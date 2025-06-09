@@ -454,9 +454,16 @@ export class ProgramUtils {
 							}
 						} else {
 							// Standard version extraction for other tools
-							const versionMatch = versionOutput.match(/(\d+\.\d+\.\d+)/);
-							if (versionMatch) {
-								version = versionMatch[1];
+							// Try to match major.minor.patch format first
+							const versionMatchFull = versionOutput.match(/(\d+\.\d+\.\d+)/);
+							if (versionMatchFull) {
+								version = versionMatchFull[1];
+							} else {
+								// Fall back to major.minor format
+								const versionMatchPartial = versionOutput.match(/(\d+\.\d+)/);
+								if (versionMatchPartial) {
+									version = versionMatchPartial[1];
+								}
 							}
 						}
 

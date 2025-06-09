@@ -88,13 +88,12 @@ export class CloneArdupilot extends apWelcomeItem {
 							name = '';
 						}
 						finalUri = vscode.Uri.joinPath(uri[0], name);
-						// create the directory if it does not exist
-						if (!fs.existsSync(finalUri.fsPath)) {
-							fs.mkdirSync(finalUri.fsPath);
-						} else {
-							// fail if the directory already exists
+						// Check if the directory already exists and fail if it does
+						if (fs.existsSync(finalUri.fsPath)) {
 							vscode.window.showErrorMessage('Directory already exists');
+							return;
 						}
+						// Don't create the directory - let git clone create it
 
 						const abortController = new AbortController();
 
@@ -125,8 +124,8 @@ export class CloneArdupilot extends apWelcomeItem {
 								lastProgress = progress;
 							}
 						};
-						const git = simpleGit({ baseDir: finalUri.fsPath, progress: progController, abort: abortController.signal });
-						git.clone('https://www.github.com/ardupilot/ardupilot.git', finalUri.fsPath, ['--progress'])
+						const git = simpleGit({ baseDir: uri[0].fsPath, progress: progController, abort: abortController.signal });
+						git.clone('https://www.github.com/ardupilot/ardupilot.git', name || 'ardupilot', ['--progress'])
 							.then(() => {
 								// close the progress bar
 								progressFinishPromiseResolve();

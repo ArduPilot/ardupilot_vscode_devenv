@@ -1198,11 +1198,9 @@ suite('apActions Test Suite', () => {
 			let commandExecuted = false;
 
 			// Mock vscode.commands.executeCommand using sandbox
-			sandbox.stub(vscode.commands, 'executeCommand').callsFake((command: string) => {
-				if (command === 'apBuildConfig.refreshEntry') {
-					commandExecuted = true;
-				}
-				return Promise.resolve();
+			assert(apExtensionContext.apBuildConfigProviderInstance);
+			sandbox.stub(apExtensionContext.apBuildConfigProviderInstance, 'refresh').callsFake(() => {
+				commandExecuted = true;
 			});
 
 			mockProvider.refresh();
@@ -1221,10 +1219,9 @@ suite('apActions Test Suite', () => {
 			});
 
 			// Mock vscode.commands.executeCommand using sandbox
-			sandbox.stub(vscode.commands, 'executeCommand').callsFake((command: string) => {
-				if (command === 'apBuildConfig.refreshEntry') {
-					commandCount++;
-				}
+			assert(apExtensionContext.apBuildConfigProviderInstance);
+			sandbox.stub(apExtensionContext.apBuildConfigProviderInstance, 'refresh').callsFake(() => {
+				commandCount++;
 				return Promise.resolve();
 			});
 

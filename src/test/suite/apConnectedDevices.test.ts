@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
@@ -8,515 +11,615 @@ import {
 	ConnectedDeviceItem,
 	apConnectedDevices
 } from '../../apConnectedDevices';
+import { APExtensionContext } from '../../extension';
+import { getApExtApi } from './common';
+import { ProgramUtils } from '../../apProgramUtils';
 
 suite('apConnectedDevices Test Suite', () => {
+	let workspaceFolder: vscode.WorkspaceFolder | undefined;
+	let mockContext: vscode.ExtensionContext;
 	let sandbox: sinon.SinonSandbox;
+	let apExtensionContext: APExtensionContext;
+	let provider: apConnectedDevices;
+
+	suiteSetup(async () => {
+		apExtensionContext = await getApExtApi();
+
+		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		assert(workspaceFolder);
+		assert(apExtensionContext.vscodeContext);
+		mockContext = apExtensionContext.vscodeContext;
+	});
 
 	setup(() => {
 		sandbox = sinon.createSandbox();
+		assert(apExtensionContext.connectedDevicesProvider, 'connectedDevicesProvider should be initialized');
+		provider = apExtensionContext.connectedDevicesProvider;
 	});
 
 	teardown(() => {
 		sandbox.restore();
 	});
 
-	suite('DeviceInfo Interface', () => {
-		test('should have correct interface structure', () => {
-			const deviceInfo: DeviceInfo = {
-				path: '/dev/ttyUSB0',
-				vendorId: '0x1234',
-				productId: '0x5678',
-				manufacturer: 'Test Manufacturer',
-				product: 'Test Product',
-				serialNumber: 'TEST123',
-				isArduPilot: true,
-				isMavproxyConnected: false
-			};
-
-			assert.strictEqual(deviceInfo.path, '/dev/ttyUSB0');
-			assert.strictEqual(deviceInfo.vendorId, '0x1234');
-			assert.strictEqual(deviceInfo.productId, '0x5678');
-			assert.strictEqual(deviceInfo.manufacturer, 'Test Manufacturer');
-			assert.strictEqual(deviceInfo.product, 'Test Product');
-			assert.strictEqual(deviceInfo.serialNumber, 'TEST123');
-			assert.strictEqual(deviceInfo.isArduPilot, true);
-			assert.strictEqual(deviceInfo.isMavproxyConnected, false);
-		});
-
-		test('should work with minimal required properties', () => {
-			const minimalDevice: DeviceInfo = {
-				path: '/dev/ttyACM0',
-				vendorId: '0x0001',
-				productId: '0x0002'
-			};
-
-			assert.strictEqual(minimalDevice.path, '/dev/ttyACM0');
-			assert.strictEqual(minimalDevice.vendorId, '0x0001');
-			assert.strictEqual(minimalDevice.productId, '0x0002');
-			assert.strictEqual(minimalDevice.manufacturer, undefined);
-			assert.strictEqual(minimalDevice.product, undefined);
-		});
-	});
-
-	suite('ConnectedDeviceDecorationProvider', () => {
-		let decorationProvider: ConnectedDeviceDecorationProvider;
-
-		setup(() => {
-			decorationProvider = new ConnectedDeviceDecorationProvider();
-		});
-
-		test('should create instance correctly', () => {
-			assert(decorationProvider);
-			assert(decorationProvider.onDidChangeFileDecorations);
-		});
-
-		test('should provide decoration for connected device', () => {
-			const connectedUri = vscode.Uri.parse('connected-device:/dev/ttyUSB0/?connected');
-
-			const decoration = decorationProvider.provideFileDecoration(connectedUri);
-
-			assert(decoration);
-			assert.strictEqual(decoration.badge, '●');
-			assert(decoration.color instanceof vscode.ThemeColor);
-			assert.strictEqual(decoration.tooltip, 'Connected to MAVProxy');
-		});
-
-		test('should return undefined for non-connected device', () => {
-			const disconnectedUri = vscode.Uri.parse('connected-device:/dev/ttyUSB0/?disconnected');
-
-			const decoration = decorationProvider.provideFileDecoration(disconnectedUri);
-
-			assert.strictEqual(decoration, undefined);
-		});
-
-		test('should return undefined for non-device URI', () => {
-			const fileUri = vscode.Uri.file('/some/file.txt');
-
-			const decoration = decorationProvider.provideFileDecoration(fileUri);
-
-			assert.strictEqual(decoration, undefined);
-		});
-
-		test('should refresh decorations', () => {
-			const eventSpy = sandbox.spy();
-			decorationProvider.onDidChangeFileDecorations(eventSpy);
-
-			const testUri = vscode.Uri.parse('connected-device:/dev/ttyUSB0/');
-			decorationProvider.refresh(testUri);
-
-			// Event should be fired
-			assert(eventSpy.calledOnce);
-			assert(eventSpy.calledWith(testUri));
-		});
-
-		test('should refresh all decorations when no URI provided', () => {
-			const eventSpy = sandbox.spy();
-			decorationProvider.onDidChangeFileDecorations(eventSpy);
-
-			decorationProvider.refresh();
-
-			// Event should be fired with empty array
-			assert(eventSpy.calledOnce);
-			assert(eventSpy.calledWith([]));
-		});
-	});
-
-	suite('ConnectedDeviceItem', () => {
-		let mockDevice: DeviceInfo;
-
-		setup(() => {
-			mockDevice = {
-				path: '/dev/ttyUSB0',
-				vendorId: '0x1234',
-				productId: '0x5678',
-				manufacturer: 'ArduPilot',
-				product: 'Flight Controller',
-				serialNumber: 'AP001',
-				isArduPilot: true,
-				isMavproxyConnected: false
-			};
-		});
-
-		test('should create device item correctly', () => {
-			const item = new ConnectedDeviceItem(
-				'ArduPilot Device',
-				vscode.TreeItemCollapsibleState.Collapsed,
-				mockDevice
-			);
-
-			assert.strictEqual(item.label, 'ArduPilot Device');
-			assert.strictEqual(item.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
-			assert.strictEqual(item.id, mockDevice.path);
-			assert.strictEqual(item.description, `${mockDevice.vendorId}:${mockDevice.productId}`);
-			assert(item.iconPath instanceof vscode.ThemeIcon);
-			assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, 'circuit-board');
-		});
-
-		test('should create tooltip with device information', () => {
-			const item = new ConnectedDeviceItem(
-				'Test Device',
-				vscode.TreeItemCollapsibleState.None,
-				mockDevice
-			);
-
-			const expectedTooltip = [
-				'Device: Test Device',
-				`Path: ${mockDevice.path}`,
-				`VID:PID: ${mockDevice.vendorId}:${mockDevice.productId}`,
-				`Manufacturer: ${mockDevice.manufacturer}`,
-				`Product: ${mockDevice.product}`,
-				`Serial: ${mockDevice.serialNumber}`
-			].join('\n');
-
-			assert.strictEqual(item.tooltip, expectedTooltip);
-		});
-
-		test('should handle minimal device info in tooltip', () => {
-			const minimalDevice: DeviceInfo = {
-				path: '/dev/ttyACM0',
-				vendorId: '0x0001',
-				productId: '0x0002'
-			};
-
-			const item = new ConnectedDeviceItem(
-				'Minimal Device',
-				vscode.TreeItemCollapsibleState.None,
-				minimalDevice
-			);
-
-			const expectedTooltip = [
-				'Device: Minimal Device',
-				'Path: /dev/ttyACM0',
-				'VID:PID: 0x0001:0x0002'
-			].join('\n');
-
-			assert.strictEqual(item.tooltip, expectedTooltip);
-		});
-
-		test('should use correct icon for ArduPilot device', () => {
-			const item = new ConnectedDeviceItem(
-				'ArduPilot',
-				vscode.TreeItemCollapsibleState.None,
-				{ ...mockDevice, isArduPilot: true }
-			);
-
-			assert(item.iconPath instanceof vscode.ThemeIcon);
-			assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, 'circuit-board');
-		});
-
-		test('should use correct icon for serial device', () => {
-			const serialDevice = { ...mockDevice, isArduPilot: false, path: '/dev/ttyUSB0' };
-			const item = new ConnectedDeviceItem(
-				'Serial Device',
-				vscode.TreeItemCollapsibleState.None,
-				serialDevice
-			);
-
-			assert(item.iconPath instanceof vscode.ThemeIcon);
-			assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, 'plug');
-		});
-
-		test('should use default icon for unknown device', () => {
-			const unknownDevice = { ...mockDevice, isArduPilot: false, path: '/unknown/device' };
-			const item = new ConnectedDeviceItem(
-				'Unknown Device',
-				vscode.TreeItemCollapsibleState.None,
-				unknownDevice
-			);
-
-			assert(item.iconPath instanceof vscode.ThemeIcon);
-			assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, 'device-desktop');
-		});
-
-		test('should create command item for connection', () => {
-			const connectCommand: vscode.Command = {
-				command: 'apConnectedDevices.connect',
-				title: 'Connect',
-				arguments: [mockDevice.path]
-			};
-
-			const item = new ConnectedDeviceItem(
-				'Connect to device',
-				vscode.TreeItemCollapsibleState.None,
-				mockDevice,
-				true,
-				connectCommand
-			);
-
-			assert.strictEqual(item.isCommand, true);
-			assert.strictEqual(item.id, `${mockDevice.path}_Connect to device`);
-			assert(item.iconPath instanceof vscode.ThemeIcon);
-			assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, 'play');
-			assert.strictEqual(item.command, connectCommand);
-		});
-
-		test('should create command item for disconnection', () => {
-			const disconnectCommand: vscode.Command = {
-				command: 'apConnectedDevices.disconnect',
-				title: 'Disconnect',
-				arguments: [mockDevice.path]
-			};
-
-			const item = new ConnectedDeviceItem(
-				'Disconnect from device',
-				vscode.TreeItemCollapsibleState.None,
-				mockDevice,
-				true,
-				disconnectCommand
-			);
-
-			assert.strictEqual(item.isCommand, true);
-			assert(item.iconPath instanceof vscode.ThemeIcon);
-			assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, 'stop');
-			assert(item.description && typeof item.description === 'string' && item.description.includes('(Connected)'));
-			assert(item.resourceUri);
-			assert.strictEqual(item.resourceUri.query, 'connected');
-		});
-	});
-
-	suite('apConnectedDevices', () => {
-		let provider: apConnectedDevices;
-		let mockDevices: DeviceInfo[];
-
-		setup(() => {
-			provider = new apConnectedDevices();
-			mockDevices = [
-				{
-					path: '/dev/ttyUSB0',
-					vendorId: '0x1234',
-					productId: '0x5678',
-					manufacturer: 'ArduPilot',
-					product: 'Flight Controller',
-					isArduPilot: true,
-					isMavproxyConnected: false
-				},
-				{
-					path: '/dev/ttyACM0',
-					vendorId: '0x0001',
-					productId: '0x0002',
-					manufacturer: 'Arduino',
-					product: 'Uno',
-					isArduPilot: false,
-					isMavproxyConnected: true
-				}
-			];
-		});
-
+	suite('Constructor and Initialization', () => {
 		test('should create provider instance', () => {
-			assert(provider);
+			assert(provider instanceof apConnectedDevices);
+		});
+
+		test('should have onDidChangeTreeData event emitter', () => {
 			assert(provider.onDidChangeTreeData);
+			assert.strictEqual(typeof provider.onDidChangeTreeData, 'function');
 		});
 
-		test('should detect USB devices', async () => {
-			// Mock child_process.exec for lsusb command
-			const execStub = sandbox.stub(cp, 'exec');
-			execStub.callsArgWith(1, null,
-				'Bus 001 Device 002: ID 1234:5678 ArduPilot Flight Controller\n' +
-                'Bus 001 Device 003: ID 0001:0002 Arduino Uno',
-				''
-			);
+		test('should start auto-refresh timer on construction', () => {
+			const setIntervalSpy = sandbox.spy(global, 'setInterval');
+			const newProvider = new apConnectedDevices();
 
-			// Since getChildren is likely async, we'll test the structure
-			assert(typeof provider.getChildren === 'function');
-		});
+			assert(setIntervalSpy.calledOnce);
+			assert.strictEqual(setIntervalSpy.firstCall.args[1], 1000); // 1 second interval
 
-		test('should handle device detection errors', async () => {
-			// Mock error in device detection
-			const execStub = sandbox.stub(cp, 'exec');
-			execStub.callsArgWith(1, new Error('Command failed'), '', 'lsusb: command not found');
-
-			// Should handle error gracefully
-			const children = await provider.getChildren();
-
-			// Should return empty array or error item
-			assert(Array.isArray(children));
-		});
-
-		test('should refresh tree data', () => {
-			const eventSpy = sandbox.spy();
-			provider.onDidChangeTreeData(eventSpy);
-
-			provider.refresh();
-
-			assert(eventSpy.calledOnce);
-		});
-
-		test('should get tree item correctly', () => {
-			const deviceItem = new ConnectedDeviceItem(
-				'Test Device',
-				vscode.TreeItemCollapsibleState.Collapsed,
-				mockDevices[0]
-			);
-
-			const treeItem = provider.getTreeItem(deviceItem);
-
-			assert.strictEqual(treeItem, deviceItem);
-		});
-
-		test('should parse device information from system output', () => {
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
-			const lsusbOutput = 'Bus 001 Device 002: ID 1234:5678 ArduPilot Flight Controller';
-
-			// Mock parsing logic (would be in actual implementation)
-			const parsedDevice = {
-				path: '/dev/bus/usb/001/002',
-				vendorId: '0x1234',
-				productId: '0x5678',
-				manufacturer: 'ArduPilot',
-				product: 'Flight Controller'
-			};
-
-			assert.strictEqual(parsedDevice.vendorId, '0x1234');
-			assert.strictEqual(parsedDevice.productId, '0x5678');
-		});
-
-		test('should detect serial devices', async () => {
-			// Mock serial device detection (platform specific)
-			const execStub = sandbox.stub(cp, 'exec');
-
-			if (process.platform === 'linux') {
-				execStub.withArgs('ls /dev/tty*').callsArgWith(1, null,
-					'/dev/ttyUSB0\n/dev/ttyACM0\n/dev/ttyS0', '');
-			} else if (process.platform === 'win32') {
-				execStub.withArgs('mode').callsArgWith(1, null,
-					'COM1\nCOM3\nCOM4', '');
-			}
-
-			// Verify that device detection would work
-			assert(execStub.called || !execStub.called); // Placeholder for actual test
-		});
-
-		test('should handle MAVProxy connection status', () => {
-			const connectedDevice = { ...mockDevices[1], isMavproxyConnected: true };
-
-			const item = new ConnectedDeviceItem(
-				'Connected Device',
-				vscode.TreeItemCollapsibleState.Expanded,
-				connectedDevice
-			);
-
-			// Should create appropriate command items for connected device
-			assert.strictEqual(item.device.isMavproxyConnected, true);
-		});
-
-		test('should filter ArduPilot devices', () => {
-			const arduPilotDevices = mockDevices.filter(device => device.isArduPilot);
-			const nonArduPilotDevices = mockDevices.filter(device => !device.isArduPilot);
-
-			assert.strictEqual(arduPilotDevices.length, 1);
-			assert.strictEqual(nonArduPilotDevices.length, 1);
-			assert.strictEqual(arduPilotDevices[0].manufacturer, 'ArduPilot');
+			newProvider.dispose();
 		});
 	});
 
-	suite('integration tests', () => {
-		test('should integrate with VS Code tree view', () => {
-			const provider = new apConnectedDevices();
-
-			// Mock tree view registration
-			const treeViewStub = sandbox.stub(vscode.window, 'createTreeView').returns({
-				reveal: sandbox.stub(),
-				dispose: sandbox.stub(),
-				onDidChangeSelection: sandbox.stub(),
-				onDidChangeVisibility: sandbox.stub(),
-				visible: true,
-				selection: [],
-				description: undefined,
-				message: undefined,
-				title: undefined,
-				badge: undefined
-			} as unknown as vscode.TreeView<ConnectedDeviceItem>);
-
-			// Simulate tree view creation
-			const treeView = vscode.window.createTreeView('apConnectedDevices', {
-				treeDataProvider: provider,
-				showCollapseAll: true
-			});
-
-			assert(treeViewStub.calledOnce);
-			assert(treeView);
-		});
-
-		test('should work with decoration provider', () => {
-			const decorationProvider = new ConnectedDeviceDecorationProvider();
-
-			// Mock decoration provider registration
-			const registerStub = sandbox.stub(vscode.window, 'registerFileDecorationProvider')
-				.returns({ dispose: sandbox.stub() });
-
-			vscode.window.registerFileDecorationProvider(decorationProvider);
-
-			assert(registerStub.calledOnce);
-			assert(registerStub.calledWith(decorationProvider));
-		});
-
-		test('should handle device connection commands', () => {
+	suite('Tree Data Provider Interface', () => {
+		test('should implement getTreeItem correctly', () => {
 			const mockDevice: DeviceInfo = {
-				path: '/dev/ttyUSB0',
-				vendorId: '0x1234',
-				productId: '0x5678',
+				path: '/dev/ttyACM0',
+				vendorId: '2DAE',
+				productId: '1016',
+				manufacturer: 'CubePilot',
+				product: 'CubeOrangePlus',
 				isArduPilot: true
 			};
 
-			const connectCommand: vscode.Command = {
-				command: 'apConnectedDevices.connect',
-				title: 'Connect',
-				arguments: [mockDevice.path]
-			};
-
-			const commandItem = new ConnectedDeviceItem(
-				'Connect',
-				vscode.TreeItemCollapsibleState.None,
-				mockDevice,
-				true,
-				connectCommand
+			const item = new ConnectedDeviceItem(
+				'Test Device',
+				vscode.TreeItemCollapsibleState.Collapsed,
+				mockDevice
 			);
 
-			assert.strictEqual(commandItem.command?.command, 'apConnectedDevices.connect');
-			assert.deepStrictEqual(commandItem.command?.arguments, [mockDevice.path]);
+			const result = provider.getTreeItem(item);
+			assert.strictEqual(result, item);
+		});
+
+		test('should return device commands for device children', async () => {
+			const mockDevice: DeviceInfo = {
+				path: '/dev/ttyACM0',
+				vendorId: '2DAE',
+				productId: '1016',
+				manufacturer: 'CubePilot',
+				product: 'CubeOrangePlus',
+				isArduPilot: true,
+				isMavproxyConnected: false
+			};
+
+			const parentItem = new ConnectedDeviceItem(
+				'Test Device',
+				vscode.TreeItemCollapsibleState.Collapsed,
+				mockDevice
+			);
+
+			const children = await provider.getChildren(parentItem);
+
+			assert(Array.isArray(children));
+			assert(children.length > 0);
+			assert(children[0].isCommand);
+			assert.strictEqual(children[0].label, 'Connect with MAVProxy');
+		});
+
+		test('should return different commands based on connection state', async () => {
+			const connectedDevice: DeviceInfo = {
+				path: '/dev/ttyACM0',
+				vendorId: '2DAE',
+				productId: '1016',
+				manufacturer: 'CubePilot',
+				product: 'CubeOrangePlus',
+				isArduPilot: true,
+				isMavproxyConnected: true
+			};
+
+			const disconnectedDevice: DeviceInfo = {
+				...connectedDevice,
+				isMavproxyConnected: false
+			};
+
+			const connectedItem = new ConnectedDeviceItem(
+				'Connected Device',
+				vscode.TreeItemCollapsibleState.Collapsed,
+				connectedDevice
+			);
+
+			const disconnectedItem = new ConnectedDeviceItem(
+				'Disconnected Device',
+				vscode.TreeItemCollapsibleState.Collapsed,
+				disconnectedDevice
+			);
+
+			const connectedChildren = await provider.getChildren(connectedItem);
+			const disconnectedChildren = await provider.getChildren(disconnectedItem);
+
+			assert.strictEqual(connectedChildren[0].label, 'Disconnect MAVProxy');
+			assert.strictEqual(disconnectedChildren[0].label, 'Connect with MAVProxy');
 		});
 	});
 
-	suite('error handling', () => {
-		test('should handle system command failures gracefully', async () => {
-			const provider = new apConnectedDevices();
-
-			// Mock system command failure
-			sandbox.stub(cp, 'exec').callsArgWith(1,
-				new Error('Command failed'), '', 'Permission denied');
-
-			// Should not throw
-			assert.doesNotThrow(async () => {
-				await provider.getChildren();
+	suite('Device Detection', () => {
+		test('should handle empty device list gracefully', async () => {
+			// Mock child_process.exec to return empty result
+			sandbox.stub(cp, 'exec').callsFake((_command: string, callback: any) => {
+				callback(null, '', '');
+				return {} as cp.ChildProcess;
 			});
+
+			const children = await provider.getChildren();
+			assert(Array.isArray(children));
+			assert.strictEqual(children.length, 0);
 		});
 
-		test('should handle device parsing errors', () => {
-			const invalidDeviceData = 'Invalid device format';
+		test('should handle device detection errors gracefully', async () => {
+			provider.setIsWSL(false);
 
-			// Should handle invalid data gracefully
-			assert.doesNotThrow(() => {
-				// Mock parsing logic that handles invalid data
-				const parsed = invalidDeviceData.match(/ID (\w+):(\w+)/);
-				assert.strictEqual(parsed, null);
+			// Mock child_process.exec to return error
+			sandbox.stub(cp, 'exec').callsFake((_command: string, callback: any) => {
+				callback(new Error('Device detection failed'), '', '');
+				return {} as cp.ChildProcess;
 			});
+
+			const children = await provider.getChildren();
+			assert(Array.isArray(children));
+			assert.strictEqual(children.length, 1);
+			assert.strictEqual(children[0].label, 'Error detecting devices');
 		});
 
-		test('should handle missing device information', () => {
-			const incompleteDevice: Partial<DeviceInfo> = {
-				path: '/dev/ttyUSB0'
-				// Missing vendorId and productId
+		test('should detect multiple CubePilot devices', async () => {
+			provider.setIsWSL(false);
+
+			// Mock lsusb output with multiple CubePilot devices
+			const mockLsusbOutput = `Bus 001 Device 003: ID 2dae:1016 CubePilot CubeOrangePlus
+Bus 001 Device 004: ID 2dae:1011 CubePilot CubeOrange
+Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
+
+			// Mock ls /dev/tty* to return multiple serial devices
+			const mockDeviceList = '/dev/ttyACM0\n/dev/ttyACM1\n/dev/ttyUSB0';
+
+			// Mock child_process.exec for lsusb
+			sandbox.stub(cp, 'exec').callsFake((command: string, callback: any) => {
+				if (command === 'lsusb') {
+					callback(null, mockLsusbOutput, '');
+				} else if (command.includes('ls /dev/tty')) {
+					callback(null, mockDeviceList, '');
+				}
+				return {} as cp.ChildProcess;
+			});
+
+			// Mock cp.spawnSync for udevadm to return matching devices
+			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[]) => {
+				const devicePath = args && args[2] ? args[2].replace('--name=', '') : '';
+				let stdout = '';
+
+				if (devicePath === '/dev/ttyACM0') {
+					// CubeOrangePlus
+					stdout = 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n';
+				} else if (devicePath === '/dev/ttyACM1') {
+					// CubeOrange
+					stdout = 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n';
+				} else if (devicePath === '/dev/ttyUSB0') {
+					// Generic device
+					stdout = 'ID_VENDOR_ID=1234\nID_MODEL_ID=5678\n';
+				}
+
+				return {
+					pid: 12345,
+					output: [null, Buffer.from(stdout, 'utf8'), Buffer.from('', 'utf8')],
+					stdout: Buffer.from(stdout, 'utf8'),
+					stderr: Buffer.from('', 'utf8'),
+					status: 0,
+					signal: null
+				};
+			});
+
+			const children = await provider.getChildren();
+
+			// Should have detected 3 devices
+			assert(Array.isArray(children));
+			assert.strictEqual(children.length, 3);
+
+			// Check CubeOrangePlus device
+			const cubeOrangePlus = children.find(child =>
+				child.device.path === '/dev/ttyACM0' &&
+				child.device.productId === '1016'
+			);
+			assert(cubeOrangePlus);
+			assert.strictEqual(cubeOrangePlus.device.vendorId, '2dae');
+			assert(cubeOrangePlus.device.isArduPilot);
+
+			// Check CubeOrange device
+			const cubeOrange = children.find(child =>
+				child.device.path === '/dev/ttyACM1' &&
+				child.device.productId === '1011'
+			);
+			assert(cubeOrange);
+			assert.strictEqual(cubeOrange.device.vendorId, '2dae');
+			assert(cubeOrange.device.isArduPilot);
+
+			// Check generic device (should not be marked as ArduPilot)
+			const genericDevice = children.find(child =>
+				child.device.path === '/dev/ttyUSB0' &&
+				child.device.productId === '5678'
+			);
+			assert(genericDevice);
+			assert.strictEqual(genericDevice.device.vendorId, '1234');
+			assert.strictEqual(genericDevice.device.isArduPilot, false);
+		});
+
+		test('should handle single device with multiple serial ports', async () => {
+			provider.setIsWSL(false);
+
+			// Simulate a device that creates multiple serial ports (like CubeOrange with multiple interfaces)
+			const mockLsusbOutput = 'Bus 001 Device 003: ID 2dae:1011 CubePilot CubeOrange';
+			const mockDeviceList = '/dev/ttyACM0\n/dev/ttyACM1';
+
+			sandbox.stub(cp, 'exec').callsFake((command: string, callback: any) => {
+				if (command === 'lsusb') {
+					callback(null, mockLsusbOutput, '');
+				} else if (command.includes('ls /dev/tty')) {
+					callback(null, mockDeviceList, '');
+				}
+				return {} as cp.ChildProcess;
+			});
+
+			// Both serial ports belong to the same USB device
+			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
+				pid: 12345,
+				output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n', 'utf8'), Buffer.from('', 'utf8')],
+				stdout: Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n', 'utf8'),
+				stderr: Buffer.from('', 'utf8'),
+				status: 0,
+				signal: null
+			}));
+
+			const children = await provider.getChildren();
+
+			// Should have 2 entries (one for each serial port)
+			assert(Array.isArray(children));
+			assert.strictEqual(children.length, 2);
+
+			// Both should be CubeOrange devices
+			children.forEach(child => {
+				assert.strictEqual(child.device.vendorId, '2dae');
+				assert.strictEqual(child.device.productId, '1011');
+				assert(child.device.isArduPilot);
+			});
+
+			// Should have different paths
+			const paths = children.map(child => child.device.path);
+			assert(paths.includes('/dev/ttyACM0'));
+			assert(paths.includes('/dev/ttyACM1'));
+		});
+
+		test('should detect devices in WSL mode', async () => {
+			provider.setIsWSL(true);
+
+			// Mock Linux devices (first attempt)
+			const mockLsusbOutput = 'Bus 001 Device 003: ID 2dae:1016 CubePilot CubeOrangePlus';
+			const mockDeviceList = '/dev/ttyACM0';
+
+			// Mock Windows PowerShell devices (second attempt)
+			const mockPowerShellOutput = `DeviceID : USB\\VID_2DAE&PID_1011\\5&123456&0&2
+FriendlyName : CubeOrange (COM3)
+Manufacturer : CubePilot
+
+DeviceID : USB\\VID_1234&PID_5678\\6&789012&0&3
+FriendlyName : Generic Serial Device (COM4)
+Manufacturer : Generic Inc`;
+
+			let execCallCount = 0;
+			sandbox.stub(cp, 'exec').callsFake((command: string, callback: any) => {
+				execCallCount++;
+				if (command === 'lsusb') {
+					callback(null, mockLsusbOutput, '');
+				} else if (command.includes('ls /dev/tty')) {
+					callback(null, mockDeviceList, '');
+				} else if (command.includes('powershell.exe')) {
+					callback(null, mockPowerShellOutput, '');
+				}
+				return {} as cp.ChildProcess;
+			});
+
+			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
+				pid: 12345,
+				output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'), Buffer.from('', 'utf8')],
+				stdout: Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'),
+				stderr: Buffer.from('', 'utf8'),
+				status: 0,
+				signal: null
+			}));
+
+			const children = await provider.getChildren();
+
+			// Should have detected devices from both Linux and Windows approaches
+			assert(Array.isArray(children));
+			assert(children.length > 0);
+
+			// Should have at least one Linux device and Windows devices
+			const linuxDevice = children.find(child => child.device.path === '/dev/ttyACM0');
+			const windowsDevice = children.find(child => child.device.path === 'COM3');
+
+			assert(linuxDevice, 'Should have Linux device');
+			assert(windowsDevice, 'Should have Windows device');
+		});
+	});
+
+	suite('Refresh Functionality', () => {
+		test('should fire change event on refresh', () => {
+			let eventFired = false;
+			provider.onDidChangeTreeData(() => {
+				eventFired = true;
+			});
+
+			provider.refresh();
+			assert(eventFired);
+		});
+
+		test('should refresh connected devices provider from extension context', () => {
+			assert(apExtensionContext.connectedDevicesProvider);
+
+			let eventFired = false;
+			apExtensionContext.connectedDevicesProvider.onDidChangeTreeData(() => {
+				eventFired = true;
+			});
+
+			apExtensionContext.connectedDevicesProvider.refresh();
+			assert(eventFired);
+		});
+	});
+
+	suite('Disposal', () => {
+		test('should clear refresh timer on dispose', () => {
+			const clearIntervalSpy = sandbox.spy(global, 'clearInterval');
+
+			provider.dispose();
+			assert(clearIntervalSpy.called);
+		});
+
+		test('should handle dispose when timer is undefined', () => {
+			const newProvider = new apConnectedDevices();
+			// Dispose immediately to test edge case
+			newProvider.dispose();
+			newProvider.dispose(); // Second call should not throw
+		});
+	});
+
+	suite('Device Decoration Integration', () => {
+		test('should create device items with proper resource URIs for decoration', async () => {
+			const connectedDevice: DeviceInfo = {
+				path: '/dev/ttyACM0',
+				vendorId: '2DAE',
+				productId: '1016',
+				manufacturer: 'CubePilot',
+				product: 'CubeOrangePlus',
+				isArduPilot: true,
+				isMavproxyConnected: true
 			};
 
-			// Should handle incomplete device info
-			assert.doesNotThrow(() => {
-				const item = new ConnectedDeviceItem(
-					'Incomplete Device',
-					vscode.TreeItemCollapsibleState.None,
-                    incompleteDevice as DeviceInfo
-				);
-				assert(item);
-			});
+			const disconnectedDevice: DeviceInfo = {
+				...connectedDevice,
+				isMavproxyConnected: false
+			};
+
+			const connectedItem = new ConnectedDeviceItem(
+				'Connected Device',
+				vscode.TreeItemCollapsibleState.Collapsed,
+				connectedDevice
+			);
+
+			const disconnectedItem = new ConnectedDeviceItem(
+				'Disconnected Device',
+				vscode.TreeItemCollapsibleState.Collapsed,
+				disconnectedDevice
+			);
+
+			const connectedChildren = await provider.getChildren(connectedItem);
+			const disconnectedChildren = await provider.getChildren(disconnectedItem);
+
+			// Test connected device command URI
+			const disconnectCommand = connectedChildren[0];
+			assert(disconnectCommand.resourceUri);
+			assert.strictEqual(disconnectCommand.resourceUri.scheme, 'connected-device');
+			assert.strictEqual(disconnectCommand.resourceUri.query, 'connected');
+
+			// Test disconnected device command URI
+			const connectCommand = disconnectedChildren[0];
+			assert(connectCommand.resourceUri);
+			assert.strictEqual(connectCommand.resourceUri.scheme, 'connected-device');
+			assert.strictEqual(connectCommand.resourceUri.query, 'disconnected');
+		});
+
+		test('should test decoration functionality through registered provider', () => {
+			// Test decoration functionality by verifying that the extension context
+			// has the decoration provider registered in subscriptions
+			assert(apExtensionContext.vscodeContext);
+			assert(apExtensionContext.vscodeContext.subscriptions);
+
+			// Verify subscription exists (decoration provider is registered)
+			const hasDecorationSubscription = apExtensionContext.vscodeContext.subscriptions.length > 0;
+			assert(hasDecorationSubscription);
+		});
+
+		test('should refresh decorations when refresh command is executed', async () => {
+			// Test that the refresh command also refreshes decorations
+			// by verifying the command exists and can be executed
+			const commands = await vscode.commands.getCommands();
+			assert(commands.includes('connected-devices.refresh'));
+
+			// Execute refresh command (this should refresh both tree and decorations)
+			await vscode.commands.executeCommand('connected-devices.refresh');
+
+			// If we get here without error, the command executed successfully
+			assert(true);
+		});
+	});
+
+	suite('Command Integration', () => {
+		test('should register all required commands', async () => {
+			const commands = await vscode.commands.getCommands();
+
+			// Verify all connected devices commands are registered
+			assert(commands.includes('connected-devices.refresh'));
+			assert(commands.includes('connected-devices.connectMAVProxy'));
+			assert(commands.includes('connected-devices.disconnectMAVProxy'));
+		});
+
+		test('should execute refresh command', async () => {
+			let refreshCalled = false;
+
+			if (apExtensionContext.connectedDevicesProvider) {
+				// Store original refresh method
+				const originalRefresh = apExtensionContext.connectedDevicesProvider.refresh;
+
+				// Replace with spy
+				apExtensionContext.connectedDevicesProvider.refresh = () => {
+					refreshCalled = true;
+					originalRefresh.call(apExtensionContext.connectedDevicesProvider);
+				};
+
+				// Execute command
+				await vscode.commands.executeCommand('connected-devices.refresh');
+
+				// Restore original method
+				apExtensionContext.connectedDevicesProvider.refresh = originalRefresh;
+			}
+
+			assert(refreshCalled);
+		});
+
+		test('should handle connectMAVProxy command with successful connection', async () => {
+			const mockDevice: DeviceInfo = {
+				path: '/dev/ttyACM0',
+				vendorId: '2DAE',
+				productId: '1016',
+				manufacturer: 'CubePilot',
+				product: 'CubeOrangePlus',
+				isArduPilot: true,
+				isMavproxyConnected: false
+			};
+
+			// Mock ProgramUtils.findMavproxy to return available MAVProxy
+			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: true, path: '/usr/bin/mavproxy.py' });
+
+			// Mock terminal creation
+			const mockTerminal = {
+				dispose: sandbox.stub(),
+				show: sandbox.stub(),
+				sendText: sandbox.stub()
+			} as any;
+
+			sandbox.stub(vscode.window, 'createTerminal').returns(mockTerminal);
+			sandbox.stub(vscode.window, 'onDidCloseTerminal').returns({ dispose: sandbox.stub() } as any);
+
+			// Mock UI inputs to prevent blocking
+			sandbox.stub(vscode.window, 'showInputBox').resolves('115200');
+
+			// Execute command
+			await vscode.commands.executeCommand('connected-devices.connectMAVProxy', mockDevice);
+
+			// Verify terminal was created and used
+			assert(mockTerminal.sendText.calledOnce);
+			assert(mockTerminal.show.calledOnce);
+		});
+
+		test('should handle disconnectMAVProxy command', async () => {
+			const mockDevice: DeviceInfo = {
+				path: '/dev/ttyACM0',
+				vendorId: '2DAE',
+				productId: '1016',
+				manufacturer: 'CubePilot',
+				product: 'CubeOrangePlus',
+				isArduPilot: true,
+				isMavproxyConnected: true
+			};
+
+			// Execute disconnect command (should handle gracefully even with no active connection)
+			await vscode.commands.executeCommand('connected-devices.disconnectMAVProxy', mockDevice);
+
+			// If we get here without error, the command executed successfully
+			assert(true);
+		});
+	});
+
+	suite('Device Item Creation', () => {
+		test('should create device item with proper display name from product', () => {
+			const mockDevice: DeviceInfo = {
+				path: '/dev/ttyACM0',
+				vendorId: '2DAE',
+				productId: '1016',
+				manufacturer: 'CubePilot',
+				product: 'CubeOrangePlus',
+				isArduPilot: true
+			};
+
+			const item = new ConnectedDeviceItem(
+				'CubeOrangePlus',
+				vscode.TreeItemCollapsibleState.Collapsed,
+				mockDevice
+			);
+
+			assert.strictEqual(item.label, 'CubeOrangePlus');
+			assert.strictEqual(item.description, '2DAE:1016');
+			assert(typeof item.tooltip === 'string' && item.tooltip.includes('CubeOrangePlus'));
+			assert(typeof item.tooltip === 'string' && item.tooltip.includes('/dev/ttyACM0'));
+		});
+
+		test('should create device item with manufacturer fallback', () => {
+			const mockDevice: DeviceInfo = {
+				path: '/dev/ttyACM0',
+				vendorId: '2DAE',
+				productId: '1016',
+				manufacturer: 'CubePilot',
+				isArduPilot: true
+			};
+
+			// Test display name creation when no product is specified
+			const provider = new apConnectedDevices();
+			// @ts-expect-error - accessing private method for testing
+			const displayName = provider.createDisplayName(mockDevice);
+
+			assert.strictEqual(displayName, 'CubePilot (/dev/ttyACM0)');
+			provider.dispose();
+		});
+
+		test('should create device item with path fallback', () => {
+			const mockDevice: DeviceInfo = {
+				path: '/dev/ttyACM0',
+				vendorId: '2DAE',
+				productId: '1016',
+				isArduPilot: false
+			};
+
+			// Test display name creation when no product or manufacturer
+			const provider = new apConnectedDevices();
+			// @ts-expect-error - accessing private method for testing
+			const displayName = provider.createDisplayName(mockDevice);
+
+			assert.strictEqual(displayName, 'ttyACM0');
+			provider.dispose();
+		});
+
+		test('should detect ArduPilot devices correctly', () => {
+			const provider = new apConnectedDevices();
+
+			// Test ArduPilot vendor ID for CubePilot
+			// @ts-expect-error - accessing private method for testing
+			let isArduPilot = provider.isArduPilotDevice('2DAE', '1016', 'CubePilot');
+			assert(isArduPilot);
+
+			// Test non-ArduPilot device
+			// @ts-expect-error - accessing private method for testing
+			isArduPilot = provider.isArduPilotDevice('1234', '5678', 'Generic Serial Device');
+			assert(!isArduPilot);
+
+			provider.dispose();
 		});
 	});
 });

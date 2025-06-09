@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { runTests, downloadAndUnzipVSCode, resolveCliArgsFromVSCodeExecutablePath } from '@vscode/test-electron';
+import * as fg from 'fast-glob';
 
 const execAsync = promisify(exec);
 
@@ -10,7 +11,7 @@ async function installExtension(vscodeExecutablePath: string, extensionId: strin
 	console.log(`Installing extension: ${extensionId}`);
 	try {
 		const [cli, ...args] = resolveCliArgsFromVSCodeExecutablePath(vscodeExecutablePath);
-		const { stdout } = await execAsync(`DONT_PROMPT_WSL_INSTALL=1 "${cli}" ${args.join(' ')} --install-extension ${extensionId} --force`);
+		const { stdout } = await execAsync(`VSCODE_IPC_HOOK_CLI= DONT_PROMPT_WSL_INSTALL=1 "${cli}" ${args.join(' ')} --install-extension ${extensionId} --force`);
 
 		console.log(`Extension ${extensionId} installed successfully:`, stdout);
 	} catch (error) {
@@ -88,17 +89,37 @@ async function main() {
 		await installExtension(vscodeExecutablePath, 'ms-vscode.cpptools');
 		await installExtension(vscodeExecutablePath, 'ms-python.python');
 
-		// Download VS Code, unzip it and run the integration test
-		await runTests({
-			extensionDevelopmentPath,
-			extensionTestsPath,
-			vscodeExecutablePath,
-			// Additional launch arguments
-			launchArgs: [
-				'--disable-workspace-trust', // Disable workspace trust prompt
-				workspacePath // Open the ArduPilot workspace
-			],
-		});
+		const globPattern = '**/**.test.js';
+		const testFiles = await fg(globPattern, { cwd: path.dirname(extensionTestsPath) });
+		// get name of test suite from the file name <testSuite>.test.js
+		const testSuiteName = testFiles.length > 0 ? path.basename(testFiles[0], '.test.js') : undefined;
+		if (!testSuiteName) {
+			console.error('No test files found matching the pattern:', globPattern);
+			process.exit(1);
+		}
+		console.log(`Test suite name: ${testSuiteName}`);
+		for (const testFile of testFiles) {
+			console.log(`Found test file: ${testFile}`);
+			if (testSuite && !testFile.includes(testSuiteName)) {
+				console.log(`Skipping test file ${testFile} as it does not match the specified test suite: ${testSuite}`);
+				continue;
+			}
+			console.log(`Running test file: ${testFile}`);
+			// Set the TEST_SUITE environment variable to filter tests
+			process.env.TEST_SUITE = testSuiteName;
+			// Run the test file
+			await runTests({
+				extensionDevelopmentPath,
+				extensionTestsPath: extensionTestsPath,
+				vscodeExecutablePath,
+				// Additional launch arguments
+				launchArgs: [
+					'--disable-workspace-trust', // Disable workspace trust prompt
+					workspacePath // Open the ArduPilot workspace
+				],
+			});
+			console.log(`Test file ${testFile} completed.`);
+		}
 	} catch (err) {
 		console.error('Failed to run tests:', err);
 		process.exit(1);
@@ -106,4 +127,3 @@ async function main() {
 }
 
 main();
-

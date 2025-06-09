@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import * as assert from 'assert';
@@ -7,512 +6,125 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as sinon from 'sinon';
-import * as taskProviderModule from '../../taskProvider';
-import { APTaskProvider, ArdupilotTaskDefinition } from '../../taskProvider';
+import { APTaskProvider, ArdupilotTaskDefinition, getFeaturesList } from '../../taskProvider';
+import { APExtensionContext } from '../../extension';
+import { getApExtApi } from './common';
 
 suite('APTaskProvider Test Suite', () => {
 	let workspaceFolder: vscode.WorkspaceFolder | undefined;
-	let taskProvider: APTaskProvider;
-	let mockExtensionUri: vscode.Uri;
+	let mockContext: vscode.ExtensionContext;
 	let sandbox: sinon.SinonSandbox;
+	let apExtensionContext: APExtensionContext;
+	let taskProvider: APTaskProvider;
+	let ardupilotDir: string | undefined;
 
-	suiteSetup(() => {
+	suiteSetup(async () => {
+		apExtensionContext = await getApExtApi();
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
 		assert(workspaceFolder);
-
-		mockExtensionUri = vscode.Uri.file('/test/extension');
+		ardupilotDir = workspaceFolder.uri.path;
+		assert(apExtensionContext.vscodeContext);
+		mockContext = apExtensionContext.vscodeContext;
 	});
 
 	setup(() => {
 		sandbox = sinon.createSandbox();
-		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-		taskProvider = new APTaskProvider(workspaceFolder!.uri.fsPath, mockExtensionUri);
+		assert(ardupilotDir, 'ardupilotDir should be defined');
+		taskProvider = new APTaskProvider(ardupilotDir, mockContext.extensionUri);
 	});
 
 	teardown(() => {
 		sandbox.restore();
 	});
 
-	suite('Constructor and Initialization', () => {
-		test('should create APTaskProvider instance', () => {
+	suite('APTaskProvider Core Functionality', () => {
+		test('should initialize with correct workspace and extension URI', () => {
 			assert.ok(taskProvider);
-		});
-
-		test('should set up file watcher for tasklist.json', () => {
-			// Test that the provider can be created without errors
-			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-			const provider = new APTaskProvider(workspaceFolder!.uri.fsPath, mockExtensionUri);
-			assert.ok(provider);
-		});
-
-		test('should handle invalid workspace path', () => {
-			assert.doesNotThrow(() => {
-				new APTaskProvider('/invalid/path', mockExtensionUri);
-			});
-		});
-	});
-
-	suite('provideTasks', () => {
-		test('should return promise of tasks', () => {
-			const tasksPromise = taskProvider.provideTasks();
-			assert.ok(tasksPromise instanceof Promise || typeof tasksPromise?.then === 'function');
-		});
-
-		test('should cache tasks promise', () => {
-			const firstCall = taskProvider.provideTasks();
-			const secondCall = taskProvider.provideTasks();
-			assert.strictEqual(firstCall, secondCall);
-		});
-
-		test('should reset cache when file changes', () => {
-			// First call to set up cache
-			const firstCall = taskProvider.provideTasks();
-
-			// Force cache reset by accessing private property
-			(taskProvider as any).ardupilotPromise = undefined;
-
-			const secondCall = taskProvider.provideTasks();
-			assert.notStrictEqual(firstCall, secondCall);
-		});
-	});
-
-	suite('getOrCreateBuildConfig', () => {
-		let originalGetConfiguration: typeof vscode.workspace.getConfiguration;
-		let originalWorkspaceFolders: readonly vscode.WorkspaceFolder[] | undefined;
-
-		setup(() => {
-			originalGetConfiguration = vscode.workspace.getConfiguration;
-			originalWorkspaceFolders = vscode.workspace.workspaceFolders;
-
-			// Mock workspace folders
-			Object.defineProperty(vscode.workspace, 'workspaceFolders', {
-				value: [workspaceFolder],
-				configurable: true
-			});
-		});
-
-		teardown(() => {
-			(vscode.workspace as any).getConfiguration = originalGetConfiguration;
-			Object.defineProperty(vscode.workspace, 'workspaceFolders', {
-				value: originalWorkspaceFolders,
-				configurable: true
-			});
-		});
-
-		test('should create SITL task with default simVehicleCommand', () => {
-			// Mock workspace configuration
-			const mockTasks: ArdupilotTaskDefinition[] = [];
-			const mockConfig = {
-				get: (key: string) => {
-					if (key === 'tasks') return mockTasks;
-					return undefined;
-				},
-				update: (key: string, value: any, target: vscode.ConfigurationTarget) => {
-					if (key === 'tasks') {
-						mockTasks.push(...value);
-					}
-					return Promise.resolve();
-				}
-			};
-
-			(vscode.workspace as any).getConfiguration = (section: string, resource?: vscode.Uri) => {
-				if (section === 'tasks') return mockConfig;
-				return originalGetConfiguration(section, resource);
-			};
-
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
-
-			assert.ok(task);
-			assert.strictEqual(task.definition.type, 'ardupilot');
-			assert.strictEqual(task.definition.configure, 'sitl');
-			assert.strictEqual(task.definition.target, 'copter');
-		});
-
-		test('should create hardware task without simVehicleCommand', () => {
-			const mockTasks: ArdupilotTaskDefinition[] = [];
-			const mockConfig = {
-				get: (key: string) => {
-					if (key === 'tasks') return mockTasks;
-					return undefined;
-				},
-				update: (key: string, value: any) => Promise.resolve()
-			};
-
-			(vscode.workspace as any).getConfiguration = (section: string) => {
-				if (section === 'tasks') return mockConfig;
-				return originalGetConfiguration(section);
-			};
-
-			const task = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane');
-
-			assert.ok(task);
-			assert.strictEqual(task.definition.configure, 'CubeOrange');
-			assert.strictEqual(task.definition.target, 'plane');
-			assert.strictEqual(task.definition.simVehicleCommand, undefined);
-		});
-
-		test('should use provided simVehicleCommand for SITL', () => {
-			const mockTasks: ArdupilotTaskDefinition[] = [];
-			const mockConfig = {
-				get: (key: string) => mockTasks,
-				update: (key: string, value: any) => Promise.resolve()
-			};
-
-			(vscode.workspace as any).getConfiguration = () => mockConfig;
-
-			const customCommand = '--map --console --speedup=2';
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', undefined, undefined, undefined, customCommand);
-
-			assert.ok(task);
-			assert.strictEqual(task.definition.simVehicleCommand, customCommand);
-		});
-
-		test('should update existing task', () => {
-			const existingTask: ArdupilotTaskDefinition = {
-				type: 'ardupilot',
-				configure: 'sitl',
-				target: 'copter',
-				simVehicleCommand: '--old-command',
-				configureOptions: '',
-				buildOptions: ''
-			};
-
-			const mockTasks = [existingTask];
-			let updatedTasks: ArdupilotTaskDefinition[] = [];
-
-			const mockConfig = {
-				get: (key: string) => mockTasks,
-				update: (key: string, value: ArdupilotTaskDefinition[]) => {
-					updatedTasks = value;
-					return Promise.resolve();
-				}
-			};
-
-			(vscode.workspace as any).getConfiguration = () => mockConfig;
-
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', undefined, undefined, undefined, '--new-command');
-
-			assert.ok(task);
-			assert.strictEqual(updatedTasks.length, 1);
-			assert.strictEqual(updatedTasks[0].simVehicleCommand, '--new-command');
-		});
-
-		test('should handle configuration update errors', async () => {
-			const mockConfig = {
-				get: (key: string) => [],
-				update: (key: string, value: any) => Promise.reject(new Error('Update failed'))
-			};
-
-			(vscode.workspace as any).getConfiguration = () => mockConfig;
-
-			// Mock vscode.window.showErrorMessage
-			let errorShown = false;
-			const originalShowErrorMessage = vscode.window.showErrorMessage;
-			(vscode.window as any).showErrorMessage = (message: string) => {
-				errorShown = true;
-				return Promise.resolve();
-			};
-
-			try {
-				const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
-				assert.ok(task);
-
-				// Wait for async update to complete
-				await new Promise(resolve => setTimeout(resolve, 50));
-				assert.strictEqual(errorShown, true);
-			} finally {
-				(vscode.window as any).showErrorMessage = originalShowErrorMessage;
-			}
-		});
-
-		test('should return undefined without workspace folders', () => {
-			Object.defineProperty(vscode.workspace, 'workspaceFolders', {
-				value: undefined,
-				configurable: true
-			});
-
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
-			assert.strictEqual(task, undefined);
-		});
-	});
-
-	suite('createTask', () => {
-		test('should create task with correct definition', () => {
-			const definition: ArdupilotTaskDefinition = {
-				type: 'ardupilot',
-				configure: 'sitl',
-				target: 'copter',
-				configureOptions: '',
-				buildOptions: ''
-			};
-
-			const task = APTaskProvider.createTask(definition);
-
-			assert.ok(task);
-			assert.strictEqual(task.definition.type, 'ardupilot');
-			assert.strictEqual(task.definition.configure, 'sitl');
-			assert.strictEqual(task.definition.target, 'copter');
-			assert.strictEqual(task.name, 'sitl-copter');
-			assert.strictEqual(task.source, 'ardupilot');
-		});
-
-		test('should set default waffile path', () => {
-			const definition: ArdupilotTaskDefinition = {
-				type: 'ardupilot',
-				configure: 'sitl',
-				target: 'copter',
-				configureOptions: '',
-				buildOptions: ''
-			};
-
-			const task = APTaskProvider.createTask(definition);
-
-			assert.ok(task);
-			assert.ok(task.definition.waffile);
-			assert.ok(task.definition.waffile.endsWith('/waf'));
-		});
-
-		test('should set default nm tool', () => {
-			const definition: ArdupilotTaskDefinition = {
-				type: 'ardupilot',
-				configure: 'sitl',
-				target: 'copter',
-				configureOptions: '',
-				buildOptions: ''
-			};
-
-			const task = APTaskProvider.createTask(definition);
-
-			assert.ok(task);
-			assert.strictEqual(task.definition.nm, 'arm-none-eabi-nm');
-		});
-
-		test('should convert target to binary output', () => {
-			const definition: ArdupilotTaskDefinition = {
-				type: 'ardupilot',
-				configure: 'sitl',
-				target: 'copter',
-				configureOptions: '',
-				buildOptions: ''
-			};
-
-			const task = APTaskProvider.createTask(definition);
-
-			assert.ok(task);
-			assert.strictEqual(task.definition.target_output, 'bin/arducopter');
-		});
-
-		test('should return undefined without workspace folders', () => {
-			const originalWorkspaceFolders = vscode.workspace.workspaceFolders;
-			Object.defineProperty(vscode.workspace, 'workspaceFolders', {
-				value: undefined,
-				configurable: true
-			});
-
-			try {
-				const definition: ArdupilotTaskDefinition = {
-					type: 'ardupilot',
-					configure: 'sitl',
-					target: 'copter',
-					configureOptions: '',
-					buildOptions: ''
-				};
-
-				const task = APTaskProvider.createTask(definition);
-				assert.strictEqual(task, undefined);
-			} finally {
-				Object.defineProperty(vscode.workspace, 'workspaceFolders', {
-					value: originalWorkspaceFolders,
-					configurable: true
-				});
-			}
-		});
-
-		test('should preserve existing waffile and nm if provided', () => {
-			const definition: ArdupilotTaskDefinition = {
-				type: 'ardupilot',
-				configure: 'sitl',
-				target: 'copter',
-				waffile: '/custom/waf',
-				nm: 'custom-nm',
-				configureOptions: '',
-				buildOptions: ''
-			};
-
-			const task = APTaskProvider.createTask(definition);
-
-			assert.ok(task);
-			assert.strictEqual(task.definition.waffile, '/custom/waf');
-			assert.strictEqual(task.definition.nm, 'custom-nm');
-		});
-	});
-
-	suite('updateFeaturesDat', () => {
-		let tempDir: string;
-
-		setup(() => {
-			// Create temporary directory for testing
-			tempDir = '/tmp/test-build-' + Date.now();
-			if (!fs.existsSync(tempDir)) {
-				fs.mkdirSync(tempDir, { recursive: true });
-			}
-		});
-
-		teardown(() => {
-			// Clean up temporary directory
-			if (fs.existsSync(tempDir)) {
-				fs.rmSync(tempDir, { recursive: true, force: true });
-			}
-		});
-
-		test('should create extra_hwdef.dat with enabled features', () => {
-			const features = ['FEATURE1', 'FEATURE2'];
-			const result = APTaskProvider.updateFeaturesDat(tempDir, features);
-
-			assert.ok(result.includes('--extra-hwdef='));
-			assert.ok(result.includes('extra_hwdef.dat'));
-
-			const hwdefPath = path.join(tempDir, 'extra_hwdef.dat');
-			assert.ok(fs.existsSync(hwdefPath));
-
-			const content = fs.readFileSync(hwdefPath, 'utf8');
-			assert.ok(content.includes('undef FEATURE1'));
-			assert.ok(content.includes('define FEATURE1 1'));
-			assert.ok(content.includes('undef FEATURE2'));
-			assert.ok(content.includes('define FEATURE2 1'));
-		});
-
-		test('should create extra_hwdef.dat with disabled features', () => {
-			const features = ['!FEATURE1', '!FEATURE2'];
-			const result = APTaskProvider.updateFeaturesDat(tempDir, features);
-
-			const hwdefPath = path.join(tempDir, 'extra_hwdef.dat');
-			const content = fs.readFileSync(hwdefPath, 'utf8');
-
-			assert.ok(content.includes('undef FEATURE1'));
-			assert.ok(content.includes('define FEATURE1 0'));
-			assert.ok(content.includes('undef FEATURE2'));
-			assert.ok(content.includes('define FEATURE2 0'));
-		});
-
-		test('should handle mixed enabled and disabled features', () => {
-			const features = ['ENABLED_FEATURE', '!DISABLED_FEATURE', 'ANOTHER_ENABLED'];
-			APTaskProvider.updateFeaturesDat(tempDir, features);
-
-			const hwdefPath = path.join(tempDir, 'extra_hwdef.dat');
-			const content = fs.readFileSync(hwdefPath, 'utf8');
-
-			assert.ok(content.includes('define ENABLED_FEATURE 1'));
-			assert.ok(content.includes('define DISABLED_FEATURE 0'));
-			assert.ok(content.includes('define ANOTHER_ENABLED 1'));
-		});
-
-		test('should handle empty features array', () => {
-			const features: string[] = [];
-			const result = APTaskProvider.updateFeaturesDat(tempDir, features);
-
-			const hwdefPath = path.join(tempDir, 'extra_hwdef.dat');
-			const content = fs.readFileSync(hwdefPath, 'utf8');
-
-			assert.strictEqual(content, '');
-		});
-
-		test('should handle features with whitespace', () => {
-			const features = [' FEATURE_WITH_SPACES ', '\tTAB_FEATURE\t'];
-			APTaskProvider.updateFeaturesDat(tempDir, features);
-
-			const hwdefPath = path.join(tempDir, 'extra_hwdef.dat');
-			const content = fs.readFileSync(hwdefPath, 'utf8');
-
-			assert.ok(content.includes('define FEATURE_WITH_SPACES 1'));
-			assert.ok(content.includes('define TAB_FEATURE 1'));
-		});
-
-		test('should handle empty feature strings', () => {
-			const features = ['VALID_FEATURE', '', '   ', 'ANOTHER_VALID'];
-			APTaskProvider.updateFeaturesDat(tempDir, features);
-
-			const hwdefPath = path.join(tempDir, 'extra_hwdef.dat');
-			const content = fs.readFileSync(hwdefPath, 'utf8');
-
-			assert.ok(content.includes('define VALID_FEATURE 1'));
-			assert.ok(content.includes('define ANOTHER_VALID 1'));
-			// Empty strings should not generate any defines
-			const lines = content.split('\n').filter(line => line.trim());
-			assert.strictEqual(lines.length, 4); // 2 features * 2 lines each (undef + define)
-		});
-	});
-
-	suite('Static Properties', () => {
-		test('should have correct ardupilotTaskType', () => {
 			assert.strictEqual(APTaskProvider.ardupilotTaskType, 'ardupilot');
 		});
 
-		test('should update features list', () => {
-			// Mock fs.existsSync to ensure build_options.py is found
-			sandbox.stub(fs, 'existsSync').returns(true);
-
-			// Mock cp.spawnSync to avoid actual Python execution
-			const mockSpawnSync = sandbox.stub(cp, 'spawnSync');
-			mockSpawnSync.returns({
-				pid: 1234,
-				output: [null, null, null],
-				stdout: Buffer.from(JSON.stringify({ feature1: 'description1', feature2: 'description2' })),
-				stderr: Buffer.from(''),
-				status: 0,
-				signal: null
-			});
-
-			// Mock workspace folders
-			const mockWorkspaceFolders = [{
-				uri: { fsPath: '/test/workspace' },
-				name: 'test',
-				index: 0
-			}];
-			Object.defineProperty(vscode.workspace, 'workspaceFolders', {
-				value: mockWorkspaceFolders,
-				configurable: true
-			});
-
-			assert.doesNotThrow(() => {
-				APTaskProvider.updateFeaturesList();
-			});
-
-			// Verify that spawnSync was called
-			assert.ok(mockSpawnSync.called);
-		});
-	});
-
-	suite('resolveTask', () => {
-		test('should resolve task correctly', () => {
-			// Mock workspace folders
-			const mockWorkspaceFolder = {
-				uri: { fsPath: '/test/workspace' },
-				name: 'test',
-				index: 0
+		test('should set up file watchers for tasklist.json changes', () => {
+			const createFileSystemWatcherStub = sandbox.stub(vscode.workspace, 'createFileSystemWatcher');
+			const mockWatcher = {
+				onDidChange: sandbox.stub(),
+				onDidCreate: sandbox.stub(),
+				onDidDelete: sandbox.stub()
 			};
-			Object.defineProperty(vscode.workspace, 'workspaceFolders', {
-				value: [mockWorkspaceFolder],
-				configurable: true
+			createFileSystemWatcherStub.returns(mockWatcher as any);
+
+			assert(ardupilotDir, 'ardupilotDir should be defined');
+			new APTaskProvider(ardupilotDir, mockContext.extensionUri);
+
+			const expectedPattern = path.join(ardupilotDir, 'tasklist.json');
+			assert(createFileSystemWatcherStub.calledWith(expectedPattern));
+			assert(mockWatcher.onDidChange.called);
+			assert(mockWatcher.onDidCreate.called);
+			assert(mockWatcher.onDidDelete.called);
+		});
+
+		test('should provide tasks through provideTasks()', async () => {
+			// Mock the getArdupilotTasks function by stubbing file operations
+			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
+				const pathStr = path.toString();
+				if (pathStr.endsWith('waf')) {
+					return true;
+				}
+				if (pathStr.includes('.vscode/tasks.json')) {
+					return true;
+				}
+				return false;
 			});
 
-			// Mock cp.spawnSync for extract_features.py --help
-			const mockSpawnSync = sandbox.stub(cp, 'spawnSync');
-			mockSpawnSync.returns({
-				pid: 1234,
-				output: [null, null, null],
-				stdout: Buffer.from('--nm help output'),
-				stderr: Buffer.from(''),
-				status: 0,
-				signal: null
+			sandbox.stub(fs, 'readFileSync').callsFake((path: fs.PathOrFileDescriptor) => {
+				const pathStr = path.toString();
+				if (pathStr.includes('tasks.json')) {
+					return JSON.stringify({
+						version: '2.0.0',
+						tasks: [
+							{
+								type: 'ardupilot',
+								configure: 'sitl',
+								target: 'copter',
+								configureOptions: '',
+								buildOptions: '',
+								group: { kind: 'build' }
+							}
+						]
+					});
+				}
+				return '';
 			});
 
-			const task: vscode.Task = {
-				definition: {
-					type: 'ardupilot',
-					configure: 'sitl',
-					target: 'copter'
-				} as ArdupilotTaskDefinition,
+			sandbox.stub(cp, 'exec').callsFake((command: string, options: any, callback: any) => {
+				const stdout = JSON.stringify([
+					{
+						configure: 'CubeOrange',
+						targets: ['plane', 'copter'],
+						configureOptions: '',
+						buildOptions: ''
+					}
+				]);
+				callback(null, stdout, '');
+				return {} as any; // Mock ChildProcess
+			});
+
+			const tasks = await taskProvider.provideTasks();
+			assert.ok(Array.isArray(tasks));
+			// Should include at least the existing task from tasks.json
+			assert(tasks.length >= 1);
+		});
+
+		test('should resolve tasks through resolveTask()', () => {
+			const mockTaskDefinition: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configureOptions: '',
+				buildOptions: ''
+			};
+
+			const mockTask: vscode.Task = {
+				definition: mockTaskDefinition,
 				scope: vscode.TaskScope.Workspace,
 				name: 'sitl-copter',
 				source: 'ardupilot',
@@ -525,33 +137,583 @@ suite('APTaskProvider Test Suite', () => {
 				runOptions: {}
 			};
 
-			const resolvedTask = taskProvider.resolveTask(task);
-
-			// Should return a task (can be the same or a new one)
+			const resolvedTask = taskProvider.resolveTask(mockTask);
 			assert.ok(resolvedTask);
+			assert.strictEqual(resolvedTask.name, 'sitl-copter');
+			assert.strictEqual(resolvedTask.source, 'ardupilot');
 		});
+	});
 
-		test('should handle invalid task definition', () => {
-			const invalidTask: vscode.Task = {
-				definition: {
-					type: 'invalid'
-				},
-				scope: vscode.TaskScope.Workspace,
-				name: 'invalid-task',
-				source: 'test',
-				execution: undefined,
-				problemMatchers: [],
-				isBackground: false,
-				presentationOptions: {},
-				group: undefined,
-				detail: undefined,
-				runOptions: {}
+	suite('Task Creation - getOrCreateBuildConfig', () => {
+		let mockConfiguration: any;
+		let mockTasks: ArdupilotTaskDefinition[];
+
+		setup(() => {
+			mockTasks = [];
+			mockConfiguration = {
+				get: sandbox.stub().callsFake((key: string) => {
+					if (key === 'tasks') {
+						return mockTasks;
+					}
+					return undefined;
+				}),
+				update: sandbox.stub().callsFake((key: string, value: ArdupilotTaskDefinition[]) => {
+					if (key === 'tasks') {
+						mockTasks = value;
+					}
+					return Promise.resolve();
+				})
 			};
 
-			const resolvedTask = taskProvider.resolveTask(invalidTask);
-			// Since the task definition doesn't have required properties for ArdupilotTaskDefinition,
-			// createTask might return undefined or a task with defaults
-			assert.ok(resolvedTask === undefined || resolvedTask instanceof vscode.Task);
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
+			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
+				const pathStr = path.toString();
+				return pathStr.includes('.vscode');
+			});
+			sandbox.stub(fs, 'mkdirSync');
+		});
+
+		test('should create new task for SITL configuration with simVehicleCommand', () => {
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', '', '--map --console');
+
+			assert.ok(task);
+			assert.strictEqual(task.name, 'sitl-copter');
+			assert.strictEqual(task.definition.configure, 'sitl');
+			assert.strictEqual(task.definition.target, 'copter');
+			assert.strictEqual(task.definition.simVehicleCommand, '--map --console');
+			assert.ok(mockConfiguration.update.calledWith('tasks', sinon.match.array));
+		});
+
+		test('should create new task for hardware configuration without simVehicleCommand', () => {
+			const task = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane');
+
+			assert.ok(task);
+			assert.strictEqual(task.name, 'CubeOrange-plane');
+			assert.strictEqual(task.definition.configure, 'CubeOrange');
+			assert.strictEqual(task.definition.target, 'plane');
+			assert.strictEqual(task.definition.simVehicleCommand, undefined);
+		});
+
+		test('should handle missing workspace folder gracefully', () => {
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+
+			assert.strictEqual(task, undefined);
+			assert(showErrorStub.calledWith('No workspace folder is open.'));
+		});
+
+		test('should create .vscode directory if it doesn\'t exist', () => {
+			// Restore the existing stub and create a new one with different behavior
+			sandbox.restore();
+			sandbox = sinon.createSandbox();
+
+			// Set up fresh stubs for this test
+			const mockConfiguration: any = {
+				get: sandbox.stub().callsFake((key: string) => {
+					if (key === 'tasks') {
+						return [];
+					}
+					return undefined;
+				}),
+				update: sandbox.stub().resolves()
+			};
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
+			sandbox.stub(fs, 'existsSync').returns(false);
+			const mkdirSyncStub = sandbox.stub(fs, 'mkdirSync');
+
+			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+
+			assert(mkdirSyncStub.calledWith(sinon.match.string, { recursive: true }));
+		});
+
+		test('should preserve existing simVehicleCommand from tasks.json', () => {
+			// Mock tasks.json file with existing SITL task
+			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
+				tasks: [{
+					type: 'ardupilot',
+					configure: 'sitl',
+					target: 'copter',
+					simVehicleCommand: '--existing-command'
+				}]
+			}));
+
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+
+			assert.ok(task);
+			assert.strictEqual(task.definition.simVehicleCommand, '--existing-command');
+		});
+
+		test('should update existing task configuration', () => {
+			// Pre-populate tasks array with existing task
+			mockTasks.push({
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configureOptions: '',
+				buildOptions: '',
+				simVehicleCommand: '--old-command'
+			});
+
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', '', '--new-command');
+
+			assert.ok(task);
+			assert.strictEqual(task.definition.simVehicleCommand, '--new-command');
+
+			// Verify update was called
+			assert(mockConfiguration.update.called);
+			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
+			assert.strictEqual(updatedTasks.length, 1);
+			assert.strictEqual(updatedTasks[0].simVehicleCommand, '--new-command');
+		});
+
+		test('should add new task when not exists', () => {
+			// Start with empty tasks array
+			assert.strictEqual(mockTasks.length, 0);
+
+			const task = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane');
+
+			assert.ok(task);
+			assert(mockConfiguration.update.called);
+			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
+			assert.strictEqual(updatedTasks.length, 1);
+			assert.strictEqual(updatedTasks[0].configure, 'CubeOrange');
+			assert.strictEqual(updatedTasks[0].target, 'plane');
+		});
+
+		test('should handle malformed tasks.json gracefully', () => {
+			sandbox.stub(fs, 'readFileSync').returns('invalid json');
+
+			// Should not throw error
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			assert.ok(task);
+		});
+	});
+
+	suite('Task Definition Handling', () => {
+		test('should create correct ArdupilotTaskDefinition structure', () => {
+			const definition: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configureOptions: '--debug',
+				buildOptions: '--verbose'
+			};
+
+			const task = APTaskProvider.createTask(definition);
+
+			assert.ok(task);
+			assert.strictEqual(task.name, 'sitl-copter');
+			assert.strictEqual(task.source, 'ardupilot');
+			assert.strictEqual(task.definition.type, 'ardupilot');
+			assert.strictEqual(task.definition.configure, 'sitl');
+			assert.strictEqual(task.definition.target, 'copter');
+		});
+
+		test('should set default values for waffile and nm', () => {
+			const definition: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configureOptions: '',
+				buildOptions: ''
+			};
+
+			const task = APTaskProvider.createTask(definition);
+
+			assert.ok(task);
+			assert.ok(task.definition.waffile?.endsWith('/waf'));
+			assert.strictEqual(task.definition.nm, 'arm-none-eabi-nm');
+		});
+
+		test('should create correct task execution command', () => {
+			const definition: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configureOptions: '--debug',
+				buildOptions: '--verbose'
+			};
+
+			const task = APTaskProvider.createTask(definition);
+
+			assert.ok(task);
+			assert.ok(task.execution);
+			const execution = task.execution as vscode.ShellExecution;
+			assert.ok(execution.commandLine?.includes('python3'));
+			assert.ok(execution.commandLine?.includes('configure --board=sitl --debug'));
+			assert.ok(execution.commandLine?.includes('copter --verbose'));
+		});
+
+		test('should handle missing workspace folder in createTask', () => {
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
+
+			const definition: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configureOptions: '',
+				buildOptions: ''
+			};
+
+			const task = APTaskProvider.createTask(definition);
+			assert.strictEqual(task, undefined);
+		});
+	});
+
+	suite('Task Deletion', () => {
+		let mockConfiguration: any;
+		let mockTasks: ArdupilotTaskDefinition[];
+
+		setup(() => {
+			mockTasks = [
+				{
+					type: 'ardupilot',
+					configure: 'sitl',
+					target: 'copter',
+					configureOptions: '',
+					buildOptions: ''
+				},
+				{
+					type: 'ardupilot',
+					configure: 'CubeOrange',
+					target: 'plane',
+					configureOptions: '',
+					buildOptions: ''
+				}
+			];
+
+			mockConfiguration = {
+				get: sandbox.stub().returns(mockTasks),
+				update: sandbox.stub().resolves()
+			};
+
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
+		});
+
+		test('should remove task from tasks.json using VS Code API', () => {
+			APTaskProvider.delete('sitl');
+
+			assert(mockConfiguration.update.called);
+			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
+			assert.strictEqual(updatedTasks.length, 1);
+			assert.strictEqual(updatedTasks[0].configure, 'CubeOrange');
+		});
+
+		test('should handle non-existent task deletion gracefully', () => {
+			APTaskProvider.delete('nonexistent');
+
+			// Should not call update since no task was found to remove
+			assert(mockConfiguration.update.notCalled);
+		});
+
+		test('should handle missing workspace folder', () => {
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			APTaskProvider.delete('sitl');
+
+			assert(showErrorStub.calledWith('No workspace folder is open.'));
+		});
+
+		test('should handle missing tasks array', () => {
+			mockConfiguration.get.returns(undefined);
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			APTaskProvider.delete('sitl');
+
+			assert(showErrorStub.calledWith('No tasks found in tasks.json'));
+		});
+
+		test('should handle malformed tasks array', () => {
+			mockConfiguration.get.returns('not an array');
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			APTaskProvider.delete('sitl');
+
+			assert(showErrorStub.calledWith('No tasks found in tasks.json'));
+		});
+	});
+
+	suite('Features Integration', () => {
+		test('should load features from build_options.py using featureLoader.py', () => {
+			sandbox.stub(fs, 'existsSync').returns(true);
+			const mockSpawnResult = {
+				status: 0,
+				stdout: Buffer.from(JSON.stringify({
+					features: {
+						'FEATURE_1': { description: 'Test feature 1' },
+						'FEATURE_2': { description: 'Test feature 2' }
+					}
+				}))
+			};
+			sandbox.stub(cp, 'spawnSync').returns(mockSpawnResult as any);
+
+			const features = getFeaturesList(mockContext.extensionUri);
+
+			assert.ok(features);
+			assert.ok(features.features);
+			assert.strictEqual((features.features as any)['FEATURE_1'].description, 'Test feature 1');
+		});
+
+		test('should handle missing build_options.py file', () => {
+			sandbox.stub(fs, 'existsSync').returns(false);
+
+			assert.throws(() => {
+				getFeaturesList(mockContext.extensionUri);
+			}, /build_options.py not found/);
+		});
+
+		test('should handle featureLoader.py execution failures', () => {
+			sandbox.stub(fs, 'existsSync').returns(true);
+			const mockSpawnResult = {
+				status: 1,
+				stdout: Buffer.from(''),
+				stderr: Buffer.from('Error executing script')
+			};
+			sandbox.stub(cp, 'spawnSync').returns(mockSpawnResult as any);
+
+			assert.throws(() => {
+				getFeaturesList(mockContext.extensionUri);
+			}, /featureLoader.py failed with exit code 1/);
+		});
+
+		test('should handle missing workspace folder in getFeaturesList', () => {
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
+
+			const features = getFeaturesList(mockContext.extensionUri);
+			assert.deepStrictEqual(features, {});
+		});
+	});
+
+	suite('Auto Task Detection - getArdupilotTasks', () => {
+		setup(() => {
+			// Mock file system for auto detection
+			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
+				const pathStr = path.toString();
+				if (pathStr.endsWith('waf')) {
+					return true;
+				}
+				if (pathStr.includes('.vscode/tasks.json')) {
+					return true;
+				}
+				return false;
+			});
+		});
+
+		test('should detect existing tasks from tasks.json', async () => {
+			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
+				version: '2.0.0',
+				tasks: [
+					{
+						type: 'ardupilot',
+						configure: 'sitl',
+						target: 'copter',
+						configureOptions: '',
+						buildOptions: '',
+						group: { kind: 'build' }
+					}
+				]
+			}));
+
+			sandbox.stub(cp, 'exec').callsFake((command: string, options: any, callback: any) => {
+				callback(null, JSON.stringify([]), '');
+				return {} as any; // Mock ChildProcess
+			});
+
+			const tasks = await taskProvider.provideTasks();
+			assert.ok(Array.isArray(tasks));
+			assert(tasks.length >= 1);
+
+			const sitlTask = tasks.find(task =>
+				task.definition.configure === 'sitl' &&
+				task.definition.target === 'copter'
+			);
+			assert.ok(sitlTask);
+			assert.strictEqual(sitlTask.group, vscode.TaskGroup.Build);
+		});
+
+		test('should generate tasks using waf generate_tasklist', async () => {
+			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
+				version: '2.0.0',
+				tasks: []
+			}));
+
+			sandbox.stub(cp, 'exec').callsFake((command: string, options: any, callback: any) => {
+				const stdout = JSON.stringify([
+					{
+						configure: 'CubeOrange',
+						targets: ['plane', 'copter'],
+						configureOptions: '--enable-debug',
+						buildOptions: '--verbose'
+					}
+				]);
+				callback(null, stdout, '');
+				return {} as any; // Mock ChildProcess
+			});
+
+			const tasks = await taskProvider.provideTasks();
+			assert.ok(Array.isArray(tasks));
+
+			const generatedTasks = tasks.filter(task =>
+				task.definition.configure === 'CubeOrange'
+			);
+			assert(generatedTasks.length >= 2); // plane and copter
+		});
+
+		test('should filter out non-ardupilot tasks', async () => {
+			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
+				version: '2.0.0',
+				tasks: [
+					{
+						type: 'ardupilot',
+						configure: 'sitl',
+						target: 'copter',
+						configureOptions: '',
+						buildOptions: ''
+					},
+					{
+						type: 'shell',
+						label: 'Other task',
+						command: 'echo hello'
+					}
+				]
+			}));
+
+			sandbox.stub(cp, 'exec').callsFake((command: string, options: any, callback: any) => {
+				callback(null, JSON.stringify([]), '');
+				return {} as any; // Mock ChildProcess
+			});
+
+			const tasks = await taskProvider.provideTasks();
+			assert.ok(Array.isArray(tasks));
+
+			// Should only include ardupilot tasks
+			const nonArdupilotTasks = tasks.filter(task =>
+				task.definition.type !== 'ardupilot'
+			);
+			assert.strictEqual(nonArdupilotTasks.length, 0);
+		});
+
+		test('should handle waf command execution errors', async () => {
+			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
+				version: '2.0.0',
+				tasks: []
+			}));
+
+			sandbox.stub(cp, 'exec').callsFake((command: string, options: any, callback: any) => {
+				callback(new Error('waf command failed'), '', 'Error output');
+				return {} as any; // Mock ChildProcess
+			});
+
+			// Should not throw error, but return empty array or handle gracefully
+			const tasks = await taskProvider.provideTasks();
+			assert.ok(Array.isArray(tasks));
+		});
+
+		test('should merge auto-detected with existing tasks', async () => {
+			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
+				version: '2.0.0',
+				tasks: [
+					{
+						type: 'ardupilot',
+						configure: 'sitl',
+						target: 'copter',
+						configureOptions: '',
+						buildOptions: '',
+						group: { kind: 'build' }
+					}
+				]
+			}));
+
+			sandbox.stub(cp, 'exec').callsFake((command: string, options: any, callback: any) => {
+				const stdout = JSON.stringify([
+					{
+						configure: 'CubeOrange',
+						targets: ['plane'],
+						configureOptions: '',
+						buildOptions: ''
+					}
+				]);
+				callback(null, stdout, '');
+				return {} as any; // Mock ChildProcess
+			});
+
+			const tasks = await taskProvider.provideTasks();
+			assert.ok(Array.isArray(tasks));
+
+			// Should have both existing and auto-detected tasks
+			const sitlTask = tasks.find(task =>
+				task.definition.configure === 'sitl'
+			);
+			const cubeTask = tasks.find(task =>
+				task.definition.configure === 'CubeOrange'
+			);
+
+			assert.ok(sitlTask);
+			assert.ok(cubeTask);
+		});
+	});
+
+	suite('Error Handling', () => {
+		test('should handle workspace folder access errors', () => {
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(null);
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+
+			assert.strictEqual(task, undefined);
+			assert(showErrorStub.calledWith('No workspace folder is open.'));
+		});
+
+		test('should handle VS Code API update failures', async () => {
+			const mockConfiguration = {
+				get: sandbox.stub().returns([]),
+				update: sandbox.stub().rejects(new Error('Update failed')),
+				has: sandbox.stub().returns(true),
+				inspect: sandbox.stub().returns(undefined)
+			} as any;
+
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'mkdirSync');
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+
+			// Wait for async operation
+			await new Promise(resolve => setTimeout(resolve, 10));
+
+			assert(showErrorStub.calledWith(sinon.match(/Failed to update tasks.json/)));
+		});
+
+		test('should handle JSON parsing errors in tasks.json', () => {
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'readFileSync').returns('invalid json');
+			sandbox.stub(fs, 'mkdirSync');
+
+			const mockConfiguration = {
+				get: sandbox.stub().returns([]),
+				update: sandbox.stub().resolves(),
+				has: sandbox.stub().returns(true),
+				inspect: sandbox.stub().returns(undefined)
+			} as any;
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
+
+			// Should not throw error, should handle gracefully
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			assert.ok(task);
+		});
+
+		test('should show appropriate error messages to user', () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			// Test with no workspace
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
+			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+
+			assert(showErrorStub.calledWith('No workspace folder is open.'));
 		});
 	});
 });

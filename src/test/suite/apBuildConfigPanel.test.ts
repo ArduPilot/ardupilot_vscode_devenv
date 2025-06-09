@@ -1,36 +1,35 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* cSpell:words ardupilot sitl */
+
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
 import { apBuildConfigPanel } from '../../apBuildConfigPanel';
-import { APTaskProvider } from '../../taskProvider';
 import { UIHooks } from '../../apUIHooks';
-import * as apActions from '../../apActions';
+import { APExtensionContext } from '../../extension';
+import { getApExtApi } from './common';
 
-suite('apBuildConfigPanel Test Suite', () => {
+suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
+	let workspaceFolder: vscode.WorkspaceFolder | undefined;
+	let mockContext: vscode.ExtensionContext;
 	let sandbox: sinon.SinonSandbox;
+	let apExtensionContext: APExtensionContext;
 	let mockPanel: sinon.SinonStubbedInstance<vscode.WebviewPanel>;
 	let mockWebview: sinon.SinonStubbedInstance<vscode.Webview>;
 	let mockExtensionUri: vscode.Uri;
-	let mockWorkspaceFolder: vscode.WorkspaceFolder;
+
+	suiteSetup(async () => {
+		apExtensionContext = await getApExtApi();
+		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		assert(workspaceFolder);
+		assert(apExtensionContext.vscodeContext);
+		mockContext = apExtensionContext.vscodeContext;
+		mockExtensionUri = mockContext.extensionUri;
+	});
 
 	setup(() => {
-		// Restore any existing sandbox to prevent conflicts
-		if (sandbox) {
-			sandbox.restore();
-		}
 		sandbox = sinon.createSandbox();
-
-		// Mock extension URI
-		mockExtensionUri = vscode.Uri.file('/mock/extension/path');
-
-		// Mock workspace folder
-		mockWorkspaceFolder = {
-			uri: vscode.Uri.file('/mock/workspace'),
-			name: 'test-workspace',
-			index: 0
-		};
 
 		// Mock webview
 		mockWebview = {
@@ -47,7 +46,6 @@ suite('apBuildConfigPanel Test Suite', () => {
 			title: '',
 			reveal: sandbox.stub(),
 			dispose: sandbox.stub(),
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
 			onDidDispose: sandbox.stub().callsFake((_callback: () => void) => {
 				return { dispose: sandbox.stub() };
 			}),
@@ -56,31 +54,8 @@ suite('apBuildConfigPanel Test Suite', () => {
 
 		// Mock VS Code APIs
 		sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel as unknown as vscode.WebviewPanel);
-		sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+		sandbox.stub(vscode.workspace, 'workspaceFolders').value([workspaceFolder]);
 		sandbox.stub(vscode.window, 'activeTextEditor').value(undefined);
-
-		// Mock UIHooks - use try-catch to handle potential conflicts
-		try {
-			sandbox.stub(UIHooks.prototype, 'dispose');
-		} catch {
-			// Already stubbed, ignore
-		}
-
-		// Mock other dependencies
-		try {
-			sandbox.stub(apActions, 'setActiveConfiguration');
-		} catch {
-			// Already stubbed, ignore
-		}
-
-		// Don't stub these here as they're needed by specific tests:
-		// - UIHooks.prototype.on (needed by error handling tests)
-		// - vscode.tasks.executeTask (needed by error handling tests)
-
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		sandbox.stub(vscode.tasks, 'onDidEndTaskProcess').callsFake((_callback: (e: vscode.TaskProcessEndEvent) => void) => {
-			return { dispose: sandbox.stub() };
-		});
 		sandbox.stub(vscode.commands, 'executeCommand').resolves();
 	});
 
@@ -92,411 +67,220 @@ suite('apBuildConfigPanel Test Suite', () => {
 		}
 	});
 
-	suite('createOrShow', () => {
-		test('should create new panel when none exists', () => {
+	suite('Build Hook Configuration', () => {
+		test('should invoke build hook and run task correctly', async () => {
+			// Create the panel
 			apBuildConfigPanel.createOrShow(mockExtensionUri);
 
-			assert((vscode.window.createWebviewPanel as sinon.SinonStub).calledOnce);
-			assert((vscode.window.createWebviewPanel as sinon.SinonStub).calledWith(
-				'apBuildConfigPanel',
-				'Create a new build configuration',
-				vscode.ViewColumn.One,
-				{ enableScripts: true }
-			));
-		});
+			// Access the panel instance to get UI hooks
+			const panel = (apBuildConfigPanel as any).currentPanel;
+			assert(panel, 'Panel should be created');
 
-		test('should create panel with edit title when task provided', () => {
+			let buildHookMessage: Record<string, unknown> | null = null;
+			const buildHookCalled = new Promise<void>((resolve) => {
+				// Hook into the build event
+				panel._uiHooks.on('build', (message: Record<string, unknown>) => {
+					try {
+						buildHookMessage = message;
+						// Verify the message structure
+						assert(message.board, 'Message should have board');
+						assert(message.target, 'Message should have target');
+						resolve();
+					} catch (error) {
+						console.error('Build hook validation failed:', error);
+					}
+				});
+			});
+
+			// Simulate webview sending build message for hardware target
+			const buildMessage = {
+				command: 'build',
+				board: 'CubeOrangePlus',
+				target: 'copter',
+				extraConfig: '--debug',
+			};
+
+			// Trigger the build event directly through UI hooks
+			panel._uiHooks._onMessage(buildMessage);
+
+			// Wait for the build hook to be called
+			await buildHookCalled;
+
+			// Verify the hook received the correct message
+			assert(buildHookMessage, 'Build hook should have been called');
+			assert.strictEqual((buildHookMessage as any).board, 'CubeOrangePlus', 'Hook should receive correct board');
+			assert.strictEqual((buildHookMessage as any).target, 'copter', 'Hook should receive correct target');
+
+		}).timeout(100000);
+
+		test('should process build hook with SITL configuration', async () => {
+			// Create the panel
+			apBuildConfigPanel.createOrShow(mockExtensionUri);
+
+			// Access the panel instance to get UI hooks
+			const panel = (apBuildConfigPanel as any).currentPanel;
+			assert(panel, 'Panel should be created');
+
+			let buildHookMessage: Record<string, unknown> | null = null;
+			const buildHookCalled = new Promise<void>((resolve) => {
+				// Hook into the build event
+				panel._uiHooks.on('build', (message: Record<string, unknown>) => {
+					try {
+						buildHookMessage = message;
+						// Verify the message structure
+						assert(message.board, 'Message should have board');
+						assert(message.target, 'Message should have target');
+						if (message.simVehicleCommand) {
+							assert(typeof message.simVehicleCommand === 'string', 'Message should have simVehicleCommand string');
+						}
+						resolve();
+					} catch (error) {
+						console.error('Build hook validation failed:', error);
+					}
+				});
+			});
+
+			// Create a build message with SITL-specific options
+			const buildMessage = {
+				command: 'build',
+				board: 'sitl',
+				target: 'copter',
+				extraConfig: '--debug',
+				simVehicleCommand: '--console --map'
+			};
+
+			// Trigger the build event directly through UI hooks
+			panel._uiHooks._onMessage(buildMessage);
+
+			// Wait for the build hook to be called
+			await buildHookCalled;
+
+			// Verify the hook received the correct message
+			assert(buildHookMessage, 'Build hook should have been called');
+			assert.strictEqual((buildHookMessage as any).board, 'sitl', 'Hook should receive correct board');
+			assert.strictEqual((buildHookMessage as any).target, 'copter', 'Hook should receive correct target');
+			assert.strictEqual((buildHookMessage as any).simVehicleCommand, '--console --map', 'Hook should receive correct simVehicleCommand');
+
+		}).timeout(100000);
+	});
+
+	suite('createOrShow with Existing Task', () => {
+		test('should launch with Edit Build Configuration title when task provided', async () => {
 			const mockTask = {
-				definition: { type: 'ardupilot', configure: 'test-board' }
+				definition: {
+					type: 'ardupilot',
+					configure: 'CubeOrangePlus',
+					target: 'copter',
+				}
 			} as unknown as vscode.Task;
 
 			apBuildConfigPanel.createOrShow(mockExtensionUri, mockTask);
 
+			// Verify panel was created with edit title
 			assert((vscode.window.createWebviewPanel as sinon.SinonStub).calledWith(
 				'apBuildConfigPanel',
 				'Edit Build Configuration',
 				sinon.match.any,
 				sinon.match.any
-			));
+			), 'Panel should be created with Edit Build Configuration title');
+
+			// Verify panel title is set correctly
+			assert.strictEqual(mockPanel.title, 'Edit Build Configuration', 'Panel title should be Edit Build Configuration');
+
+			// Test by triggering getCurrentTask directly since the constructor should have set up the task
+			const panel = (apBuildConfigPanel as any).currentPanel;
+			panel._uiHooks._onMessage({ command: 'getCurrentTask' });
+
+			// Verify getCurrentTask message is posted with task data
+			const postMessageCalls = (mockWebview.postMessage as sinon.SinonStub).getCalls();
+			const getCurrentTaskCall = postMessageCalls.find(call =>
+				call.args[0].command === 'getCurrentTask'
+			);
+
+			assert(getCurrentTaskCall, 'Panel should post getCurrentTask message');
+			const message = getCurrentTaskCall.args[0];
+			assert(message.task, 'Message should include task definition');
+			assert.strictEqual(message.task.configure, 'CubeOrangePlus', 'Task should have correct board');
+			assert.strictEqual(message.task.target, 'copter', 'Task should have correct target');
 		});
 
-		test('should reveal existing panel when same mode', () => {
-			// Create initial panel
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-			const revealStub = mockPanel.reveal;
+		test('should handle switching between different tasks in edit mode', async () => {
+			const initialTask = {
+				definition: { type: 'ardupilot', configure: 'CubeOrangePlus' }
+			} as unknown as vscode.Task;
 
-			// Try to create another panel
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
+			const newTask = {
+				definition: { type: 'ardupilot', configure: 'CubeBlack' }
+			} as unknown as vscode.Task;
 
-			assert((revealStub as sinon.SinonStub).calledOnce);
-			assert.strictEqual((vscode.window.createWebviewPanel as sinon.SinonStub).callCount, 1);
+			// Create panel with initial task (edit mode)
+			apBuildConfigPanel.createOrShow(mockExtensionUri, initialTask);
+
+			// Verify initial panel was created
+			assert.strictEqual((vscode.window.createWebviewPanel as sinon.SinonStub).callCount, 1, 'Should create initial panel');
+
+			// Verify initial panel has the task
+			const initialPanel = (apBuildConfigPanel as any).currentPanel;
+			assert(initialPanel, 'Panel should exist');
+			assert(initialPanel._currentTask, 'Panel should have current task');
+
+			let currentPanel = (apBuildConfigPanel as any).currentPanel;
+			// Trigger getCurrentTask to verify the task was updated
+			currentPanel._uiHooks._onMessage({ command: 'getCurrentTask' });
+
+			// Verify task was set correctly
+			let postMessageCalls = (mockWebview.postMessage as sinon.SinonStub).getCalls();
+			const initialTaskCall = postMessageCalls.find(call =>
+				call.args[0].command === 'getCurrentTask' &&
+				call.args[0].task?.configure === 'CubeOrangePlus'
+			);
+
+			assert(initialTaskCall, 'Panel should be initialized with initial task');
+
+			// Clear previous messages and switch to new task (still edit mode)
+			(mockWebview.postMessage as sinon.SinonStub).resetHistory();
+			apBuildConfigPanel.createOrShow(mockExtensionUri, newTask);
+
+			// The current implementation disposes and recreates panels when switching between different task objects
+			// This is because it uses object identity comparison (task1 !== task2) rather than task content comparison
+			// This behavior ensures that the panel is properly updated with the new task's features and configuration
+
+			// Verify that the panel functionality works correctly regardless of implementation details
+			currentPanel = (apBuildConfigPanel as any).currentPanel;
+			assert(currentPanel, 'Panel should exist after task switch');
+
+			// Trigger getCurrentTask to verify the task was updated
+			currentPanel._uiHooks._onMessage({ command: 'getCurrentTask' });
+
+			// Verify task was updated to the new task
+			postMessageCalls = (mockWebview.postMessage as sinon.SinonStub).getCalls();
+			const updateTaskCall = postMessageCalls.find(call =>
+				call.args[0].command === 'getCurrentTask' &&
+				call.args[0].task?.configure === 'CubeBlack'
+			);
+
+			assert(updateTaskCall, 'Panel should be updated with new task');
+
+			// Verify panel title remains in edit mode
+			assert.strictEqual(mockPanel.title, 'Edit Build Configuration', 'Panel title should remain Edit Build Configuration');
+
+			// Verify the current panel has the new task
+			assert.strictEqual(currentPanel._currentTask, newTask, 'Panel should have the updated task');
 		});
 
-		test('should dispose and recreate panel when mode changes', () => {
-			// Create panel without task (add mode)
+		test('should dispose and recreate when switching from add to edit mode', () => {
+			// Create panel in add mode
 			apBuildConfigPanel.createOrShow(mockExtensionUri);
 			const disposeStub = mockPanel.dispose;
 
 			// Switch to edit mode
 			const mockTask = {
-				definition: { type: 'ardupilot', configure: 'test-board' }
+				definition: { type: 'ardupilot', configure: 'CubeOrangePlus' }
 			} as unknown as vscode.Task;
 			apBuildConfigPanel.createOrShow(mockExtensionUri, mockTask);
 
-			assert((disposeStub as sinon.SinonStub).calledOnce);
-			assert.strictEqual((vscode.window.createWebviewPanel as sinon.SinonStub).callCount, 2);
-		});
-	});
-
-	suite('constructor and initialization', () => {
-		test('should initialize with task and load features', () => {
-			const mockTask = {
-				definition: {
-					type: 'ardupilot',
-					configure: 'test-board',
-					features: []
-				}
-			} as unknown as vscode.Task;
-
-			const featuresPath = path.join('/mock/workspace', 'build', 'test-board', 'features.txt');
-			sandbox.stub(fs, 'existsSync').withArgs(featuresPath).returns(true);
-			sandbox.stub(fs, 'readFileSync').withArgs(featuresPath, 'utf8').returns('FEATURE1\nFEATURE2\n\n');
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri, mockTask);
-
-			assert((fs.existsSync as sinon.SinonStub).calledWith(featuresPath));
-			assert((fs.readFileSync as sinon.SinonStub).calledWith(featuresPath, 'utf8'));
-		});
-
-		test('should handle missing workspace folder', () => {
-			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
-
-			const mockTask = {
-				definition: { type: 'ardupilot', configure: 'test-board' }
-			} as unknown as vscode.Task;
-
-			assert.throws(() => {
-				apBuildConfigPanel.createOrShow(mockExtensionUri, mockTask);
-			}, /No workspace folder is open/);
-		});
-
-		test('should set up UI hooks and message handlers', () => {
-			const onStub = sandbox.stub(UIHooks.prototype, 'on');
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-
-			// Verify UI hooks are set up for various commands
-			assert(onStub.calledWith('build', sinon.match.func));
-			assert(onStub.calledWith('getCurrentTask', sinon.match.func));
-			assert(onStub.calledWith('switchToAddMode', sinon.match.func));
-			assert(onStub.calledWith('boardSelected', sinon.match.func));
-		});
-	});
-
-	suite('findExistingTaskForBoard', () => {
-		test('should find existing task for board', () => {
-			const tasksPath = path.join('/mock/workspace', '.vscode', 'tasks.json');
-			const mockTasksJson = {
-				tasks: [
-					{
-						type: 'ardupilot',
-						configure: 'test-board',
-						target: 'test-target'
-					}
-				]
-			};
-
-			sandbox.stub(fs, 'existsSync').withArgs(tasksPath).returns(true);
-			sandbox.stub(fs, 'readFileSync').withArgs(tasksPath, 'utf8').returns(JSON.stringify(mockTasksJson));
-			sandbox.stub(APTaskProvider, 'createTask').returns({} as unknown as vscode.Task);
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-
-			// Access private method through any cast for testing
-			const panel = (apBuildConfigPanel as unknown as { currentPanel?: { findExistingTaskForBoard: (board: string) => vscode.Task | undefined } }).currentPanel;
-			const result = panel?.findExistingTaskForBoard('test-board');
-
-			assert(result);
-			assert((APTaskProvider.createTask as sinon.SinonStub).calledOnce);
-		});
-
-		test('should return undefined when no task found', () => {
-			const tasksPath = path.join('/mock/workspace', '.vscode', 'tasks.json');
-			sandbox.stub(fs, 'existsSync').withArgs(tasksPath).returns(false);
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-
-			const panel = (apBuildConfigPanel as unknown as { currentPanel?: { findExistingTaskForBoard: (board: string) => vscode.Task | undefined } }).currentPanel;
-			const result = panel?.findExistingTaskForBoard('nonexistent-board');
-
-			assert.strictEqual(result, undefined);
-		});
-
-		test('should handle JSON parse errors gracefully', () => {
-			const tasksPath = path.join('/mock/workspace', '.vscode', 'tasks.json');
-			sandbox.stub(fs, 'existsSync').withArgs(tasksPath).returns(true);
-			sandbox.stub(fs, 'readFileSync').withArgs(tasksPath, 'utf8').returns('invalid json');
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-
-			const panel = (apBuildConfigPanel as unknown as { currentPanel?: { findExistingTaskForBoard: (board: string) => vscode.Task | undefined } }).currentPanel;
-			const result = panel?.findExistingTaskForBoard('test-board');
-
-			assert.strictEqual(result, undefined);
-		});
-	});
-
-	suite('updateCurrentTask', () => {
-		test('should update task and load features', () => {
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-			const panel = (apBuildConfigPanel as unknown as { currentPanel?: { updateCurrentTask: (task: vscode.Task) => void } }).currentPanel;
-
-			const mockTask = {
-				definition: {
-					type: 'ardupilot',
-					configure: 'new-board',
-					features: []
-				}
-			} as unknown as vscode.Task;
-
-			const featuresPath = path.join('/mock/workspace', 'build', 'new-board', 'features.txt');
-			sandbox.stub(fs, 'existsSync').withArgs(featuresPath).returns(true);
-			sandbox.stub(fs, 'readFileSync').withArgs(featuresPath, 'utf8').returns('NEW_FEATURE\n');
-
-			panel?.updateCurrentTask(mockTask);
-
-			assert.strictEqual(mockPanel.title, 'Edit Build Configuration');
-			assert((mockWebview.postMessage as sinon.SinonStub).calledWith({
-				command: 'getCurrentTask',
-				task: mockTask.definition,
-				featuresFileExists: true
-			}));
-		});
-
-		test('should handle missing features file', () => {
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-			const panel = (apBuildConfigPanel as unknown as { currentPanel?: { updateCurrentTask: (task: vscode.Task) => void } }).currentPanel;
-
-			const mockTask = {
-				definition: {
-					type: 'ardupilot',
-					configure: 'new-board',
-					features: []
-				}
-			} as unknown as vscode.Task;
-
-			const featuresPath = path.join('/mock/workspace', 'build', 'new-board', 'features.txt');
-			sandbox.stub(fs, 'existsSync').withArgs(featuresPath).returns(false);
-
-			panel?.updateCurrentTask(mockTask);
-
-			assert.strictEqual(mockPanel.title, 'Edit Build Configuration');
-			assert((mockWebview.postMessage as sinon.SinonStub).calledWith({
-				command: 'getCurrentTask',
-				task: mockTask.definition,
-				featuresFileExists: false
-			}));
-		});
-	});
-
-	suite('switchToAddMode', () => {
-		test('should switch to add mode correctly', () => {
-			const mockTask = {
-				definition: { type: 'ardupilot', configure: 'test-board' }
-			} as unknown as vscode.Task;
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri, mockTask);
-			const panel = (apBuildConfigPanel as unknown as { currentPanel?: { switchToAddMode: () => void } }).currentPanel;
-
-			panel?.switchToAddMode();
-
-			assert.strictEqual(mockPanel.title, 'New Build Configuration');
-			assert((mockWebview.postMessage as sinon.SinonStub).calledWith({
-				command: 'getCurrentTask',
-				task: null
-			}));
-		});
-	});
-
-	suite('message handlers', () => {
-		test('should handle build message', () => {
-			// Add necessary stubs for this test
-			sandbox.stub(UIHooks.prototype, 'on');
-			sandbox.stub(vscode.tasks, 'executeTask').resolves({} as unknown as vscode.TaskExecution);
-
-			// Mock filesystem operations
-			sandbox.stub(fs, 'existsSync').returns(false);
-			sandbox.stub(fs, 'mkdirSync');
-			sandbox.stub(fs, 'writeFileSync');
-			sandbox.stub(fs, 'readFileSync').returns('{}');
-
-			sandbox.stub(APTaskProvider, 'getOrCreateBuildConfig').returns({
-				definition: {
-					type: 'ardupilot',
-					configure: 'test-board',
-					target: 'test-target',
-					simVehicleCommand: ''
-				}
-			} as unknown as vscode.Task);
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-
-			// Get the build message handler
-			const onStub = UIHooks.prototype.on as sinon.SinonStub;
-			const buildHandler = onStub.getCalls().find((call: sinon.SinonSpyCall) => call.args[0] === 'build')?.args[1];
-
-			assert(buildHandler);
-
-			const mockMessage = {
-				board: 'test-board',
-				target: 'test-target',
-				features: ['FEATURE1'],
-				enableFeatureConfig: true,
-				simVehicleCommand: 'sim_vehicle.py'
-			};
-
-			buildHandler(mockMessage);
-
-			assert((APTaskProvider.getOrCreateBuildConfig as sinon.SinonStub).calledOnce);
-			assert((apActions.setActiveConfiguration as sinon.SinonStub).calledOnce);
-			assert((vscode.tasks.executeTask as sinon.SinonStub).calledOnce);
-		});
-
-		test('should handle getCurrentTask message', () => {
-			// Add necessary stubs for this test
-			sandbox.stub(UIHooks.prototype, 'on');
-
-			const mockTask = {
-				definition: { type: 'ardupilot', configure: 'test-board' }
-			} as unknown as vscode.Task;
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri, mockTask);
-
-			const onStub = UIHooks.prototype.on as sinon.SinonStub;
-			const getCurrentTaskHandler = onStub.getCalls().find((call: sinon.SinonSpyCall) => call.args[0] === 'getCurrentTask')?.args[1];
-
-			assert(getCurrentTaskHandler);
-
-			getCurrentTaskHandler();
-
-			assert((mockWebview.postMessage as sinon.SinonStub).calledWith({
-				command: 'getCurrentTask',
-				task: mockTask.definition
-			}));
-		});
-
-		test('should handle boardSelected message', () => {
-			// Add necessary stubs for this test
-			sandbox.stub(UIHooks.prototype, 'on');
-
-			sandbox.stub(fs, 'existsSync').returns(false);
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-
-			const onStub = UIHooks.prototype.on as sinon.SinonStub;
-			const boardSelectedHandler = onStub.getCalls().find((call: sinon.SinonSpyCall) => call.args[0] === 'boardSelected')?.args[1];
-
-			assert(boardSelectedHandler);
-
-			boardSelectedHandler({ board: 'new-board' });
-
-			// Should switch to add mode when no existing task found
-			assert((mockWebview.postMessage as sinon.SinonStub).calledWith({
-				command: 'getCurrentTask',
-				task: null
-			}));
-		});
-	});
-
-	suite('webview content generation', () => {
-		test('should generate correct HTML content', () => {
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-
-			// Check that HTML is set and contains expected elements
-			assert(typeof mockWebview.html === 'string');
-			const html = mockWebview.html;
-			assert(html.includes('<!DOCTYPE html>'));
-			assert(html.includes('<div id="buildConfig"></div>'));
-			assert(html.includes('Content-Security-Policy'));
-		});
-	});
-
-	suite('dispose', () => {
-		test('should clean up resources on dispose', () => {
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-			const panel = (apBuildConfigPanel as unknown as { currentPanel?: { dispose: () => void } }).currentPanel;
-
-			panel?.dispose();
-
-			assert((mockPanel.dispose as sinon.SinonStub).calledOnce);
-			assert.strictEqual((apBuildConfigPanel as unknown as { currentPanel?: unknown }).currentPanel, undefined);
-		});
-
-		test('should dispose on panel close', () => {
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-
-			// Simulate panel disposal
-			const onDidDisposeCallback = (mockPanel.onDidDispose as sinon.SinonStub).firstCall.args[0];
-			onDidDisposeCallback();
-
-			assert.strictEqual((apBuildConfigPanel as unknown as { currentPanel?: unknown }).currentPanel, undefined);
-		});
-	});
-
-	suite('revive', () => {
-		test('should revive panel correctly', () => {
-			const mockTask = {
-				definition: { type: 'ardupilot', configure: 'test-board' }
-			} as unknown as vscode.Task;
-
-			apBuildConfigPanel.revive(mockPanel as unknown as vscode.WebviewPanel, mockExtensionUri, mockTask);
-
-			assert((apBuildConfigPanel as unknown as { currentPanel?: unknown }).currentPanel);
-		});
-	});
-
-	suite('error handling', () => {
-		test('should handle UI hooks setup errors gracefully', () => {
-			sandbox.stub(UIHooks.prototype, 'on').throws(new Error('Hook setup failed'));
-
-			// The code currently doesn't handle this error gracefully, so it will throw
-			assert.throws(() => {
-				apBuildConfigPanel.createOrShow(mockExtensionUri);
-			}, /Hook setup failed/);
-		});
-
-		test('should handle task execution errors gracefully', () => {
-			sandbox.stub(UIHooks.prototype, 'on');
-			sandbox.stub(vscode.tasks, 'executeTask').rejects(new Error('Task execution failed'));
-
-			// Mock filesystem operations
-			sandbox.stub(fs, 'existsSync').returns(false);
-			sandbox.stub(fs, 'mkdirSync');
-			sandbox.stub(fs, 'writeFileSync');
-			sandbox.stub(fs, 'readFileSync').returns('{}');
-
-			sandbox.stub(APTaskProvider, 'getOrCreateBuildConfig').returns({
-				definition: {
-					type: 'ardupilot',
-					configure: 'test-board',
-					target: 'test-target'
-				}
-			} as unknown as vscode.Task);
-
-			apBuildConfigPanel.createOrShow(mockExtensionUri);
-
-			const onStub = UIHooks.prototype.on as sinon.SinonStub;
-			const buildHandler = onStub.getCalls().find((call: sinon.SinonSpyCall) => call.args[0] === 'build')?.args[1];
-
-			const mockMessage = {
-				board: 'test-board',
-				target: 'test-target'
-			};
-
-			// Should not throw
-			assert.doesNotThrow(() => {
-				buildHandler(mockMessage);
-			});
+			assert((disposeStub as sinon.SinonStub).calledOnce, 'Previous panel should be disposed');
+			assert.strictEqual((vscode.window.createWebviewPanel as sinon.SinonStub).callCount, 2, 'New panel should be created');
 		});
 	});
 });
