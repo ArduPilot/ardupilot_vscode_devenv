@@ -61,6 +61,9 @@ jobs:
           # Install optional tools
           sudo apt-get install -y openocd gdbserver
           
+          # Install virtual display for VSCode extension testing
+          sudo apt-get install -y xvfb
+          
           # Install J-Link from local package
           sudo dpkg -i ci-tools/JLink_Linux_V788g_x86_64.deb || sudo apt-get install -f -y
           
@@ -130,7 +133,12 @@ jobs:
         run: npm run compile
 
       - name: Run test suite - ${{ matrix.test-suite }}
-        run: npm run test:${{ matrix.test-suite }}
+        run: |
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            xvfb-run -a npm run test:${{ matrix.test-suite }}
+          else
+            npm run test:${{ matrix.test-suite }}
+          fi
 
       - name: Upload test results
         if: failure()
@@ -171,6 +179,9 @@ jobs:
           # Install optional tools
           sudo apt-get install -y openocd gdbserver
           
+          # Install virtual display for VSCode extension testing
+          sudo apt-get install -y xvfb
+          
           # Install J-Link from local package
           sudo dpkg -i ci-tools/JLink_Linux_V788g_x86_64.deb || sudo apt-get install -f -y
           
@@ -204,7 +215,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           source venv/bin/activate
-          npm run test:coverage
+          xvfb-run -a npm run test:coverage
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
