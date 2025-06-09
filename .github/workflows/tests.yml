@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         test-suite: [
           runner1-config-build,
           runner2-actions-execution,
@@ -31,29 +31,63 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: matrix.os != 'windows-latest'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
+
+      - name: Setup WSL2 (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: Vampire/setup-wsl@v5
+        with:
+          wsl-version: 2
+          distribution: Ubuntu-22.04
+
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
           # Update package lists
-          sudo apt-get update
+          sudo apt update
           
           # Install core development tools
-          sudo apt-get install -y gcc g++ gdb ccache tmux python3 python3-pip
+          sudo apt install -y gcc g++ gdb ccache tmux python3 python3-pip
           
           # Install ARM cross-compilation toolchain
-          sudo apt-get install -y gcc-arm-none-eabi gdb-multiarch
+          sudo apt install -y gcc-arm-none-eabi gdb-multiarch
           
           # Install optional tools
-          sudo apt-get install -y openocd gdbserver
+          sudo apt install -y openocd gdbserver
           
           # Install virtual display for VSCode extension testing
-          sudo apt-get install -y xvfb
+          sudo apt install -y xvfb
+
+      - name: Install system dependencies (Windows/WSL2)
+        if: matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
+        run: |
+          # Update package lists
+          sudo apt update
           
+          # Install core development tools
+          sudo apt install -y gcc g++ gdb ccache tmux python3 python3-pip
+          
+          # Install ARM cross-compilation toolchain
+          sudo apt install -y gcc-arm-none-eabi gdb-multiarch
+          
+          # Install optional tools
+          sudo apt install -y openocd gdbserver
+          
+          # Install virtual display for VSCode extension testing
+          sudo apt install -y xvfb
+          
+          # Install NSS libraries for Electron/VSCode extension testing
+          sudo apt install -y libnss3 libnss3-dev libatk-bridge2.0-0 libdrm2 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libxss1 libasound2 libgtk-3-0
+      
+      - name: Install JLink (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
           # Install J-Link from local package
           sudo dpkg -i ci-tools/JLink_Linux_V788g_x86_64.deb || sudo apt-get install -f -y
           
@@ -72,6 +106,33 @@ jobs:
           # Add J-Link to PATH
           echo "/Applications/SEGGER/JLink" >> $GITHUB_PATH
 
+      - name: Install node (WSL2)
+        if: matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
+        run: |
+          # Unset npm_config_prefix to avoid conflicts with nvm
+          unset npm_config_prefix
+
+          # Download and install nvm:
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+          # in lieu of restarting the shell
+          \. "$HOME/.nvm/nvm.sh"
+          # Download and install Node.js:
+          nvm install 22
+          node --version
+          npm --version
+          # Add Node.js to PATH
+          echo '. "$HOME/.nvm/nvm.sh"' >> ~/.bashrc
+
+      - name: Install J-Link (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          # Install J-Link from local package
+          .\ci-tools\JLink_Windows_V840_x86_64.exe /S
+          
+          # Add J-Link to PATH for Windows
+          echo "C:\Program Files\SEGGER\JLink" >> $env:GITHUB_PATH
+
       - name: Setup Python virtual environment (macOS)
         if: matrix.os == 'macos-latest'
         run: |
@@ -81,7 +142,8 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/venv" >> $GITHUB_ENV
           echo "$PWD/venv/bin" >> $GITHUB_PATH
 
-      - name: Install Python packages
+      - name: Install Python packages (Unix)
+        if: matrix.os != 'windows-latest'
         run: |
           if [ "${{ matrix.os }}" == "macos-latest" ]; then
             source venv/bin/activate
@@ -89,7 +151,38 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install pyserial mavproxy
 
-      - name: Verify tool installation
+      - name: Verify tool installation (WSL2)
+        if: matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
+        run: |
+          \. "$HOME/.nvm/nvm.sh"
+          echo "=== Tool Verification in WSL2 ==="
+          python3 --version
+          gcc --version | head -1
+          g++ --version | head -1
+          gdb --version | head -1
+          arm-none-eabi-gcc --version | head -1
+          ccache --version | head -1
+          tmux -V
+          openocd --version 2>&1 | head -1
+
+          node --version
+          npm --version
+
+      - name: Verify J-Link installation (Windows Host)
+        if: matrix.os == 'windows-latest'
+        run: |
+          echo "=== J-Link Verification on Windows Host ==="
+          if (Test-Path "C:\Program Files\SEGGER\JLink\JLinkGDBServerCLExe.exe") {
+            echo "J-Link found at: C:\Program Files\SEGGER\JLink\JLinkGDBServerCLExe.exe"
+            & "C:\Program Files\SEGGER\JLink\JLinkGDBServerCLExe.exe" -version 2>&1 | Select-Object -First 3
+          } else {
+            echo "J-Link not found at expected location"
+          }
+          echo "=== J-Link Verification Complete ==="
+
+      - name: Verify tool installation (Unix)
+        if: matrix.os != 'windows-latest'
         run: |
           if [ "${{ matrix.os }}" == "macos-latest" ]; then
             source venv/bin/activate
@@ -107,21 +200,67 @@ jobs:
           which JLinkGDBServerCLExe || echo "JLinkGDBServerCLExe not in PATH"
           find /opt/SEGGER /Applications/SEGGER -name "JLinkGDBServerCLExe" 2>/dev/null || echo "J-Link: Manual path search"
           JLinkGDBServerCLExe -version 2>&1 | head -3 || echo "J-Link: Version check (may fail normally)"
-          echo "=== Python Packages ==="
-          python3 -c "import serial; print('PySerial version:', serial.__version__)"
-          mavproxy.py --version 2>&1 | head -1 || echo "MAVProxy: Version check"
-          echo "=== Verification Complete ==="
 
-      - name: Install npm dependencies
+      - name: Install npm dependencies (WSL2)
+        if: matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
+        run: |
+          \. "$HOME/.nvm/nvm.sh"
+          npm ci
+      
+      - name: Install webview dependencies (WSL2)
+        if: matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
+        run: |
+          \. "$HOME/.nvm/nvm.sh"
+          cd webview-ui && npm ci && cd ..
+      
+      - name: Compile TypeScript (WSL2)
+        if: matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
+        run: |
+          \. "$HOME/.nvm/nvm.sh"
+          npm run compile
+
+      - name: Install npm dependencies (Unix)
+        if: matrix.os != 'windows-latest'
         run: npm ci
       
-      - name: Install webview dependencies
+      - name: Install webview dependencies (Unix)
+        if: matrix.os != 'windows-latest'
         run: cd webview-ui && npm ci && cd ..
       
-      - name: Compile TypeScript
+      - name: Compile TypeScript (Unix)
+        if: matrix.os != 'windows-latest'
         run: npm run compile
 
-      - name: Run test suite - ${{ matrix.test-suite }}
+      - name: Run test suite - ${{ matrix.test-suite }} (WSL2)
+        if: matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
+        run: |
+          \. "$HOME/.nvm/nvm.sh"
+          case "${{ matrix.test-suite }}" in
+            "runner1-config-build")
+              SUITES="apBuildConfig apBuildConfigPanel apToolsConfig taskProvider"
+              ;;
+            "runner2-actions-execution")
+              SUITES="apActions apLaunch apProgramUtils"
+              ;;
+            "runner3-environment-setup")
+              SUITES="apCloneArdupilot apEnvironmentValidator apConnectedDevices"
+              ;;
+            "runner4-ui-welcome")
+              SUITES="apUIHooks apWelcomeItem apWelcomeProvider apLog"
+              ;;
+          esac
+          
+          for suite in $SUITES; do
+            echo "Running test suite: $suite"
+            xvfb-run -a npm run test:$suite
+          done
+
+      - name: Run test suite - ${{ matrix.test-suite }} (Unix)
+        if: matrix.os != 'windows-latest'
         run: |
           case "${{ matrix.test-suite }}" in
             "runner1-config-build")
