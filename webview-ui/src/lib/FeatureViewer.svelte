@@ -1,5 +1,6 @@
 <script lang="ts">
   import "@vscode-elements/elements/dist/vscode-button/index.js";
+  import "@vscode-elements/elements/dist/vscode-textfield/index.js";
 
   let { vscodeHooks, board = "", target = "" } = $props();
   let features = $state<string[]>([]);
@@ -7,11 +8,49 @@
   let loading = $state(false);
   let error = $state("");
   let featureDefinitions = $state<any[]>([]);
+  let filterText = $state("");
 
   let extractButton: any = $state(null);
+  let filterInput: any = $state(null);
+
+  let filteredFeatureGroups = $derived.by(() => {
+    if (!filterText.trim()) {
+      return featureGroups;
+    }
+
+    const searchTerm = filterText.toLowerCase().trim();
+    
+    return featureGroups
+      .map(group => {
+        // Filter features within the group
+        const filteredFeatures = group.features.filter(feature => {
+          const featureName = getFeatureName(feature.definition).toLowerCase();
+          const defineName = feature.definition.define.toLowerCase();
+          const categoryName = group.category.toLowerCase();
+          
+          return featureName.includes(searchTerm) || 
+                 defineName.includes(searchTerm) ||
+                 categoryName.includes(searchTerm);
+        });
+
+        // Only include groups that have matching features or matching category name
+        if (filteredFeatures.length > 0 || group.category.toLowerCase().includes(searchTerm)) {
+          return {
+            ...group,
+            features: filteredFeatures.length > 0 ? filteredFeatures : group.features,
+            enableState: calculateGroupEnableState(filteredFeatures.length > 0 ? filteredFeatures : group.features)
+          };
+        }
+        return null;
+      })
+      .filter(group => group !== null);
+  });
 
   $effect(() => {
     extractButton?.addEventListener("click", extractFeatures);
+    filterInput?.addEventListener("input", () => {
+      filterText = filterInput.value;
+    });
     loadFeatureDefinitions();
   });
 
@@ -155,6 +194,16 @@
     {/if}
   </div>
 
+  {#if featureGroups.length > 0}
+    <div class="filter-section">
+      <vscode-textfield 
+        bind:this={filterInput}
+        placeholder="Filter features by name, category, or define..."
+        class="filter-input"
+      ></vscode-textfield>
+    </div>
+  {/if}
+
   {#if error}
     <div class="error-message">
       <p>{error}</p>
@@ -163,9 +212,15 @@
 
   {#if featureGroups.length > 0}
     <div class="features-list">
-      <p class="features-count">{features.length} features found in {featureGroups.length} categories:</p>
+      <p class="features-count">
+        {#if filterText}
+          Showing {filteredFeatureGroups.reduce((sum, g) => sum + g.features.length, 0)} of {features.length} features in {filteredFeatureGroups.length} categories
+        {:else}
+          {features.length} features found in {featureGroups.length} categories:
+        {/if}
+      </p>
       <div class="feature-groups">
-        {#each featureGroups as group}
+        {#each filteredFeatureGroups as group}
           <div class="feature-group">
             <div class="group-header">
               <div class="group-indicator {group.enableState}"></div>
@@ -180,6 +235,12 @@
               {/each}
             </div>
           </div>
+        {:else}
+          {#if filterText}
+            <div class="no-results">
+              <p>No features match "{filterText}"</p>
+            </div>
+          {/if}
         {/each}
       </div>
     </div>
@@ -200,6 +261,14 @@
 
   .extract-section {
     margin-bottom: 15px;
+  }
+
+  .filter-section {
+    margin-bottom: 15px;
+  }
+
+  .filter-input {
+    width: 100%;
   }
 
   .info-text {
@@ -229,6 +298,17 @@
   }
 
   .info-message p {
+    margin: 0;
+  }
+
+  .no-results {
+    color: var(--vscode-descriptionForeground);
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+  }
+
+  .no-results p {
     margin: 0;
   }
 
