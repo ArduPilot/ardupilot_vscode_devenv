@@ -2,13 +2,14 @@
   import "@vscode-elements/elements/dist/vscode-button/index.js";
   import "@vscode-elements/elements/dist/vscode-textfield/index.js";
 
-  let { vscodeHooks, board = "", target = "" } = $props();
+  let { vscodeHooks, board = "", target = "", featureConfig = $bindable("") } = $props();
   let features = $state<string[]>([]);
   let featureGroups = $state<{category: string, features: any[], enableState: 'all' | 'some' | 'none'}[]>([]);
   let loading = $state(false);
   let error = $state("");
   let featureDefinitions = $state<any[]>([]);
   let filterText = $state("");
+  let featureStates = $state(new Map()); // Track enable/disable/reset state
 
   let extractButton: any = $state(null);
   let filterInput: any = $state(null);
@@ -52,6 +53,10 @@
       filterText = filterInput.value;
     });
     loadFeatureDefinitions();
+  });
+
+  $effect(() => {
+    parseExistingFeatureConfig();
   });
 
   async function loadFeatureDefinitions() {
@@ -179,6 +184,71 @@
     }
     return featureDef.define.replace(/^AP_/, '').replace(/_/g, ' ');
   }
+
+  function parseExistingFeatureConfig() {
+    featureStates.clear();
+    
+    if (!featureConfig) return;
+    
+    // Parse existing flags from featureConfig
+    const flags = featureConfig.split(/\s+/).filter(flag => flag.trim());
+    
+    flags.forEach(flag => {
+      if (flag.startsWith('--enable-')) {
+        const featureName = flag.replace('--enable-', '');
+        featureStates.set(featureName, 'enabled');
+      } else if (flag.startsWith('--disable-')) {
+        const featureName = flag.replace('--disable-', '');
+        featureStates.set(featureName, 'disabled');
+      }
+    });
+  }
+  
+  function getFeatureState(feature: any): 'enabled' | 'disabled' | 'default' {
+    // Use the exact label from build_options.py with spaces replaced by hyphens
+    const configOption = feature.label.replace(/\s+/g, '-');
+    return featureStates.get(configOption) || 'default';
+  }
+  
+  function toggleFeature(feature: any, action: 'enable' | 'disable' | 'reset') {
+    // Use the exact label from build_options.py with spaces replaced by hyphens
+    const configOption = feature.label.replace(/\s+/g, '-');
+    
+    if (action === 'reset') {
+      featureStates.delete(configOption);
+    } else {
+      featureStates.set(configOption, action === 'enable' ? 'enabled' : 'disabled');
+    }
+    
+    // Trigger reactivity
+    featureStates = new Map(featureStates);
+    
+    // Generate new feature config string
+    updateFeatureConfig();
+  }
+  
+  function updateFeatureConfig() {
+    const flags: string[] = [];
+    
+    featureStates.forEach((state, configOption) => {
+      if (state === 'enabled') {
+        flags.push(`--enable-${configOption}`);
+      } else if (state === 'disabled') {
+        flags.push(`--disable-${configOption}`);
+      }
+    });
+    
+    featureConfig = flags.join(' ');
+  }
+  
+  function bulkToggleCategory(category: string, action: 'enable' | 'disable' | 'reset') {
+    // Find features in this category from featureDefinitions
+    const categoryFeatures = featureDefinitions.filter(f => f.category === category);
+    
+    categoryFeatures.forEach(feature => {
+      toggleFeature(feature, action);
+    });
+  }
 </script>
 
 <div class="feature-viewer">
@@ -225,12 +295,64 @@
             <div class="group-header">
               <div class="group-indicator {group.enableState}"></div>
               <span class="group-title">{group.category} ({group.features.length})</span>
+              <div class="group-controls">
+                <vscode-button 
+                  role="button"
+                  tabindex="0"
+                  class="control-button enable-button"
+                  title="Enable all features in {group.category}"
+                  onclick={() => bulkToggleCategory(group.category, 'enable')}
+                  onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); bulkToggleCategory(group.category, 'enable'); } }}
+                >+</vscode-button>
+                <vscode-button 
+                  role="button"
+                  tabindex="0"
+                  class="control-button disable-button" 
+                  title="Disable all features in {group.category}"
+                  onclick={() => bulkToggleCategory(group.category, 'disable')}
+                  onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); bulkToggleCategory(group.category, 'disable'); } }}
+                >-</vscode-button>
+                <vscode-button 
+                  role="button"
+                  tabindex="0"
+                  class="control-button reset-button"
+                  title="Reset all features in {group.category} to defaults"
+                  onclick={() => bulkToggleCategory(group.category, 'reset')}
+                  onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); bulkToggleCategory(group.category, 'reset'); } }}
+                >↻</vscode-button>
+              </div>
             </div>
             <div class="features-grid">
               {#each group.features as feature}
                 <div class="feature-item">
                   <div class="feature-indicator {feature.status}"></div>
                   <span class="feature-name">{getFeatureName(feature.definition)}</span>
+                  <div class="feature-controls">
+                    <vscode-button 
+                      role="button"
+                      tabindex="0"
+                      class="control-button enable-button {getFeatureState(feature.definition) === 'enabled' ? 'active' : ''}"
+                      title="Enable {getFeatureName(feature.definition)}"
+                      onclick={() => toggleFeature(feature.definition, 'enable')}
+                      onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFeature(feature.definition, 'enable'); } }}
+                    >+</vscode-button>
+                    <vscode-button 
+                      role="button"
+                      tabindex="0"
+                      class="control-button disable-button {getFeatureState(feature.definition) === 'disabled' ? 'active' : ''}"
+                      title="Disable {getFeatureName(feature.definition)}"
+                      onclick={() => toggleFeature(feature.definition, 'disable')}
+                      onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFeature(feature.definition, 'disable'); } }}
+                    >-</vscode-button>
+                    <vscode-button 
+                      role="button"
+                      tabindex="0"
+                      class="control-button reset-button {getFeatureState(feature.definition) === 'default' ? 'active' : ''}"
+                      title="Reset {getFeatureName(feature.definition)} to default"
+                      onclick={() => toggleFeature(feature.definition, 'reset')}
+                      onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFeature(feature.definition, 'reset'); } }}
+                    >↻</vscode-button>
+                  </div>
                 </div>
               {/each}
             </div>
@@ -253,6 +375,10 @@
 
 <style>
   .feature-viewer {
+    --feature-enabled-color: #4CAF50;
+    --feature-disabled-color: #757575;
+    --feature-error-color: #f44336;
+    
     margin: 20px 0;
     padding: 10px;
     background-color: var(--vscode-sideBar-background);
@@ -326,21 +452,26 @@
   }
 
   .feature-group {
-    width: 100%;
     background-color: var(--vscode-sideBar-background);
     border: 1px solid var(--vscode-panel-border);
     border-radius: 4px;
-    padding: 8px;
-    box-sizing: border-box;
+    padding: 12px;
   }
 
   .group-header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     margin-bottom: 8px;
     padding: 4px;
     background-color: var(--vscode-list-inactiveSelectionBackground);
     border-radius: 3px;
+  }
+
+  .group-controls {
+    display: flex;
+    gap: 1px;
+    align-items: center;
   }
 
   .group-indicator {
@@ -352,23 +483,21 @@
   }
 
   .group-indicator.all {
-    background-color: #4CAF50; /* Green - all enabled */
+    background-color: var(--feature-enabled-color);
   }
 
   .group-indicator.some {
-    background: linear-gradient(45deg, #4CAF50 50%, #757575 50%); /* Half green, half grey */
+    background: linear-gradient(45deg, var(--feature-enabled-color) 50%, var(--feature-disabled-color) 50%);
   }
 
   .group-indicator.none {
-    background-color: #757575; /* Grey - all disabled */
+    background-color: var(--feature-disabled-color);
   }
 
   .group-title {
     font-weight: bold;
     color: var(--vscode-foreground);
     font-size: 0.9em;
-    word-wrap: break-word;
-    word-break: break-word;
     overflow-wrap: break-word;
     flex: 1;
     line-height: 1.2;
@@ -377,57 +506,117 @@
   .features-grid {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    padding: 6px 4px;
+    gap: 6px;
+    padding: 12px 16px;
     max-height: 280px;
+    min-height: 60px;
     overflow-y: auto;
     overflow-x: hidden;
-    min-height: 60px;
-    width: 100%;
-    box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: var(--vscode-scrollbarSlider-background) var(--vscode-scrollbar-shadow);
+  }
+
+  .features-grid::-webkit-scrollbar {
+    width: 10px;
+  }
+  
+  .features-grid::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .features-grid::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  
+  .features-grid::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-scrollbarSlider-hoverBackground);
   }
 
   .feature-item {
     display: flex;
-    align-items: flex-start;
-    padding: 6px 8px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 4px;
     border-radius: 3px;
     background-color: var(--vscode-list-inactiveSelectionBackground);
-    min-height: 24px;
-    width: 100%;
-    box-sizing: border-box;
-    overflow: hidden;
+  }
+
+  .feature-controls {
+    display: flex;
+    gap: 1px;
+    align-items: center;
+    margin-top: 2px;
   }
 
   .feature-indicator {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    margin-right: 8px;
-    margin-top: 2px;
+    margin: 4px 10px 0 0;
     flex-shrink: 0;
   }
 
   .feature-indicator.enabled {
-    background-color: #4CAF50; /* Green */
+    background-color: var(--feature-enabled-color);
   }
 
   .feature-indicator.disabled {
-    background-color: #757575; /* Grey */
+    background-color: var(--feature-disabled-color);
   }
 
   .feature-name {
     font-size: 0.85em;
     color: var(--vscode-foreground);
-    word-wrap: break-word;
-    word-break: break-word;
     overflow-wrap: break-word;
-    hyphens: auto;
     line-height: 1.4;
     flex: 1;
     min-width: 0;
-    padding-right: 4px;
+    padding: 0 8px;
   }
+
+  .control-button {
+    width: 18px;
+    height: 18px;
+    font-size: 12px;
+    border-radius: 3px;
+    margin: 0 2px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .control-button:hover {
+    background-color: var(--vscode-toolbar-hoverBackground);
+  }
+
+  .control-button.enable-button {
+    color: var(--feature-enabled-color);
+  }
+
+  .control-button.disable-button {
+    color: var(--feature-error-color);
+  }
+
+  .control-button.reset-button {
+    color: var(--vscode-descriptionForeground);
+  }
+
+  .control-button.active.enable-button {
+    background-color: color-mix(in srgb, var(--feature-enabled-color) 20%, transparent);
+    color: var(--feature-enabled-color);
+  }
+
+  .control-button.active.disable-button {
+    background-color: color-mix(in srgb, var(--feature-error-color) 20%, transparent);
+    color: var(--feature-error-color);
+  }
+
 
   h3 {
     margin: 0 0 15px 0;

@@ -3,6 +3,7 @@
   import BoardsList from "./lib/BoardsList.svelte";
   import TargetsList from "./lib/TargetsList.svelte";
   import ExtraConfig from "./lib/ExtraConfig.svelte";
+  import FeatureConfig from "./lib/FeatureConfig.svelte";
   import SITLConfig from "./lib/SITLConfig.svelte";
   import FeatureViewer from "./lib/FeatureViewer.svelte";
   import ErrorBoundary from "./lib/ErrorBoundary.svelte";
@@ -14,6 +15,7 @@
   let { vscodeHooks } = $props();
   let board = $state("");
   let target = $state("");
+  let featureConfig = $state("");
   let extraConfig = $state("");
   let simVehicleCommand = $state("");
   let isEditMode = $state(false);
@@ -35,7 +37,11 @@
       var task = currentTask.task;
       board = task.configure;
       target = task.target;
-      extraConfig = task.configureOptions;
+      // Parse existing configureOptions to separate feature flags from extra config
+      const options = task.configureOptions || "";
+      const parts = parseConfigOptions(options);
+      featureConfig = parts.featureConfig;
+      extraConfig = parts.extraConfig;
       simVehicleCommand = task.simVehicleCommand || "";
       isEditMode = true;
     } else {
@@ -46,11 +52,16 @@
 
 
   function sendBuildRequest() {
-    console.log(board, target, extraConfig);
+    // Combine feature config and extra config
+    const combinedConfig = [featureConfig, extraConfig]
+      .filter(config => config.trim())
+      .join(' ');
+    
+    console.log(board, target, combinedConfig);
     vscodeHooks.postMessage("build", {
       board: board,
       target: target,
-      extraConfig: extraConfig,
+      extraConfig: combinedConfig,
       simVehicleCommand: simVehicleCommand,
     });
   }
@@ -59,6 +70,7 @@
     // Clear all selections and switch to add mode
     board = "";
     target = "";
+    featureConfig = "";
     extraConfig = "";
     simVehicleCommand = "";
     isEditMode = false;
@@ -70,6 +82,29 @@
 
   function isSitlBoard(): boolean {
     return board.toLowerCase() === "sitl";
+  }
+
+  function parseConfigOptions(options: string): { featureConfig: string, extraConfig: string } {
+    if (!options.trim()) {
+      return { featureConfig: "", extraConfig: "" };
+    }
+    
+    const parts = options.split(/\s+/).filter(part => part.trim());
+    const featureFlags: string[] = [];
+    const otherOptions: string[] = [];
+    
+    parts.forEach(part => {
+      if (part.startsWith('--enable-') || part.startsWith('--disable-')) {
+        featureFlags.push(part);
+      } else {
+        otherOptions.push(part);
+      }
+    });
+    
+    return {
+      featureConfig: featureFlags.join(' '),
+      extraConfig: otherOptions.join(' ')
+    };
   }
 
 
@@ -123,16 +158,21 @@
           label="SITL Command:"
         />
       {/if}
+      <FeatureConfig
+        bind:value={featureConfig}
+        id="featureConfig"
+        label="Feature Configuration:"
+      />
       <ExtraConfig
         bind:value={extraConfig}
         id="extraConfig"
-        label="Configure Options:"
+        label="Additional Configure Options:"
       />
       <vscode-divider></vscode-divider>
 
-      <FeatureViewer {vscodeHooks} {board} {target} />
+      <FeatureViewer {vscodeHooks} {board} {target} bind:featureConfig={featureConfig} />
       <vscode-divider></vscode-divider>
-      <vscode-button bind:this={buildButton}
+      <vscode-button bind:this={buildButton} class="build-button"
         >Save Configuration & Build</vscode-button
       >
     {/await}
@@ -140,5 +180,11 @@
 </main>
 
 <style>
-  /* Main styles moved to components */
+  main {
+    padding-bottom: 40px;
+  }
+  
+  .build-button {
+    margin-bottom: 30px;
+  }
 </style>
