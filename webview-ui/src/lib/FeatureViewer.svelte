@@ -368,7 +368,7 @@
     </div>
   {:else if !loading && !error}
     <div class="info-message">
-      <p>No features extracted yet. Click "Extract Current Features" to view the features enabled in your build.</p>
+      <p>No features extracted yet. Click "Extract Current Features" to view and available feature configurations.</p>
     </div>
   {/if}
 </div>

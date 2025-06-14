@@ -168,13 +168,15 @@
         id="extraConfig"
         label="Additional Configure Options:"
       />
-      <vscode-divider></vscode-divider>
+
+      <vscode-divider style="visibility: hidden;"></vscode-divider>
+      <vscode-button bind:this={buildButton} class="build-button">
+        Save Configuration & Build
+      </vscode-button>
+      <vscode-divider style="visibility: hidden;"></vscode-divider>
 
       <FeatureViewer {vscodeHooks} {board} {target} bind:featureConfig={featureConfig} />
       <vscode-divider></vscode-divider>
-      <vscode-button bind:this={buildButton} class="build-button"
-        >Save Configuration & Build</vscode-button
-      >
     {/await}
   </ErrorBoundary>
 </main>
