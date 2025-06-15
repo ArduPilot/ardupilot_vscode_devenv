@@ -97,6 +97,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 				command: 'build',
 				board: 'CubeOrangePlus',
 				target: 'copter',
+				configName: 'CubeOrangePlus-copter',
 				extraConfig: '--debug',
 			};
 
@@ -145,6 +146,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 				command: 'build',
 				board: 'sitl',
 				target: 'copter',
+				configName: 'sitl-copter',
 				extraConfig: '--debug',
 				simVehicleCommand: '--console --map'
 			};

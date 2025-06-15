@@ -91,22 +91,23 @@ async function main() {
 
 		const globPattern = '**/**.test.js';
 		const testFiles = await fg(globPattern, { cwd: path.dirname(extensionTestsPath) });
-		// get name of test suite from the file name <testSuite>.test.js
-		const testSuiteName = testFiles.length > 0 ? path.basename(testFiles[0], '.test.js') : undefined;
-		if (!testSuiteName) {
+
+		if (testFiles.length === 0) {
 			console.error('No test files found matching the pattern:', globPattern);
 			process.exit(1);
 		}
-		console.log(`Test suite name: ${testSuiteName}`);
+
 		for (const testFile of testFiles) {
 			console.log(`Found test file: ${testFile}`);
-			if (testSuite && !testFile.includes(testSuiteName)) {
+			const currentTestSuiteName = path.basename(testFile, '.test.js');
+
+			if (testSuite && currentTestSuiteName !== testSuite) {
 				console.log(`Skipping test file ${testFile} as it does not match the specified test suite: ${testSuite}`);
 				continue;
 			}
 			console.log(`Running test file: ${testFile}`);
 			// Set the TEST_SUITE environment variable to filter tests
-			process.env.TEST_SUITE = testSuiteName;
+			process.env.TEST_SUITE = currentTestSuiteName;
 			// Run the test file
 			await runTests({
 				extensionDevelopmentPath,

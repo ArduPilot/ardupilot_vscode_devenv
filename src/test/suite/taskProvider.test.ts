@@ -85,6 +85,7 @@ suite('APTaskProvider Test Suite', () => {
 								type: 'ardupilot',
 								configure: 'sitl',
 								target: 'copter',
+								configName: 'sitl-copter',
 								configureOptions: '',
 								buildOptions: '',
 								group: { kind: 'build' }
@@ -119,6 +120,7 @@ suite('APTaskProvider Test Suite', () => {
 				type: 'ardupilot',
 				configure: 'sitl',
 				target: 'copter',
+				configName: 'sitl-copter',
 				configureOptions: '',
 				buildOptions: ''
 			};
@@ -174,10 +176,11 @@ suite('APTaskProvider Test Suite', () => {
 		});
 
 		test('should create new task for SITL configuration with simVehicleCommand', () => {
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', '', '--map --console');
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter', '', '--map --console');
 
 			assert.ok(task);
 			assert.strictEqual(task.name, 'sitl-copter');
+			assert.strictEqual(task.definition.configName, 'sitl-copter');
 			assert.strictEqual(task.definition.configure, 'sitl');
 			assert.strictEqual(task.definition.target, 'copter');
 			assert.strictEqual(task.definition.simVehicleCommand, '--map --console');
@@ -185,10 +188,11 @@ suite('APTaskProvider Test Suite', () => {
 		});
 
 		test('should create new task for hardware configuration without simVehicleCommand', () => {
-			const task = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane');
+			const task = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane', 'CubeOrange-plane');
 
 			assert.ok(task);
 			assert.strictEqual(task.name, 'CubeOrange-plane');
+			assert.strictEqual(task.definition.configName, 'CubeOrange-plane');
 			assert.strictEqual(task.definition.configure, 'CubeOrange');
 			assert.strictEqual(task.definition.target, 'plane');
 			assert.strictEqual(task.definition.simVehicleCommand, undefined);
@@ -198,7 +202,7 @@ suite('APTaskProvider Test Suite', () => {
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
 			assert.strictEqual(task, undefined);
 			assert(showErrorStub.calledWith('No workspace folder is open.'));
@@ -223,23 +227,37 @@ suite('APTaskProvider Test Suite', () => {
 			sandbox.stub(fs, 'existsSync').returns(false);
 			const mkdirSyncStub = sandbox.stub(fs, 'mkdirSync');
 
-			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
 			assert(mkdirSyncStub.calledWith(sinon.match.string, { recursive: true }));
 		});
 
 		test('should preserve existing simVehicleCommand from tasks.json', () => {
-			// Mock tasks.json file with existing SITL task
+			// Mock the VS Code configuration to have an existing task with simVehicleCommand
+			const existingTask = {
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configName: 'sitl-copter',
+				configureOptions: '',
+				buildOptions: '',
+				simVehicleCommand: '--existing-command'
+			};
+
+			// Update the mock configuration to return the existing task
+			mockConfiguration.get = sandbox.stub().callsFake((key: string) => {
+				if (key === 'tasks') {
+					return [existingTask];
+				}
+				return undefined;
+			});
+
+			// Mock fs.readFileSync for the tasks.json file reading logic
 			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
-				tasks: [{
-					type: 'ardupilot',
-					configure: 'sitl',
-					target: 'copter',
-					simVehicleCommand: '--existing-command'
-				}]
+				tasks: [existingTask]
 			}));
 
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
 			assert.ok(task);
 			assert.strictEqual(task.definition.simVehicleCommand, '--existing-command');
@@ -251,12 +269,13 @@ suite('APTaskProvider Test Suite', () => {
 				type: 'ardupilot',
 				configure: 'sitl',
 				target: 'copter',
+				configName: 'sitl-copter',
 				configureOptions: '',
 				buildOptions: '',
 				simVehicleCommand: '--old-command'
 			});
 
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', '', '--new-command');
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter', '', '--new-command');
 
 			assert.ok(task);
 			assert.strictEqual(task.definition.simVehicleCommand, '--new-command');
@@ -272,7 +291,7 @@ suite('APTaskProvider Test Suite', () => {
 			// Start with empty tasks array
 			assert.strictEqual(mockTasks.length, 0);
 
-			const task = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane');
+			const task = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane', 'CubeOrange-plane');
 
 			assert.ok(task);
 			assert(mockConfiguration.update.called);
@@ -286,7 +305,7 @@ suite('APTaskProvider Test Suite', () => {
 			sandbox.stub(fs, 'readFileSync').returns('invalid json');
 
 			// Should not throw error
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 			assert.ok(task);
 		});
 	});
@@ -297,6 +316,7 @@ suite('APTaskProvider Test Suite', () => {
 				type: 'ardupilot',
 				configure: 'sitl',
 				target: 'copter',
+				configName: 'sitl-copter',
 				configureOptions: '--debug',
 				buildOptions: '--verbose'
 			};
@@ -316,6 +336,7 @@ suite('APTaskProvider Test Suite', () => {
 				type: 'ardupilot',
 				configure: 'sitl',
 				target: 'copter',
+				configName: 'sitl-copter',
 				configureOptions: '',
 				buildOptions: ''
 			};
@@ -332,6 +353,7 @@ suite('APTaskProvider Test Suite', () => {
 				type: 'ardupilot',
 				configure: 'sitl',
 				target: 'copter',
+				configName: 'sitl-copter',
 				configureOptions: '--debug',
 				buildOptions: '--verbose'
 			};
@@ -353,6 +375,7 @@ suite('APTaskProvider Test Suite', () => {
 				type: 'ardupilot',
 				configure: 'sitl',
 				target: 'copter',
+				configName: 'sitl-copter',
 				configureOptions: '',
 				buildOptions: ''
 			};
@@ -372,6 +395,7 @@ suite('APTaskProvider Test Suite', () => {
 					type: 'ardupilot',
 					configure: 'sitl',
 					target: 'copter',
+					configName: 'sitl-copter',
 					configureOptions: '',
 					buildOptions: ''
 				},
@@ -379,6 +403,7 @@ suite('APTaskProvider Test Suite', () => {
 					type: 'ardupilot',
 					configure: 'CubeOrange',
 					target: 'plane',
+					configName: 'CubeOrange-plane',
 					configureOptions: '',
 					buildOptions: ''
 				}
@@ -393,16 +418,19 @@ suite('APTaskProvider Test Suite', () => {
 		});
 
 		test('should remove task from tasks.json using VS Code API', () => {
-			APTaskProvider.delete('sitl');
+			APTaskProvider.delete('sitl-copter');
 
+			// The update method should be called
 			assert(mockConfiguration.update.called);
-			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
+			const updateCall = mockConfiguration.update.getCall(0);
+			assert.strictEqual(updateCall.args[0], 'tasks'); // First arg should be 'tasks'
+			const updatedTasks = updateCall.args[1];
 			assert.strictEqual(updatedTasks.length, 1);
-			assert.strictEqual(updatedTasks[0].configure, 'CubeOrange');
+			assert.strictEqual(updatedTasks[0].configName, 'CubeOrange-plane');
 		});
 
 		test('should handle non-existent task deletion gracefully', () => {
-			APTaskProvider.delete('nonexistent');
+			APTaskProvider.delete('nonexistent-config');
 
 			// Should not call update since no task was found to remove
 			assert(mockConfiguration.update.notCalled);
@@ -412,7 +440,7 @@ suite('APTaskProvider Test Suite', () => {
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
-			APTaskProvider.delete('sitl');
+			APTaskProvider.delete('sitl-copter');
 
 			assert(showErrorStub.calledWith('No workspace folder is open.'));
 		});
@@ -510,6 +538,7 @@ suite('APTaskProvider Test Suite', () => {
 						type: 'ardupilot',
 						configure: 'sitl',
 						target: 'copter',
+						configName: 'sitl-copter',
 						configureOptions: '',
 						buildOptions: '',
 						group: { kind: 'build' }
@@ -620,6 +649,7 @@ suite('APTaskProvider Test Suite', () => {
 						type: 'ardupilot',
 						configure: 'sitl',
 						target: 'copter',
+						configName: 'sitl-copter',
 						configureOptions: '',
 						buildOptions: '',
 						group: { kind: 'build' }
@@ -661,7 +691,7 @@ suite('APTaskProvider Test Suite', () => {
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value(null);
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
 			assert.strictEqual(task, undefined);
 			assert(showErrorStub.calledWith('No workspace folder is open.'));
@@ -680,7 +710,7 @@ suite('APTaskProvider Test Suite', () => {
 			sandbox.stub(fs, 'mkdirSync');
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
-			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
 			// Wait for async operation
 			await new Promise(resolve => setTimeout(resolve, 10));
@@ -702,7 +732,7 @@ suite('APTaskProvider Test Suite', () => {
 			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
 
 			// Should not throw error, should handle gracefully
-			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 			assert.ok(task);
 		});
 
@@ -711,9 +741,193 @@ suite('APTaskProvider Test Suite', () => {
 
 			// Test with no workspace
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
-			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
 			assert(showErrorStub.calledWith('No workspace folder is open.'));
 		});
+	});
+
+	suite('Configuration Name Migration', () => {
+		test('should migrate existing tasks without configName', () => {
+			const workspaceRoot = '/test/workspace';
+			const tasksPath = path.join(workspaceRoot, '.vscode', 'tasks.json');
+
+			// Mock workspace
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: workspaceRoot } }]);
+
+			// Mock existing tasks.json without configName
+			const mockTasksJson = {
+				version: '2.0.0',
+				tasks: [
+					{
+						type: 'ardupilot',
+						configure: 'sitl',
+						target: 'copter',
+						configureOptions: '',
+						buildOptions: ''
+					},
+					{
+						type: 'ardupilot',
+						configure: 'CubeOrange',
+						target: 'plane',
+						configureOptions: '',
+						buildOptions: ''
+					}
+				]
+			};
+
+			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
+				return path.toString() === tasksPath;
+			});
+
+			sandbox.stub(fs, 'readFileSync').callsFake((path: fs.PathOrFileDescriptor) => {
+				if (path.toString() === tasksPath) {
+					return JSON.stringify(mockTasksJson);
+				}
+				return '';
+			});
+
+			let writtenContent: string | undefined;
+			sandbox.stub(fs, 'writeFileSync').callsFake((path: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView) => {
+				if (path.toString() === tasksPath) {
+					writtenContent = data.toString();
+				}
+			});
+
+			const result = APTaskProvider.migrateTasksJsonForConfigName();
+
+			assert.strictEqual(result, true, 'Migration should return true when tasks were updated');
+			assert.ok(writtenContent, 'Tasks.json should be written');
+
+			const migratedTasks = JSON.parse(writtenContent);
+			assert.strictEqual(migratedTasks.tasks[0].configName, 'sitl-copter', 'First task should have configName');
+			assert.strictEqual(migratedTasks.tasks[1].configName, 'CubeOrange-plane', 'Second task should have configName');
+		});
+
+		test('should skip tasks that already have configName', () => {
+			const workspaceRoot = '/test/workspace';
+
+			// Mock workspace
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: workspaceRoot } }]);
+
+			// Mock existing tasks.json with configName already present
+			const mockTasksJson = {
+				version: '2.0.0',
+				tasks: [
+					{
+						type: 'ardupilot',
+						configure: 'sitl',
+						target: 'copter',
+						configName: 'my-custom-sitl',
+						configureOptions: '',
+						buildOptions: ''
+					}
+				]
+			};
+
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify(mockTasksJson));
+			const writeStub = sandbox.stub(fs, 'writeFileSync');
+
+			const result = APTaskProvider.migrateTasksJsonForConfigName();
+
+			assert.strictEqual(result, false, 'Migration should return false when no changes needed');
+			assert(writeStub.notCalled, 'writeFileSync should not be called');
+		});
+
+	});
+
+	suite('Task Creation with ConfigName', () => {
+		let mockConfiguration: any;
+		let mockTasks: any[];
+
+		setup(() => {
+			mockTasks = [];
+			mockConfiguration = {
+				get: sandbox.stub().callsFake((key: string) => {
+					if (key === 'tasks') {
+						return mockTasks;
+					}
+					return undefined;
+				}),
+				update: sandbox.stub().callsFake((key: string, value: any[]) => {
+					if (key === 'tasks') {
+						mockTasks = value;
+					}
+					return Promise.resolve();
+				})
+			};
+
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'mkdirSync');
+		});
+
+		test('should use configName as task label instead of board-target', () => {
+			const customName = 'my-custom-sitl-config';
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', customName);
+
+			assert.ok(task, 'Task should be created');
+			assert.strictEqual(task.name, customName, 'Task name should use configName');
+			assert.strictEqual(task.definition.configName, customName, 'Task definition should have configName');
+		});
+
+		test('should persist configName in tasks.json', () => {
+			const configName = 'test-config';
+			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', configName);
+
+			assert(mockConfiguration.update.called, 'Configuration should be updated');
+			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
+			assert.strictEqual(updatedTasks.length, 1, 'Should have one task');
+			assert.strictEqual(updatedTasks[0].configName, configName, 'Persisted task should have configName');
+		});
+
+		test('should handle duplicate configNames correctly', () => {
+			// Pre-populate with existing task
+			mockTasks.push({
+				type: 'ardupilot',
+				configure: 'CubeOrange',
+				target: 'plane',
+				configName: 'existing-config',
+				configureOptions: '',
+				buildOptions: ''
+			});
+
+			// Try to create a task with same configName but different board/target
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'existing-config');
+
+			assert.ok(task, 'Task should be created');
+			assert.strictEqual(task.definition.configName, 'existing-config', 'Task should have the specified configName');
+
+			assert(mockConfiguration.update.called, 'Configuration should be updated');
+			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
+			assert.strictEqual(updatedTasks.length, 1, 'Should still have one task (updated existing)');
+			assert.strictEqual(updatedTasks[0].configure, 'sitl', 'Task should be updated with new board');
+			assert.strictEqual(updatedTasks[0].target, 'copter', 'Task should be updated with new target');
+		});
+
+		test('should update existing task when configName matches', () => {
+			// Pre-populate with existing task
+			mockTasks.push({
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configName: 'existing-config',
+				configureOptions: '',
+				buildOptions: '',
+				simVehicleCommand: '--old-command'
+			});
+
+			const task = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'existing-config', '', '--new-command');
+
+			assert.ok(task, 'Task should be created');
+			assert.strictEqual(task.definition.simVehicleCommand, '--new-command', 'SimVehicle command should be updated');
+
+			assert(mockConfiguration.update.called, 'Configuration should be updated');
+			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
+			assert.strictEqual(updatedTasks.length, 1, 'Should still have one task');
+			assert.strictEqual(updatedTasks[0].simVehicleCommand, '--new-command', 'Persisted task should have new command');
+		});
+
 	});
 });

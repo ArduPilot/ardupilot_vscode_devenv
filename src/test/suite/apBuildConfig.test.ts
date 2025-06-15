@@ -56,7 +56,7 @@ suite('apBuildConfig Test Suite', () => {
 		let mockTask: vscode.Task | undefined;
 
 		setup(() => {
-			mockTask = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			mockTask = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 		});
 
 		test('should create build config item with correct properties', () => {
@@ -76,9 +76,9 @@ suite('apBuildConfig Test Suite', () => {
 
 		test('should switch between active configurations correctly', () => {
 			// Create multiple tasks with different configurations using getOrCreateBuildConfig
-			const mockTask1 = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
-			const mockTask2 = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane');
-			const mockTask3 = APTaskProvider.getOrCreateBuildConfig('CubeOrangePlus', 'rover');
+			const mockTask1 = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
+			const mockTask2 = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane', 'CubeOrange-plane');
+			const mockTask3 = APTaskProvider.getOrCreateBuildConfig('CubeOrangePlus', 'rover', 'CubeOrangePlus-rover');
 
 			assert.ok(mockTask1, 'mockTask1 should be created');
 			assert.ok(mockTask2, 'mockTask2 should be created');
@@ -261,7 +261,7 @@ suite('apBuildConfig Test Suite', () => {
 		});
 
 		test('should return correct tree item', () => {
-			const mockTask = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
+			const mockTask = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 			assert.ok(mockTask, 'mockTask should be created');
 
 			const buildConfig = new apBuildConfig(
@@ -275,66 +275,68 @@ suite('apBuildConfig Test Suite', () => {
 			assert.strictEqual(treeItem, buildConfig);
 		});
 
-		test('should get children from build directory', async function() {
-			// Increase timeout for this test as building takes time
-			this.timeout(300000); // 5 minutes
+		test('should get children from tasks.json', async () => {
+			// Mock the VS Code workspace configuration to return test tasks
+			const mockTasks = [
+				{
+					type: 'ardupilot',
+					configure: 'sitl',
+					target: 'copter',
+					configName: 'sitl-copter',
+					configureOptions: '',
+					buildOptions: ''
+				},
+				{
+					type: 'ardupilot',
+					configure: 'CubeOrange',
+					target: 'plane',
+					configName: 'CubeOrange-plane',
+					configureOptions: '',
+					buildOptions: ''
+				},
+				{
+					type: 'shell', // Non-ardupilot task should be filtered out
+					command: 'echo test'
+				}
+			];
 
-			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-			assert(workspaceFolder, 'Workspace folder should be available');
+			// Mock workspace configuration
+			const mockConfiguration = {
+				get: sandbox.stub().callsFake((key: string) => {
+					if (key === 'tasks') {
+						return mockTasks;
+					}
+					return undefined;
+				})
+			};
 
-			// The workspace should already be the ardupilot directory for the test
-			// Check if we're in the extension dev environment or actual ardupilot workspace
-			let ardupilotPath: string;
-			if (workspaceFolder.uri.fsPath.endsWith('ardupilot_vscode_devenv')) {
-				ardupilotPath = path.join(workspaceFolder.uri.fsPath, 'ardupilot');		} else {
-				ardupilotPath = workspaceFolder.uri.fsPath;
-			}
-			const buildPath = path.join(ardupilotPath, 'build');
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration as any);
 
-			// Step 1: Clean existing builds
-			await commandLineClean(ardupilotPath);
-			assert(!fs.existsSync(buildPath), 'Build directory should not exist after clean');
-
-			// Step 2: Build targets
-			await commandLineBuild(ardupilotPath, [
-				{ board: 'sitl', vehicle: 'copter' },
-				{ board: 'CubeOrange', vehicle: 'plane' }
-			]);
-
-			// Step 3: Verify build directory now exists and contains expected targets
-			assert(fs.existsSync(buildPath), 'Build directory should exist after building');
-
-			const sitlBuildDir = path.join(buildPath, 'sitl');
-			const cubeOrangeBuildDir = path.join(buildPath, 'CubeOrange');
-
-			assert(fs.existsSync(sitlBuildDir), 'SITL build directory should exist');
-			assert(fs.existsSync(cubeOrangeBuildDir), 'CubeOrange build directory should exist');
-			assert(fs.existsSync(path.join(sitlBuildDir, 'ap_config.h')), 'SITL ap_config.h should exist');
-			assert(fs.existsSync(path.join(cubeOrangeBuildDir, 'ap_config.h')), 'CubeOrange ap_config.h should exist');
-
-			// Step 6: Test the getChildren method with actual built targets
-			// Assuming the correct workspace is already loaded
+			// Test the getChildren method
 			const children = await buildConfigProvider.getChildren();
 
 			assert.ok(Array.isArray(children), 'Children should be an array');
-			assert(children.length >= 2, `Should find at least 2 build configs, found ${children.length}`);
+			assert.strictEqual(children.length, 2, `Should find exactly 2 ardupilot configs, found ${children.length}`);
 			assert.ok(children.every(child => child instanceof apBuildConfig), 'All children should be apBuildConfig instances');
 
-			// Verify we have the expected configurations
+			// Verify we have the expected configurations using configName
 			const labels = children.map(child => child.label);
-			assert(labels.includes('sitl'), 'Should include sitl configuration');
-			assert(labels.includes('CubeOrange'), 'Should include CubeOrange configuration');
+			assert(labels.includes('sitl-copter'), 'Should include sitl-copter configuration');
+			assert(labels.includes('CubeOrange-plane'), 'Should include CubeOrange-plane configuration');
 		});
 
 		test('should handle empty task list', async () => {
-			// Mock file system to simulate no build directory
-			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
-				const pathStr = path.toString();
-				if (pathStr.endsWith('build')) {
-					return false; // No build directory exists
-				}
-				return false;
-			});
+			// Mock workspace configuration with no tasks
+			const mockConfiguration = {
+				get: sandbox.stub().callsFake((key: string) => {
+					if (key === 'tasks') {
+						return []; // Empty tasks array
+					}
+					return undefined;
+				})
+			};
+
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration as any);
 
 			const children = await buildConfigProvider.getChildren();
 			assert.ok(Array.isArray(children));
@@ -357,54 +359,48 @@ suite('apBuildConfig Test Suite', () => {
 		});
 
 		test('should only return valid ArduPilot build configurations', async () => {
-			// Mock file system operations using sandbox
-			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
-				const pathStr = path.toString();
-				if (pathStr.endsWith('build')) {
-					return true;
+			// Mock workspace configuration with mixed task types
+			const mockTasks = [
+				{
+					type: 'ardupilot',
+					configure: 'sitl',
+					target: 'copter',
+					configName: 'sitl-copter',
+					configureOptions: '',
+					buildOptions: ''
+				},
+				{
+					type: 'shell', // Non-ardupilot task should be filtered out
+					command: 'echo test'
+				},
+				{
+					type: 'node', // Another non-ardupilot task
+					script: 'test.js'
 				}
-				// Only sitl has ap_config.h file, others don't
-				if (pathStr.includes('build/sitl/ap_config.h')) {
-					return true;
-				}
-				if (pathStr.includes('build/invalid_config/ap_config.h') || pathStr.includes('build/other_folder/ap_config.h')) {
-					return false;
-				}
-				return false;
-			});
+			];
 
-			sandbox.stub(fs, 'readdirSync').callsFake((path: fs.PathLike) => {
-				const pathStr = path.toString();
-				if (pathStr.endsWith('build')) {
-					return ['sitl', 'invalid_config', 'other_folder'] as any;
-				}
-				return [] as any;
-			});
-
-			sandbox.stub(fs, 'lstatSync').callsFake((path: fs.PathLike) => {
-				return { isDirectory: () => true } as any;
-			});
-
-			sandbox.stub(fs, 'readFileSync').callsFake((path: fs.PathOrFileDescriptor, encoding?: any) => {
-				const pathStr = path.toString();
-				if (pathStr.includes('target_list')) {
-					if (pathStr.includes('sitl')) {
-						return 'bin/arducopter';
+			// Mock workspace configuration
+			const mockConfiguration = {
+				get: sandbox.stub().callsFake((key: string) => {
+					if (key === 'tasks') {
+						return mockTasks;
 					}
-				}
-				return '';
-			});
+					return undefined;
+				})
+			};
+
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration as any);
 
 			const children = await buildConfigProvider.getChildren();
-			assert.strictEqual(children.length, 1);
-			assert.strictEqual(children[0].label, 'sitl');
+			assert.strictEqual(children.length, 1, 'Should only return ardupilot tasks');
+			assert.strictEqual(children[0].label, 'sitl-copter', 'Should use configName for label');
 		});
 	});
 
 	suite('Configuration State Management', () => {
 		test('should handle configuration changes', async () => {
-			const mockTask1 = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter');
-			const mockTask2 = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane');
+			const mockTask1 = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
+			const mockTask2 = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane', 'CubeOrange-plane');
 
 			assert.ok(mockTask1, 'mockTask1 should be created');
 			assert.ok(mockTask2, 'mockTask2 should be created');

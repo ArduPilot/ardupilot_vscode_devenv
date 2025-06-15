@@ -90,6 +90,7 @@ suite('apActions Test Suite', () => {
 			// remove existing launch.json
 			fs.rmSync(path.join(vscodeDir, 'launch.json'), { force: true });
 			const launchConfig = apActionItem.createMatchingLaunchConfig(
+				'sitl-copter',
 				'sitl',
 				'copter',
 				'--map --console'
@@ -139,6 +140,7 @@ suite('apActions Test Suite', () => {
 			// remove existing launch.json
 			fs.rmSync(path.join(vscodeDir, 'launch.json'), { force: true });
 			const launchConfig = apActionItem.createMatchingLaunchConfig(
+				'CubeOrange-copter',
 				'CubeOrange',
 				'copter',
 				''
@@ -304,7 +306,7 @@ suite('apActions Test Suite', () => {
 				} as any;
 			});
 
-			apActionItem.updateTaskWithSimVehicleCommand('sitl', 'copter', '--map --console');
+			apActionItem.updateTaskWithSimVehicleCommand('sitl-copter', '--map --console');
 			// If we reach here without error, the test passes
 			assert.ok(true);
 		});
@@ -336,7 +338,7 @@ suite('apActions Test Suite', () => {
 			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration as any);
 
 			// This should not throw an error, just log that task was not found
-			apActionItem.updateTaskWithSimVehicleCommand('sitl', 'copter', '--map --console');
+			apActionItem.updateTaskWithSimVehicleCommand('sitl-copter', '--map --console');
 			assert.ok(true);
 		});
 
@@ -356,7 +358,7 @@ suite('apActions Test Suite', () => {
 			// Mock vscode.workspace.getConfiguration using sandbox
 			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration as any);
 
-			apActionItem.updateTaskWithSimVehicleCommand('sitl', 'copter', '--map --console');
+			apActionItem.updateTaskWithSimVehicleCommand('sitl-copter', '--map --console');
 			assert.ok(true);
 		});
 	});
@@ -499,7 +501,10 @@ suite('apActions Test Suite', () => {
 					definition: {
 						type: 'ardupilot',
 						configure: 'CubeOrange',
-						target: 'plane'
+						target: 'plane',
+						configName: 'CubeOrange-plane',
+						configureOptions: '',
+						buildOptions: ''
 					} as ArdupilotTaskDefinition,
 					scope: vscode.TaskScope.Workspace,
 					name: 'Hardware Task',
@@ -914,12 +919,18 @@ suite('apActions Test Suite', () => {
 								type: 'ardupilot',
 								configure: 'sitl',
 								target: 'copter',
+								configName: 'sitl-copter',
+								configureOptions: '',
+								buildOptions: '',
 								label: 'Build sitl-copter'
 							},
 							{
 								type: 'ardupilot',
 								configure: 'CubeOrange',
 								target: 'plane',
+								configName: 'CubeOrange-plane',
+								configureOptions: '',
+								buildOptions: '',
 								label: 'Build CubeOrange-plane'
 							}
 						];
@@ -943,7 +954,7 @@ suite('apActions Test Suite', () => {
 				return Promise.resolve();
 			});
 
-			apActionItem.updateTaskWithSimVehicleCommand('sitl', 'copter', '--map --console');
+			apActionItem.updateTaskWithSimVehicleCommand('sitl-copter', '--map --console');
 
 			// Wait for async operations
 			await new Promise(resolve => setTimeout(resolve, 10));
@@ -963,7 +974,7 @@ suite('apActions Test Suite', () => {
 				return Promise.resolve();
 			});
 
-			apActionItem.updateTaskWithSimVehicleCommand('nonexistent', 'rover', '--test');
+			apActionItem.updateTaskWithSimVehicleCommand('nonexistent-rover', '--test');
 
 			// Wait for async operations
 			await new Promise(resolve => setTimeout(resolve, 10));
@@ -985,7 +996,7 @@ suite('apActions Test Suite', () => {
 				updateCalled = true;
 			});
 
-			apActionItem.updateTaskWithSimVehicleCommand('sitl', 'copter', '--test');
+			apActionItem.updateTaskWithSimVehicleCommand('sitl-copter', '--test');
 
 			// Wait for async operations
 			await new Promise(resolve => setTimeout(resolve, 10));
