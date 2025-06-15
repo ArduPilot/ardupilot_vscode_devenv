@@ -3,33 +3,24 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
-import { ValidateEnvironment, ValidateEnvironmentPanel } from '../../apEnvironmentValidator';
+import { ValidateEnvironmentPanel } from '../../apEnvironmentValidator';
 import { ProgramUtils } from '../../apProgramUtils';
 import { ToolsConfig } from '../../apToolsConfig';
 import { APExtensionContext } from '../../extension';
-import { apWelcomeProvider } from '../../apWelcomeProvider';
 import { getApExtApi } from './common';
 
 suite('apEnvironmentValidator Test Suite', () => {
 	let apExtensionContext: APExtensionContext;
-	let welcomeProvider: apWelcomeProvider;
-	let validateEnvironment: ValidateEnvironment;
 	let sandbox: sinon.SinonSandbox;
 
 	suiteSetup(async () => {
 		apExtensionContext = await getApExtApi();
 		assert(apExtensionContext.apWelcomeProviderInstance);
-		welcomeProvider = apExtensionContext.apWelcomeProviderInstance;
 	});
 
 	setup(async () => {
 		sandbox = sinon.createSandbox();
-
-		const children = await welcomeProvider.getChildren();
-		validateEnvironment = children.find(child =>
-			child.label === 'Validate Environment'
-		) as ValidateEnvironment;
-		assert(validateEnvironment instanceof ValidateEnvironment);
+		assert(!ValidateEnvironmentPanel.currentPanel, 'ValidateEnvironmentPanel should not have been created yet');
 	});
 
 	teardown(() => {
@@ -49,50 +40,31 @@ suite('apEnvironmentValidator Test Suite', () => {
 		});
 
 		test('should implement singleton pattern for webview panel', () => {
-			const mockWebview = {
-				html: '',
-				postMessage: sandbox.stub(),
-				onDidReceiveMessage: sandbox.stub(),
-				asWebviewUri: sandbox.stub().returnsArg(0)
-			} as any;
-
-			const mockPanel = {
-				webview: mockWebview,
-				reveal: sandbox.stub(),
-				dispose: sandbox.stub(),
-				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
-			} as any;
-
-			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
-
+			// Create the first panel
 			ValidateEnvironmentPanel.createOrShow();
-			ValidateEnvironmentPanel.createOrShow(vscode.ViewColumn.Two);
+			const firstPanel = ValidateEnvironmentPanel.currentPanel;
+			assert(firstPanel, 'First panel should be created');
 
-			assert(mockPanel.reveal.calledOnce);
-			assert(mockPanel.reveal.calledWith(vscode.ViewColumn.Two));
+			// Stub the reveal method on the existing panel
+			const revealStub = sandbox.stub(firstPanel._panel, 'reveal');
+
+			// Try to create another panel
+			ValidateEnvironmentPanel.createOrShow(vscode.ViewColumn.Two);
+			const secondPanel = ValidateEnvironmentPanel.currentPanel;
+
+			// Should be the same instance
+			assert.strictEqual(firstPanel, secondPanel);
+			assert(revealStub.calledOnce);
+			assert(revealStub.calledWith(vscode.ViewColumn.Two));
 		});
 	});
 
 	suite('Platform and Tool Validation', () => {
-		let mockWebview: sinon.SinonStubbedInstance<vscode.Webview>;
-		let mockPanel: sinon.SinonStubbedInstance<vscode.WebviewPanel>;
-
 		setup(() => {
-			mockWebview = {
-				html: '',
-				postMessage: sandbox.stub(),
-				onDidReceiveMessage: sandbox.stub(),
-				asWebviewUri: sandbox.stub().returnsArg(0)
-			} as any;
-
-			mockPanel = {
-				webview: mockWebview,
-				reveal: sandbox.stub(),
-				dispose: sandbox.stub(),
-				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
-			} as any;
-
-			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
+			// Clear any existing panels before each test
+			if ((ValidateEnvironmentPanel as any).currentPanel) {
+				(ValidateEnvironmentPanel as any).currentPanel = undefined;
+			}
 		});
 
 		test('should skip tool validation on Windows platform', () => {
@@ -136,21 +108,25 @@ suite('apEnvironmentValidator Test Suite', () => {
 			}
 
 			ValidateEnvironmentPanel.createOrShow();
+			const panel = ValidateEnvironmentPanel.currentPanel;
+			assert(panel, 'Panel should be created');
+			const webview = panel._panel.webview;
+			const postMessageSpy = sandbox.spy(webview, 'postMessage');
 
 			// Wait for the 500ms timeout + validation to complete
 			await new Promise(resolve => setTimeout(resolve, 800));
 
 			// Verify postMessage was called
-			assert(mockWebview.postMessage.called, 'webview.postMessage should have been called');
+			assert(postMessageSpy.called, 'webview.postMessage should have been called');
 
 			// Check if platform check message was sent
-			const platformCalls = mockWebview.postMessage.getCalls().filter(call =>
+			const platformCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'platformCheck'
 			);
 			assert(platformCalls.length > 0, 'Platform check message should be sent');
 
 			// Check if validationResult messages were sent for tools
-			const validationResultCalls = mockWebview.postMessage.getCalls().filter(call =>
+			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
@@ -208,14 +184,18 @@ suite('apEnvironmentValidator Test Suite', () => {
 			}
 
 			ValidateEnvironmentPanel.createOrShow();
+			const panel = ValidateEnvironmentPanel.currentPanel;
+			assert(panel, 'Panel should be created');
+			const webview = panel._panel.webview;
+			const postMessageSpy = sandbox.spy(webview, 'postMessage');
 
 			await new Promise(resolve => setTimeout(resolve, 800));
 
 			// Verify that webview received messages (including platform check)
-			assert(mockWebview.postMessage.called, 'webview.postMessage should have been called');
+			assert(postMessageSpy.called, 'webview.postMessage should have been called');
 
 			// Check if validationResult messages were sent even with failures
-			const validationResultCalls = mockWebview.postMessage.getCalls().filter(call =>
+			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent even with failures');
@@ -227,28 +207,12 @@ suite('apEnvironmentValidator Test Suite', () => {
 	});
 
 	suite('Configuration Management', () => {
-		let mockWebview: sinon.SinonStubbedInstance<vscode.Webview>;
-		let messageHandler: (message: any) => void;
 
 		setup(() => {
-			mockWebview = {
-				html: '',
-				postMessage: sandbox.stub(),
-				onDidReceiveMessage: sandbox.stub().callsFake((handler) => {
-					messageHandler = handler;
-					return { dispose: sandbox.stub() };
-				}),
-				asWebviewUri: sandbox.stub().returnsArg(0)
-			} as any;
-
-			const mockPanel = {
-				webview: mockWebview,
-				reveal: sandbox.stub(),
-				dispose: sandbox.stub(),
-				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
-			} as any;
-
-			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
+			// Clear any existing panels before each test
+			if ((ValidateEnvironmentPanel as any).currentPanel) {
+				(ValidateEnvironmentPanel as any).currentPanel = undefined;
+			}
 		});
 
 		test('should handle tool path configuration through ToolsConfig', async () => {
@@ -268,9 +232,11 @@ suite('apEnvironmentValidator Test Suite', () => {
 			sandbox.stub(vscode.window, 'showInformationMessage');
 
 			ValidateEnvironmentPanel.createOrShow();
+			const panel = ValidateEnvironmentPanel.currentPanel;
+			assert(panel, 'Panel should be created');
 
-			messageHandler({ command: 'selectPythonInterpreter' });
-
+			// @ts-expect-error this is a private method
+			panel._onReceiveMessage({ command: 'selectPythonInterpreter' });
 			await new Promise(resolve => setTimeout(resolve, 50));
 
 			assert(setToolPathSpy.calledWith(ProgramUtils.TOOL_PYTHON, interpreterPath));
@@ -313,14 +279,18 @@ suite('apEnvironmentValidator Test Suite', () => {
 			}
 
 			ValidateEnvironmentPanel.createOrShow();
+			const panel = ValidateEnvironmentPanel.currentPanel;
+			assert(panel, 'Panel should be created');
+			const webview = panel._panel.webview;
+			const postMessageSpy = sandbox.spy(webview, 'postMessage');
 
 			await new Promise(resolve => setTimeout(resolve, 800));
 
 			// Verify that webview received messages
-			assert(mockWebview.postMessage.called, 'webview.postMessage should have been called');
+			assert(postMessageSpy.called, 'webview.postMessage should have been called');
 
 			// Check if validationResult messages were sent
-			const validationResultCalls = mockWebview.postMessage.getCalls().filter(call =>
+			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
@@ -340,28 +310,12 @@ suite('apEnvironmentValidator Test Suite', () => {
 	});
 
 	suite('WSL Integration', () => {
-		let mockWebview: sinon.SinonStubbedInstance<vscode.Webview>;
-		let messageHandler: (message: any) => void;
 
 		setup(() => {
-			mockWebview = {
-				html: '',
-				postMessage: sandbox.stub(),
-				onDidReceiveMessage: sandbox.stub().callsFake((handler) => {
-					messageHandler = handler;
-					return { dispose: sandbox.stub() };
-				}),
-				asWebviewUri: sandbox.stub().returnsArg(0)
-			} as any;
-
-			const mockPanel = {
-				webview: mockWebview,
-				reveal: sandbox.stub(),
-				dispose: sandbox.stub(),
-				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
-			} as any;
-
-			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
+			// Clear any existing panels before each test
+			if ((ValidateEnvironmentPanel as any).currentPanel) {
+				(ValidateEnvironmentPanel as any).currentPanel = undefined;
+			}
 		});
 
 		test('should handle WSL installation guide launch', () => {
@@ -369,8 +323,11 @@ suite('apEnvironmentValidator Test Suite', () => {
 			sandbox.stub(vscode.window, 'showInformationMessage').resolves('Later' as any);
 
 			ValidateEnvironmentPanel.createOrShow();
+			const panel = ValidateEnvironmentPanel.currentPanel;
+			assert(panel, 'Panel should be created');
 
-			messageHandler({ command: 'launchWSL' });
+			// @ts-expect-error this is a private method
+			panel._onReceiveMessage({ command: 'launchWSL' });
 
 			assert(openExternalStub.calledWith(vscode.Uri.parse('https://learn.microsoft.com/en-us/windows/wsl/install')));
 		});
@@ -379,8 +336,11 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const executeCommandStub = sandbox.stub(vscode.commands, 'executeCommand').resolves();
 
 			ValidateEnvironmentPanel.createOrShow();
+			const panel = ValidateEnvironmentPanel.currentPanel;
+			assert(panel, 'Panel should be created');
 
-			messageHandler({ command: 'openVSCodeWSL' });
+			// @ts-expect-error this is a private method
+			panel._onReceiveMessage({ command: 'openVSCodeWSL' });
 
 			await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -390,29 +350,16 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 	suite('Error Handling', () => {
 		test('should handle Python interpreter selection failures', async () => {
-			const mockWebview = {
-				html: '',
-				postMessage: sandbox.stub(),
-				onDidReceiveMessage: sandbox.stub().callsFake((handler) => {
-					setTimeout(() => handler({ command: 'selectPythonInterpreter' }), 0);
-					return { dispose: sandbox.stub() };
-				}),
-				asWebviewUri: sandbox.stub().returnsArg(0)
-			} as any;
-
-			const mockPanel = {
-				webview: mockWebview,
-				reveal: sandbox.stub(),
-				dispose: sandbox.stub(),
-				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
-			} as any;
-
-			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
 			sandbox.stub(ProgramUtils, 'selectPythonInterpreter')
 				.rejects(new Error('Selection failed'));
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
 			ValidateEnvironmentPanel.createOrShow();
+			const panel = ValidateEnvironmentPanel.currentPanel;
+			assert(panel, 'Panel should be created');
+
+			// @ts-expect-error this is a private method
+			panel._onReceiveMessage({ command: 'selectPythonInterpreter' });
 
 			await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -420,29 +367,16 @@ suite('apEnvironmentValidator Test Suite', () => {
 		});
 
 		test('should handle WSL command failures', async () => {
-			const mockWebview = {
-				html: '',
-				postMessage: sandbox.stub(),
-				onDidReceiveMessage: sandbox.stub().callsFake((handler) => {
-					setTimeout(() => handler({ command: 'openVSCodeWSL' }), 0);
-					return { dispose: sandbox.stub() };
-				}),
-				asWebviewUri: sandbox.stub().returnsArg(0)
-			} as any;
-
-			const mockPanel = {
-				webview: mockWebview,
-				reveal: sandbox.stub(),
-				dispose: sandbox.stub(),
-				onDidDispose: sandbox.stub().returns({ dispose: sandbox.stub() })
-			} as any;
-
-			sandbox.stub(vscode.window, 'createWebviewPanel').returns(mockPanel);
 			sandbox.stub(vscode.commands, 'executeCommand')
 				.rejects(new Error('WSL command failed'));
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
 			ValidateEnvironmentPanel.createOrShow();
+			const panel = ValidateEnvironmentPanel.currentPanel;
+			assert(panel, 'Panel should be created');
+
+			// @ts-expect-error this is a private method
+			panel._onReceiveMessage({ command: 'openVSCodeWSL' });
 
 			await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -450,3 +384,4 @@ suite('apEnvironmentValidator Test Suite', () => {
 		});
 	});
 });
+
