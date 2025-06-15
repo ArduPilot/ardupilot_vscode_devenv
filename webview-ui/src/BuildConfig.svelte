@@ -2,6 +2,7 @@
   import { TasksList } from "./tasksLists";
   import BoardsList from "./lib/BoardsList.svelte";
   import TargetsList from "./lib/TargetsList.svelte";
+  import ConfigName from "./lib/ConfigName.svelte";
   import ExtraConfig from "./lib/ExtraConfig.svelte";
   import FeatureConfig from "./lib/FeatureConfig.svelte";
   import SITLConfig from "./lib/SITLConfig.svelte";
@@ -15,6 +16,7 @@
   let { vscodeHooks } = $props();
   let board = $state("");
   let target = $state("");
+  let configName = $state("");
   let featureConfig = $state("");
   let extraConfig = $state("");
   let simVehicleCommand = $state("");
@@ -29,6 +31,13 @@
     addNewButton?.addEventListener("click", switchToAddMode);
   });
 
+  // Auto-generate config name when board/target change (only in add mode)
+  $effect(() => {
+    if (!isEditMode && board && target) {
+      generateConfigName();
+    }
+  });
+
   async function loadInfo(): Promise<void> {
     const message = await vscodeHooks.request("getTasksList");
     const currentTask = await vscodeHooks.request("getCurrentTask");
@@ -37,6 +46,7 @@
       var task = currentTask.task;
       board = task.configure;
       target = task.target;
+      configName = task.configName;
       // Parse existing configureOptions to separate feature flags from extra config
       const options = task.configureOptions || "";
       const parts = parseConfigOptions(options);
@@ -57,10 +67,11 @@
       .filter(config => config.trim())
       .join(' ');
     
-    console.log(board, target, combinedConfig);
+    console.log(board, target, configName, combinedConfig);
     vscodeHooks.postMessage("build", {
       board: board,
       target: target,
+      configName: configName,
       extraConfig: combinedConfig,
       simVehicleCommand: simVehicleCommand,
     });
@@ -70,6 +81,7 @@
     // Clear all selections and switch to add mode
     board = "";
     target = "";
+    configName = "";
     featureConfig = "";
     extraConfig = "";
     simVehicleCommand = "";
@@ -77,6 +89,42 @@
 
     // Notify the backend that we want to switch to add mode
     vscodeHooks.postMessage("switchToAddMode", {});
+  }
+
+  async function generateConfigName() {
+    if (board && target) {
+      const baseName = `${board}-${target}`;
+      
+      // Get existing configuration names
+      const existingNames = await getExistingConfigNames();
+      
+      // Check if base name already exists
+      if (!existingNames.includes(baseName)) {
+        configName = baseName;
+        return;
+      }
+      
+      // Find the next available number
+      let counter = 2;
+      let candidateName = `${baseName}-${counter}`;
+      
+      while (existingNames.includes(candidateName)) {
+        counter++;
+        candidateName = `${baseName}-${counter}`;
+      }
+      
+      configName = candidateName;
+    }
+  }
+  
+  async function getExistingConfigNames(): Promise<string[]> {
+    try {
+      const response = await vscodeHooks.request("getExistingConfigNames");
+      return response.configNames || [];
+    } catch (error) {
+      console.error("Failed to get existing config names:", error);
+      return [];
+    }
   }
 
 
@@ -150,6 +198,11 @@
         targets={tasksList.getTargets(board)}
         label="Select Target:"
         id="target"
+      />
+      <ConfigName
+        bind:value={configName}
+        label="Configuration Name:"
+        id="configName"
       />
       {#if isSitlBoard()}
         <SITLConfig
