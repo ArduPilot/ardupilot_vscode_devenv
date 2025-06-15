@@ -129,6 +129,9 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
+			// sleep for a second to ensure all messages are processed
+			await new Promise(resolve => setTimeout(resolve, 1000));
+
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
 
 			// Verify validationResult messages for all expected tools
@@ -198,6 +201,9 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
+			// sleep for a second to ensure all messages are processed
+			await new Promise(resolve => setTimeout(resolve, 1000));
+
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent even with failures');
 
 			if (originalPlatform === 'win32') {
@@ -293,6 +299,8 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
+			// sleep for a second to ensure all messages are processed
+			await new Promise(resolve => setTimeout(resolve, 1000));
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
 
 			// Verify Python validationResult includes custom path information

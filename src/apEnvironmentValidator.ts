@@ -68,8 +68,8 @@ export class ValidateEnvironmentPanel {
 	public static readonly viewType = 'validateEnvironmentPanel';
 	private static log = new apLog('validateEnvironmentPanel');
 
-	private readonly _panel: vscode.WebviewPanel;
-	private _disposables: vscode.Disposable[] = [];
+	readonly _panel: vscode.WebviewPanel;
+	readonly _disposables: vscode.Disposable[] = [];
 
 	public static createOrShow(column?: vscode.ViewColumn): void {
 		const activeColumn = column || vscode.ViewColumn.One;
@@ -107,26 +107,7 @@ export class ValidateEnvironmentPanel {
 		// Handle messages from the webview
 		this._panel.webview.onDidReceiveMessage(
 			message => {
-				switch (message.command) {
-				case 'checkEnvironment':
-					this._validateEnvironment();
-					break;
-				case 'configureToolPath':
-					this._configureToolPath(message.toolId, message.toolName);
-					break;
-				case 'resetAllPaths':
-					this._resetAllToolPaths();
-					break;
-				case 'launchWSL':
-					this._launchWSL();
-					break;
-				case 'openVSCodeWSL':
-					this._openVSCodeWithWSL();
-					break;
-				case 'selectPythonInterpreter':
-					this._selectPythonInterpreter();
-					break;
-				}
+				this._onReceiveMessage(message);
 			},
 			null,
 			this._disposables
@@ -136,6 +117,29 @@ export class ValidateEnvironmentPanel {
 		setTimeout(() => {
 			this._validateEnvironment();
 		}, 500);
+	}
+
+	private _onReceiveMessage(message: {command: string, toolId: string, toolName: string}): void {
+		switch (message.command) {
+		case 'checkEnvironment':
+			this._validateEnvironment();
+			break;
+		case 'configureToolPath':
+			this._configureToolPath(message.toolId, message.toolName);
+			break;
+		case 'resetAllPaths':
+			this._resetAllToolPaths();
+			break;
+		case 'launchWSL':
+			this._launchWSL();
+			break;
+		case 'openVSCodeWSL':
+			this._openVSCodeWithWSL();
+			break;
+		case 'selectPythonInterpreter':
+			this._selectPythonInterpreter();
+			break;
+		}
 	}
 
 	private _getInitialHtml(): string {
