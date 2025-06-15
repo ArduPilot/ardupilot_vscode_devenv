@@ -89,11 +89,6 @@ async function main() {
 
 		console.log(`Running tests with ArduPilot workspace: ${workspacePath}`);
 
-		// Set environment variable to pass test suite filter to the test runner
-		if (testSuite) {
-			process.env.TEST_SUITE_FILTER = testSuite;
-		}
-
 		// Download VS Code if needed and get the executable path
 		const vscodeExecutablePath = await downloadAndUnzipVSCode();
 
