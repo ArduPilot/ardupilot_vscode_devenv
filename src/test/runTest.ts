@@ -9,14 +9,27 @@ const execAsync = promisify(exec);
 
 async function installExtension(vscodeExecutablePath: string, extensionId: string): Promise<void> {
 	console.log(`Installing extension: ${extensionId}`);
-	try {
-		const [cli, ...args] = resolveCliArgsFromVSCodeExecutablePath(vscodeExecutablePath);
-		const { stdout } = await execAsync(`VSCODE_IPC_HOOK_CLI= DONT_PROMPT_WSL_INSTALL=1 "${cli}" ${args.join(' ')} --install-extension ${extensionId} --force`);
+	const maxRetries = 2;
 
-		console.log(`Extension ${extensionId} installed successfully:`, stdout);
-	} catch (error) {
-		console.warn(`Failed to install extension ${extensionId}:`, error);
-		// Don't throw error to avoid breaking tests if extension installation fails
+	for (let attempt = 1; attempt <= maxRetries; attempt++) {
+		try {
+			const [cli, ...args] = resolveCliArgsFromVSCodeExecutablePath(vscodeExecutablePath);
+			const { stdout } = await execAsync(`VSCODE_IPC_HOOK_CLI= DONT_PROMPT_WSL_INSTALL=1 "${cli}" ${args.join(' ')} --install-extension ${extensionId} --force`);
+
+			console.log(`Extension ${extensionId} installed successfully on attempt ${attempt}:`, stdout);
+			return; // Success, exit the retry loop
+		} catch (error) {
+			console.warn(`Failed to install extension ${extensionId} on attempt ${attempt}:`, error);
+
+			if (attempt === maxRetries) {
+				console.warn(`Failed to install extension ${extensionId} after ${maxRetries} attempts. Continuing with tests...`);
+				// Don't throw error to avoid breaking tests if extension installation fails
+			} else {
+				console.log(`Retrying extension installation for ${extensionId}...`);
+				// Wait 2 seconds before retry
+				await new Promise(resolve => setTimeout(resolve, 2000));
+			}
+		}
 	}
 }
 
