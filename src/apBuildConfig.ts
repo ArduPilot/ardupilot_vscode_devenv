@@ -144,6 +144,29 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 				this.refresh();
 			})
 		);
+
+		// Watch for changes to tasks.json to auto-refresh build configurations
+		if (this.workspaceRoot) {
+			const tasksJsonPattern = new vscode.RelativePattern(this.workspaceRoot, '.vscode/tasks.json');
+			const tasksJsonWatcher = vscode.workspace.createFileSystemWatcher(tasksJsonPattern);
+
+			tasksJsonWatcher.onDidChange(() => {
+				apBuildConfigProvider.log('tasks.json changed - refreshing build configurations');
+				this.refresh();
+			});
+
+			tasksJsonWatcher.onDidCreate(() => {
+				apBuildConfigProvider.log('tasks.json created - refreshing build configurations');
+				this.refresh();
+			});
+
+			tasksJsonWatcher.onDidDelete(() => {
+				apBuildConfigProvider.log('tasks.json deleted - refreshing build configurations');
+				this.refresh();
+			});
+
+			context.subscriptions.push(tasksJsonWatcher);
+		}
 	}
 
 	getTreeItem(element: apBuildConfig): vscode.TreeItem {
