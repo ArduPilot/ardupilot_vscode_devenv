@@ -81,8 +81,8 @@ export class ProgramUtils {
 			[ProgramUtils.TOOL_OPENOCD]:
 				{ linux: ['openocd'], darwin: ['openocd'] },
 			[ProgramUtils.TOOL_JLINK]:
-				{ linux: ['/mnt/c/Program Files/SEGGER/JLink/JLinkGDBServerCLExe', //wsl
-					'/mnt/c/Program Files (x86)/SEGGER/JLink/JLinkGDBServerCLExe', //wsl
+				{ linux: ['/mnt/c/Program Files/SEGGER/JLink*/JLinkGDBServerCL.exe', //wsl
+					'/mnt/c/Program Files (x86)/SEGGER/JLink*/JLinkGDBServerCL.exe', //wsl
 					'/opt/SEGGER/JLink*/JLinkGDBServerCLExe'
 				], darwin: ['JLinkGDBServerCLExe',
 					'/Applications/SEGGER/JLink/JLinkGDBServerCLExe'

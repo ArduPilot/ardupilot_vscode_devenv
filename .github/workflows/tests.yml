@@ -130,12 +130,11 @@ jobs:
 
       - name: Install J-Link (Windows)
         if: matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
         run: |
           # Install J-Link from local package
-          .\ci-tools\JLink_Windows_V840_x86_64.exe /S
-          
-          # Add J-Link to PATH for Windows
-          echo "C:\Program Files\SEGGER\JLink" >> $env:GITHUB_PATH
+          ./ci-tools/JLink_Windows_V840_x86_64.exe /S
+          /mnt/c/Program\ Files/SEGGER/JLink/JLinkGDBServerCLExe.exe --version || echo "J-Link: Version check (may fail normally)"
 
       - name: Setup Python virtual environment (macOS)
         if: matrix.os == 'macos-latest'
@@ -159,7 +158,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: wsl-bash {0}
         run: |
-          \. "$HOME/.nvm/nvm.sh"
+          . $HOME/.nvm/nvm.sh
           echo "=== Tool Verification in WSL2 ==="
           python3 --version
           gcc --version | head -1
@@ -172,18 +171,6 @@ jobs:
 
           node --version
           npm --version
-
-      - name: Verify J-Link installation (Windows Host)
-        if: matrix.os == 'windows-latest'
-        run: |
-          echo "=== J-Link Verification on Windows Host ==="
-          if (Test-Path "C:\Program Files\SEGGER\JLink\JLinkGDBServerCLExe.exe") {
-            echo "J-Link found at: C:\Program Files\SEGGER\JLink\JLinkGDBServerCLExe.exe"
-            & "C:\Program Files\SEGGER\JLink\JLinkGDBServerCLExe.exe" -version 2>&1 | Select-Object -First 3
-          } else {
-            echo "J-Link not found at expected location"
-          }
-          echo "=== J-Link Verification Complete ==="
 
       - name: Verify tool installation (Unix)
         if: matrix.os != 'windows-latest'
