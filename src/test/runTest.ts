@@ -39,7 +39,7 @@ async function setupArdupilotWorkspace(): Promise<string> {
 		console.log('ArduPilot directory not found, cloning repository...');
 		try {
 			// Clone only the master branch of ArduPilot repository
-			const { stdout: cloneOutput } = await execAsync(`git clone --single-branch --branch master https://github.com/ArduPilot/ardupilot.git "${ardupilotPath}"`);
+			const { stdout: cloneOutput } = await execAsync(`git clone --depth 1 --single-branch --branch master https://github.com/ArduPilot/ardupilot.git "${ardupilotPath}"`);
 			console.log('Git clone output:', cloneOutput);
 		} catch (error) {
 			console.error('Failed to clone ArduPilot repository:', error);
