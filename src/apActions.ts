@@ -42,6 +42,7 @@ export function setActiveConfiguration(task: vscode.Task): void {
 	if (activeConfiguration && activeConfiguration.definition) {
 		const taskDef = activeConfiguration.definition as ArdupilotTaskDefinition;
 		activeLaunchConfig = apActionItem.createMatchingLaunchConfig(
+			taskDef.configName,
 			taskDef.configure,
 			taskDef.target,
 			taskDef.simVehicleCommand || ''
@@ -145,7 +146,7 @@ export class apActionItem extends vscode.TreeItem {
 
 	}
 
-	static createMatchingLaunchConfig(configure: string, target: string, simVehicleCommand: string): LaunchConfiguration | null {
+	static createMatchingLaunchConfig(configName: string, configure: string, target: string, simVehicleCommand: string): LaunchConfiguration | null {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
 			apActionItem.log('No workspace folder is open.');
@@ -189,7 +190,7 @@ export class apActionItem extends vscode.TreeItem {
 			type: 'apLaunch',
 			request: 'launch',
 			target: target,
-			preLaunchTask: `${APTaskProvider.ardupilotTaskType}: ${configure}-${target}`,
+			preLaunchTask: `${APTaskProvider.ardupilotTaskType}: ${configName}`,
 			isSITL: isSITL,
 			...(simVehicleCommand && { simVehicleCommand })
 		};
@@ -210,7 +211,7 @@ export class apActionItem extends vscode.TreeItem {
 
 		// Also update the task configuration with the simVehicleCommand
 		if (isSITL && simVehicleCommand) {
-			this.updateTaskWithSimVehicleCommand(configure, target, simVehicleCommand);
+			this.updateTaskWithSimVehicleCommand(configName, simVehicleCommand);
 		}
 
 		// Create .vscode directory if it doesn't exist
@@ -221,7 +222,7 @@ export class apActionItem extends vscode.TreeItem {
 
 		try {
 			fs.writeFileSync(launchPath, JSON.stringify(launchJson, null, 2), 'utf8');
-			apActionItem.log(`Updated launch configurations for ${configure}-${target}`);
+			apActionItem.log(`Updated launch configurations for ${configName}`);
 		} catch (error) {
 			apActionItem.log(`Error writing to launch.json: ${error}`);
 		}
@@ -230,11 +231,10 @@ export class apActionItem extends vscode.TreeItem {
 
 	/**
 		 * Updates the task configuration with the simVehicleCommand
-		 * @param configure The board name
-		 * @param target The build target
+		 * @param configName The configuration name
 		 * @param simVehicleCommand The simVehicleCommand to save
 		 */
-	static updateTaskWithSimVehicleCommand(configure: string, target: string, simVehicleCommand: string): void {
+	static updateTaskWithSimVehicleCommand(configName: string, simVehicleCommand: string): void {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
 			apActionItem.log('No workspace folder is open.');
@@ -251,10 +251,9 @@ export class apActionItem extends vscode.TreeItem {
 			return;
 		}
 
-		// Find the task with the matching board name and target
+		// Find the task with the matching configName
 		const taskIndex = tasks.findIndex((task: ArdupilotTaskDefinition) =>
-			task.configure === configure &&
-				task.target === target &&
+			task.configName === configName &&
 				task.type === 'ardupilot'
 		);
 
@@ -264,12 +263,12 @@ export class apActionItem extends vscode.TreeItem {
 
 			// Update the tasks configuration
 			tasksConfig.update('tasks', tasks, vscode.ConfigurationTarget.Workspace).then(() => {
-				apActionItem.log(`Updated simVehicleCommand for ${configure}-${target} in tasks.json`);
+				apActionItem.log(`Updated simVehicleCommand for ${configName} in tasks.json`);
 			}, (error) => {
 				apActionItem.log(`Error updating tasks.json: ${error}`);
 			});
 		} else {
-			apActionItem.log(`No task found for ${configure}-${target}`);
+			apActionItem.log(`No task found for ${configName}`);
 		}
 	}
 
@@ -354,7 +353,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 		vscode.tasks.onDidStartTask(e => {
 			const taskDef = e.execution.task.definition;
 			if (taskDef.type === 'ardupilot') {
-				this.log.log(`Task started: ${taskDef.configure}-${taskDef.target}`);
+				this.log.log(`Task started: ${taskDef.configName}`);
 				activeConfiguration = e.execution.task;
 				this.refresh();
 			}
@@ -388,7 +387,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 			);
 
 			const matchingTask = arduPilotTasks.find(task =>
-				`${task.definition.configure}-${task.definition.target}` === activeConfigName
+				task.definition.configName === activeConfigName
 			);
 
 			if (matchingTask) {
@@ -407,7 +406,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 
 		if (arduPilotTasks.length > 0) {
 			setActiveConfiguration(arduPilotTasks[0]);
-			this.log.log(`Using default configuration: ${activeConfiguration?.definition.configure}-${activeConfiguration?.definition.target}`);
+			this.log.log(`Using default configuration: ${activeConfiguration?.definition.configName}`);
 			this.refresh();
 		}
 	}
@@ -427,11 +426,10 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 		// Create quick pick items
 		const quickPickItems = arduPilotTasks.map(task => {
 			const isActive = activeConfiguration &&
-				activeConfiguration.definition.configure === task.definition.configure &&
-				activeConfiguration.definition.target === task.definition.target;
+				activeConfiguration.definition.configName === task.definition.configName;
 
 			return {
-				label: `${task.definition.configure}-${task.definition.target}`,
+				label: task.definition.configName,
 				description: isActive ? '(Active)' : '',
 				task: task
 			};
@@ -470,8 +468,8 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 
 		if (activeConfiguration) {
 			const def = activeConfiguration.definition as ArdupilotTaskDefinition;
-			configLabel = `Configuration: ${def.configure}-${def.target}`;
-			configTooltip = `Active configuration: ${def.configure}-${def.target}`;
+			configLabel = `Configuration: ${def.configName}`;
+			configTooltip = `Active configuration: ${def.configName}`;
 		}
 
 		actionItems.push(new apActionItem(
@@ -493,7 +491,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 				'Build Firmware',
 				vscode.TreeItemCollapsibleState.None,
 				'build',
-				`Build firmware for ${def.configure}-${def.target}`,
+				`Build firmware for ${def.configName}`,
 				activeConfiguration
 			));
 
@@ -503,7 +501,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 				'Debug',
 				vscode.TreeItemCollapsibleState.None,
 				'debug',
-				`Debug firmware for ${def.configure}-${def.target}`,
+				`Debug firmware for ${def.configName}`,
 				activeConfiguration
 			));
 
