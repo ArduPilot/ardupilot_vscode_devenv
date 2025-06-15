@@ -7,7 +7,7 @@ import { APExtensionContext } from '../../extension';
 let apExtensionContext: APExtensionContext | undefined;
 
 export async function getApExtApi(): Promise<APExtensionContext> {
-	const extension: vscode.Extension<any> | undefined = vscode.extensions.getExtension('ardupilot-org.ardupilot-devenv');
+	const extension: vscode.Extension<APExtensionContext> | undefined = vscode.extensions.getExtension('ardupilot-org.ardupilot-devenv');
 	if (!extension) {
 		throw new Error('ArduPilot extension is not active');
 	}
@@ -136,4 +136,53 @@ export async function commandLineBuild(ardupilotPath: string, targets: { board: 
 			});
 		});
 	}
+}
+
+/**
+ * DEBUG: Detects if running in WSL environment
+ */
+export function isWSL(): boolean {
+	try {
+		return fs.existsSync('/proc/version') &&
+			fs.readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft');
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * DEBUG: Gets appropriate timeout for the current environment
+ * WSL2 environments get longer timeouts due to performance characteristics
+ */
+export function getEnvironmentTimeout(baseTimeout: number): number {
+	if (isWSL()) {
+		console.log(`DEBUG: WSL detected, using extended timeout: ${baseTimeout * 2}ms`);
+		return baseTimeout * 2;
+	}
+	console.log(`DEBUG: Standard environment, using base timeout: ${baseTimeout}ms`);
+	return baseTimeout;
+}
+
+/**
+ * DEBUG: Waits for a condition to be met with polling, instead of fixed timeout
+ */
+export async function waitForCondition(
+	condition: () => boolean,
+	description: string,
+	maxWaitMs: number = 2000,
+	pollIntervalMs: number = 100
+): Promise<void> {
+	const startTime = Date.now();
+	console.log(`DEBUG: Waiting for condition: ${description}`);
+	while (Date.now() - startTime < maxWaitMs) {
+		if (condition()) {
+			const elapsed = Date.now() - startTime;
+			console.log(`DEBUG: Condition met after ${elapsed}ms: ${description}`);
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+	}
+	const elapsed = Date.now() - startTime;
+	console.log(`DEBUG: Condition timeout after ${elapsed}ms: ${description}`);
+	throw new Error(`Timeout waiting for condition: ${description}`);
 }

@@ -7,7 +7,7 @@ import { ValidateEnvironmentPanel } from '../../apEnvironmentValidator';
 import { ProgramUtils } from '../../apProgramUtils';
 import { ToolsConfig } from '../../apToolsConfig';
 import { APExtensionContext } from '../../extension';
-import { getApExtApi } from './common';
+import { getApExtApi, getEnvironmentTimeout, waitForCondition, isWSL } from './common';
 
 suite('apEnvironmentValidator Test Suite', () => {
 	let apExtensionContext: APExtensionContext;
@@ -81,10 +81,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 		});
 
 		test('should validate multiple development tools and report results', async () => {
-			const originalPlatform = process.platform;
-			if (originalPlatform === 'win32') {
-				Object.defineProperty(process, 'platform', { value: 'linux' });
-			}
+			console.log(`DEBUG: Running test in ${isWSL() ? 'WSL' : 'standard'} environment`);
 
 			sandbox.stub(ProgramUtils, 'findPython').resolves({
 				available: true,
@@ -113,8 +110,21 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const webview = panel._panel.webview;
 			const postMessageSpy = sandbox.spy(webview, 'postMessage');
 
-			// Wait for the 500ms timeout + validation to complete
-			await new Promise(resolve => setTimeout(resolve, 800));
+			// Wait for validation to complete using dynamic polling
+			const maxWaitTime = getEnvironmentTimeout(1500); // Base timeout of 1.5s, doubled for WSL
+			console.log(`DEBUG: Waiting up to ${maxWaitTime}ms for validation completion`);
+
+			await waitForCondition(
+				() => {
+					const validationResultCalls = postMessageSpy.getCalls().filter(call =>
+						call.args[0] && call.args[0].command === 'validationResult'
+					);
+					console.log(`DEBUG: Found ${validationResultCalls.length} validation result calls so far`);
+					return validationResultCalls.length >= 10; // Expect at least 10 tool validations
+				},
+				'validation result messages to be sent',
+				maxWaitTime
+			);
 
 			// Verify postMessage was called
 			assert(postMessageSpy.called, 'webview.postMessage should have been called');
@@ -129,8 +139,6 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
-			// sleep for a second to ensure all messages are processed
-			await new Promise(resolve => setTimeout(resolve, 1000));
 
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
 
@@ -160,17 +168,10 @@ suite('apEnvironmentValidator Test Suite', () => {
 			assert(mavproxyValidationCall, 'MAVProxy validation result should be sent');
 			assert.strictEqual(mavproxyValidationCall.args[0].available, true);
 			assert.strictEqual(mavproxyValidationCall.args[0].version, '1.8.0');
-
-			if (originalPlatform === 'win32') {
-				Object.defineProperty(process, 'platform', { value: originalPlatform });
-			}
 		});
 
 		test('should handle tool validation failures gracefully', async () => {
-			const originalPlatform = process.platform;
-			if (originalPlatform === 'win32') {
-				Object.defineProperty(process, 'platform', { value: 'linux' });
-			}
+			console.log(`DEBUG: Running failure test in ${isWSL() ? 'WSL' : 'standard'} environment`);
 
 			sandbox.stub(ProgramUtils, 'findPython').rejects(new Error('Python not found'));
 			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: false });
@@ -192,7 +193,21 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const webview = panel._panel.webview;
 			const postMessageSpy = sandbox.spy(webview, 'postMessage');
 
-			await new Promise(resolve => setTimeout(resolve, 800));
+			// Wait for validation to complete using dynamic polling
+			const maxWaitTime = getEnvironmentTimeout(1500); // Base timeout of 1.5s, doubled for WSL
+			console.log(`DEBUG: Waiting up to ${maxWaitTime}ms for failure validation completion`);
+
+			await waitForCondition(
+				() => {
+					const validationResultCalls = postMessageSpy.getCalls().filter(call =>
+						call.args[0] && call.args[0].command === 'validationResult'
+					);
+					console.log(`DEBUG: Found ${validationResultCalls.length} validation result calls so far (failure test)`);
+					return validationResultCalls.length >= 6; // Expect at least 6 tool validations even with failures
+				},
+				'validation result messages to be sent even with failures',
+				maxWaitTime
+			);
 
 			// Verify that webview received messages (including platform check)
 			assert(postMessageSpy.called, 'webview.postMessage should have been called');
@@ -201,14 +216,8 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
-			// sleep for a second to ensure all messages are processed
-			await new Promise(resolve => setTimeout(resolve, 1000));
 
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent even with failures');
-
-			if (originalPlatform === 'win32') {
-				Object.defineProperty(process, 'platform', { value: originalPlatform });
-			}
 		});
 	});
 
@@ -243,17 +252,12 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			// @ts-expect-error this is a private method
 			panel._onReceiveMessage({ command: 'selectPythonInterpreter' });
-			await new Promise(resolve => setTimeout(resolve, 50));
+			await new Promise(resolve => setTimeout(resolve, getEnvironmentTimeout(50)));
 
 			assert(setToolPathSpy.calledWith(ProgramUtils.TOOL_PYTHON, interpreterPath));
 		});
 
 		test('should detect custom tool paths correctly', async () => {
-			const originalPlatform = process.platform;
-			if (originalPlatform === 'win32') {
-				Object.defineProperty(process, 'platform', { value: 'linux' });
-			}
-
 			const customPath = '/custom/bin/python';
 
 			// Mock all ProgramUtils methods first
@@ -290,7 +294,21 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const webview = panel._panel.webview;
 			const postMessageSpy = sandbox.spy(webview, 'postMessage');
 
-			await new Promise(resolve => setTimeout(resolve, 800));
+			// Wait for validation to complete using dynamic polling
+			const maxWaitTime = getEnvironmentTimeout(1500); // Base timeout of 1.5s, doubled for WSL
+			console.log(`DEBUG: Waiting up to ${maxWaitTime}ms for custom path validation completion`);
+
+			await waitForCondition(
+				() => {
+					const validationResultCalls = postMessageSpy.getCalls().filter(call =>
+						call.args[0] && call.args[0].command === 'validationResult'
+					);
+					console.log(`DEBUG: Found ${validationResultCalls.length} validation result calls so far (custom path test)`);
+					return validationResultCalls.length >= 6; // Expect at least 6 tool validations
+				},
+				'validation result messages to be sent (custom path test)',
+				maxWaitTime
+			);
 
 			// Verify that webview received messages
 			assert(postMessageSpy.called, 'webview.postMessage should have been called');
@@ -299,8 +317,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
-			// sleep for a second to ensure all messages are processed
-			await new Promise(resolve => setTimeout(resolve, 1000));
+
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
 
 			// Verify Python validationResult includes custom path information
@@ -310,10 +327,6 @@ suite('apEnvironmentValidator Test Suite', () => {
 			assert(pythonValidationCall, 'Python validation result should be sent');
 			assert.strictEqual(pythonValidationCall.args[0].path, customPath);
 			assert.strictEqual(pythonValidationCall.args[0].isCustomPath, true);
-
-			if (originalPlatform === 'win32') {
-				Object.defineProperty(process, 'platform', { value: originalPlatform });
-			}
 		});
 	});
 
@@ -350,7 +363,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			// @ts-expect-error this is a private method
 			panel._onReceiveMessage({ command: 'openVSCodeWSL' });
 
-			await new Promise(resolve => setTimeout(resolve, 50));
+			await new Promise(resolve => setTimeout(resolve, getEnvironmentTimeout(50)));
 
 			assert(executeCommandStub.calledWith('remote-wsl.openFolder'));
 		});
@@ -369,7 +382,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			// @ts-expect-error this is a private method
 			panel._onReceiveMessage({ command: 'selectPythonInterpreter' });
 
-			await new Promise(resolve => setTimeout(resolve, 50));
+			await new Promise(resolve => setTimeout(resolve, getEnvironmentTimeout(50)));
 
 			assert(showErrorStub.calledWith(sinon.match(/Failed to select Python interpreter/)));
 		});
@@ -386,7 +399,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			// @ts-expect-error this is a private method
 			panel._onReceiveMessage({ command: 'openVSCodeWSL' });
 
-			await new Promise(resolve => setTimeout(resolve, 50));
+			await new Promise(resolve => setTimeout(resolve, getEnvironmentTimeout(50)));
 
 			assert(showErrorStub.calledWith(sinon.match(/Failed to open VS Code with WSL/)));
 		});
