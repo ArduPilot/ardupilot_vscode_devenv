@@ -40,7 +40,8 @@
         "type": "ardupilot",
         "required": [
           "configure",
-          "target"
+          "target",
+          "configName"
         ],
         "properties": {
           "configure": {
@@ -50,6 +51,10 @@
           "target": {
             "type": "string",
             "description": "Ardupilot binary target(s)"
+          },
+          "configName": {
+            "type": "string",
+            "description": "Custom configuration name for the task"
           },
           "configureOptions": {
             "type": "string",
