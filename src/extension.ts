@@ -62,6 +62,13 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	const log = new apLog('extension');
 
 	log.log('ardupilot-devenv extension started');
+
+	// Migrate existing tasks.json to add configName if missing
+	const migrated = APTaskProvider.migrateTasksJsonForConfigName();
+	if (migrated) {
+		log.log('Migrated existing tasks.json to include configName fields');
+	}
+
 	apExtensionContext.apTaskProvider = vscode.tasks.registerTaskProvider(APTaskProvider.ardupilotTaskType, new APTaskProvider(workspaceRoot, _context.extensionUri));
 
 	// Register the APLaunch debug type

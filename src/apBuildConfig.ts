@@ -17,7 +17,6 @@
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import * as fs from 'fs';
-import * as path from 'path';
 import { apBuildConfigPanel } from './apBuildConfigPanel';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { activeConfiguration } from './apActions';
@@ -54,10 +53,8 @@ export class apBuildConfig extends vscode.TreeItem {
 			// Set the description to include the target name
 			this.description = taskDef.target;
 
-			// Check if this is the active configuration
-			if (activeConfiguration &&
-				activeConfiguration.definition.configure === taskDef.configure &&
-				activeConfiguration.definition.target === taskDef.target) {
+			// Check if this is the active configuration using configName
+			if (activeConfiguration && taskDef.configName === activeConfiguration.definition.configName) {
 				// Highlight active configuration with blue check circle
 				this.iconPath = new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('terminal.ansiBlue'));
 				this.description = `${taskDef.target} (Active)`;
@@ -91,15 +88,15 @@ export class apBuildConfig extends vscode.TreeItem {
 
 		const taskDef = this.task.definition as ArdupilotTaskDefinition;
 
-		// Save the selection to workspace settings
+		// Save the selection to workspace settings using configName
 		vscode.workspace.getConfiguration('ardupilot').update(
 			'activeConfiguration',
-			`${taskDef.configure}-${taskDef.target}`,
+			taskDef.configName,
 			vscode.ConfigurationTarget.Workspace
 		).then(() => {
 			// Set as active configuration (this will trigger a refresh through the watcher)
 			vscode.commands.executeCommand('apActions.setActiveConfiguration', this.task);
-			vscode.window.showInformationMessage(`Activated ${taskDef.configure}-${taskDef.target} configuration`);
+			vscode.window.showInformationMessage(`Activated ${taskDef.configName} configuration`);
 		});
 
 		// Refresh the tree view to update UI
@@ -118,8 +115,11 @@ export class apBuildConfig extends vscode.TreeItem {
 			apBuildConfig.log(`Error deleting build folder: ${err}`);
 		}
 		vscode.commands.executeCommand('apBuildConfig.refreshEntry');
-		// also delete the task from tasks.json
-		APTaskProvider.delete(this.label);
+		// also delete the task from tasks.json using configName
+		if (this.task && this.task.definition) {
+			const taskDef = this.task.definition as ArdupilotTaskDefinition;
+			APTaskProvider.delete(taskDef.configName);
+		}
 	}
 }
 
@@ -163,91 +163,37 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 
 	getChildren(): Thenable<apBuildConfig[]> {
 		apBuildConfigProvider.log('getChildren');
-		// check folders inside the workspace/build directory
 		if (!this.workspaceRoot) {
 			return Promise.resolve([]);
 		}
 
-		// check if build directory exists in the workspace
-		const buildDirPath = path.join(this.workspaceRoot, 'build');
-		if (!fs.existsSync(buildDirPath)) {
-			apBuildConfigProvider.log('Build directory does not exist');
-			return Promise.resolve([]);
-		}
+		// Get all configurations from tasks.json instead of scanning build folders
+		const taskConfiguration = vscode.workspace.workspaceFolders
+			? vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri)
+			: vscode.workspace.getConfiguration('tasks');
+		const tasks = taskConfiguration.get('tasks') as Array<ArdupilotTaskDefinition> || [];
 
-		const buildDir = vscode.Uri.file(buildDirPath);
-		if (!buildDir) {
-			return Promise.resolve([]);
-		}
+		const buildConfigList: apBuildConfig[] = [];
 
-		// get the list of folders inside the build directory
-		// create a list of apBuildConfig objects for each folder containing ap_config.h file
-		let buildConfigList: apBuildConfig[] = [];
-		try {
-			fs.readdirSync(buildDir.fsPath).forEach(file => {
-				try {
-					if (fs.lstatSync(buildDir.fsPath + '/' + file).isDirectory() && fs.existsSync(buildDir.fsPath + '/' + file + '/ap_config.h')) {
-						// get current task from target_list in the folder
-						try {
-							const data = fs.readFileSync(buildDir.fsPath + '/' + file + '/target_list', 'utf8');
-							// split the data by comma
-							const targetList:string[] = data.split(',');
-							let target: string;
-							if (binToTarget[targetList[0]] !== undefined) {
-								target = binToTarget[targetList[0]];
-							} else {
-								target = targetList[0].split('/')[1];
-							}
+		// Filter and process only ardupilot tasks
+		const ardupilotTasks = tasks.filter(task => task.type === 'ardupilot');
 
-							// Get configure options and simVehicleCommand from existing task configuration
-							let configureOptions: string = '';
-							let simVehicleCommand: string = '';
-							const taskConfiguration = vscode.workspace.workspaceFolders
-								? vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri)
-								: vscode.workspace.getConfiguration('tasks');
-							const tasks = taskConfiguration.get('tasks') as Array<ArdupilotTaskDefinition> || [];
-
-							if (tasks) {
-								const existingTask = tasks.find(t =>
-									t.configure === file &&
-									t.target === target &&
-									t.type === 'ardupilot'
-								);
-								if (existingTask) {
-									// Extract configure options and simVehicleCommand from existing task
-									if (existingTask.configureOptions) {
-										configureOptions = existingTask.configureOptions;
-									}
-									if (existingTask.simVehicleCommand) {
-										simVehicleCommand = existingTask.simVehicleCommand;
-									}
-								}
-							}
-
-							const task = APTaskProvider.getOrCreateBuildConfig(
-								file,
-								target,
-								configureOptions,
-								simVehicleCommand
-							);
-
-							apBuildConfigProvider.log(`getOrCreateBuildConfig ${file} ${target}` +
-								(simVehicleCommand ? ` and simVehicleCommand: ${simVehicleCommand}` : ''));
-
-							buildConfigList = [new apBuildConfig(this, file, vscode.TreeItemCollapsibleState.None, task), ...buildConfigList];
-						} catch (err) {
-							apBuildConfigProvider.log(`Error reading target_list file ${err}`);
-						}
-					}
-				} catch (err) {
-					apBuildConfigProvider.log(`Error processing build directory entry ${file}: ${err}`);
+		for (const taskDef of ardupilotTasks) {
+			try {
+				// Create a VS Code task from the task definition
+				const task = APTaskProvider.createTask(taskDef);
+				if (task) {
+					// Use configName for display
+					const displayName = taskDef.configName;
+					buildConfigList.push(new apBuildConfig(this, displayName, vscode.TreeItemCollapsibleState.None, task));
+					apBuildConfigProvider.log(`Added config: ${displayName}`);
 				}
-			});
-		} catch (err) {
-			apBuildConfigProvider.log(`Error reading build directory: ${err}`);
-			return Promise.resolve([]);
+			} catch (err) {
+				apBuildConfigProvider.log(`Error processing task ${taskDef.configName}: ${err}`);
+			}
 		}
-		console.log(buildConfigList);
+
+		apBuildConfigProvider.log(`Found ${buildConfigList.length} configurations in tasks.json`);
 		return Promise.resolve(buildConfigList);
 	}
 }

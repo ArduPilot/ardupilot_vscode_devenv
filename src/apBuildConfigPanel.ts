@@ -16,9 +16,7 @@
 
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
-import * as path from 'path';
-import * as fs from 'fs';
-import { APTaskProvider } from './taskProvider';
+import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { Uri, Webview } from 'vscode';
 import { UIHooks } from './apUIHooks';
 import { setActiveConfiguration } from './apActions';
@@ -40,42 +38,6 @@ export class apBuildConfigPanel {
 	private _disposables: vscode.Disposable[] = [];
 	private _currentTask: vscode.Task | undefined;
 	private _uiHooks: UIHooks;
-
-	/**
-	 * Looks for existing task configurations for the given board
-	 * @param board The board name to search for
-	 * @returns The task if found, undefined otherwise
-	 */
-	private findExistingTaskForBoard(board: string): vscode.Task | undefined {
-		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		if (!workspaceRoot) {
-			return undefined;
-		}
-
-		const tasksPath = path.join(workspaceRoot, '.vscode', 'tasks.json');
-		if (!fs.existsSync(tasksPath)) {
-			return undefined;
-		}
-
-		try {
-			const tasksJson = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
-			const tasks = tasksJson.tasks || [];
-
-			// Find a task with the matching board name
-			const matchingTask = tasks.find((task: any) =>
-				task.type === 'ardupilot' && task.configure === board
-			);
-
-			if (matchingTask) {
-				// Convert to a proper vscode.Task
-				return APTaskProvider.createTask(matchingTask);
-			}
-		} catch (error) {
-			apBuildConfigPanel.log(`Error looking up task for board ${board}: ${error}`);
-		}
-
-		return undefined;
-	}
 
 	public static createOrShow(extensionUri: vscode.Uri, currentTask?: vscode.Task): void {
 		const column = vscode.window.activeTextEditor
@@ -161,8 +123,9 @@ export class apBuildConfigPanel {
 			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
 				taskDefinition.configure,
 				taskDefinition.target,
+				message?.configName as string,
 				taskDefinition.configureOptions,
-				message?.simVehicleCommand as string || '',
+				message?.simVehicleCommand as string || ''
 			);
 
 			if (currentTaskDef?.definition.simVehicleCommand) {
@@ -204,14 +167,43 @@ export class apBuildConfigPanel {
 		this._uiHooks.on('boardSelected', (data: Record<string, unknown>) => {
 			const board = data.board as string;
 			apBuildConfigPanel.log(`Board selected: ${board}`);
-			const existingTask = this.findExistingTaskForBoard(board);
-			if (existingTask) {
-				apBuildConfigPanel.createOrShow(this._extensionUri, existingTask);
-			} else {
-				this.switchToAddMode();
-			}
+			// Always stay in add mode for new configurations
+			this.switchToAddMode();
 			return;
 		});
+
+		// Handle request for existing config names
+		this._uiHooks.on('getExistingConfigNames', () => {
+			const configNames = this.getExistingConfigNames();
+			this._panel.webview.postMessage({ command: 'getExistingConfigNames', configNames: configNames });
+			return;
+		});
+	}
+
+	/**
+	 * Get all existing configuration names from tasks.json
+	 */
+	private getExistingConfigNames(): string[] {
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			return [];
+		}
+
+		try {
+			const tasksConfig = vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders![0].uri);
+			const tasks = tasksConfig.get('tasks') as Array<ArdupilotTaskDefinition> || [];
+
+			// Extract all configName values from tasks
+			const configNames = tasks
+				.filter(task => task.type === 'ardupilot' && task.configName)
+				.map(task => task.configName);
+
+			apBuildConfigPanel.log(`Found ${configNames.length} existing config names`);
+			return configNames;
+		} catch (error) {
+			apBuildConfigPanel.log(`Error getting existing config names: ${error}`);
+			return [];
+		}
 	}
 
 	/**

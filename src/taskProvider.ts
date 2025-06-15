@@ -27,6 +27,46 @@ export class APTaskProvider implements vscode.TaskProvider {
 	private static _extensionUri: vscode.Uri;
 	private log = APTaskProvider.log.log;
 
+	/**
+	 * Migrates existing tasks.json to add configName field if missing
+	 */
+	public static migrateTasksJsonForConfigName(): boolean {
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			return false;
+		}
+
+		const tasksPath = path.join(workspaceRoot, '.vscode', 'tasks.json');
+		if (!fs.existsSync(tasksPath)) {
+			return false;
+		}
+
+		try {
+			const tasksJson = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
+			let modified = false;
+
+			if (tasksJson.tasks) {
+				tasksJson.tasks.forEach((task: any) => {
+					if (task.type === 'ardupilot' && !task.configName) {
+						task.configName = `${task.configure}-${task.target}`;
+						modified = true;
+						APTaskProvider.log.log(`Migrated task: ${task.configName}`);
+					}
+				});
+			}
+
+			if (modified) {
+				fs.writeFileSync(tasksPath, JSON.stringify(tasksJson, null, '\t'));
+				APTaskProvider.log.log('Tasks.json migration completed');
+				return true;
+			}
+		} catch (error) {
+			APTaskProvider.log.log(`Error during tasks.json migration: ${error}`);
+		}
+
+		return false;
+	}
+
 	constructor(workspaceRoot: string, extensionUri: vscode.Uri) {
 		const pattern = path.join(workspaceRoot, 'tasklist.json');
 		const fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
@@ -43,7 +83,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		return this.ardupilotPromise;
 	}
 
-	public static getOrCreateBuildConfig(board: string, target: string, configureOptions?: string, simVehicleCommand?: string): vscode.Task | undefined {
+	public static getOrCreateBuildConfig(board: string, target: string, configName: string, configureOptions?: string, simVehicleCommand?: string): vscode.Task | undefined {
 		// create a new task definition in tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		APTaskProvider.log.log(`Creating new build configuration for ${board} ${target} @ ${workspaceRoot}`);
@@ -69,6 +109,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			type: 'ardupilot',
 			configure: board,
 			target: target,
+			configName: configName,
 			configureOptions: configureOptions === undefined ? '' : configureOptions,
 			buildOptions: '',
 			group: {
@@ -93,13 +134,13 @@ export class APTaskProvider implements vscode.TaskProvider {
 							type: string;
 							configure: string;
 							target: string;
+							configName?: string;
 							simVehicleCommand?: string;
 						}
 
 						const matchingTask = tasksJson.tasks?.find((task: TaskJsonDefinition) =>
 							task.type === 'ardupilot' &&
-							task.configure === board &&
-							task.target === target
+							task.configName === configName
 						);
 
 						if (matchingTask?.simVehicleCommand) {
@@ -128,9 +169,9 @@ export class APTaskProvider implements vscode.TaskProvider {
 		// Get current tasks array or initialize empty array if it doesn't exist
 		const tasks = tasksConfig.get('tasks') as Array<ArdupilotTaskDefinition> || [];
 
-		// Check if task already exists for this board-target combination
+		// Check if task already exists with this configName
 		const existingTaskIndex = tasks.findIndex((task: ArdupilotTaskDefinition) =>
-			task.configure === board && task.target === target
+			task.configName === configName
 		);
 
 		if (existingTaskIndex !== -1) {
@@ -143,7 +184,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 
 		// Update the tasks configuration
 		tasksConfig.update('tasks', tasks, vscode.ConfigurationTarget.Workspace).then(() => {
-			APTaskProvider.log.log(`Added/updated task ${board}-${target} to tasks.json using VS Code API`);
+			APTaskProvider.log.log(`Added/updated task ${configName} to tasks.json using VS Code API`);
 		}, (error) => {
 			APTaskProvider.log.log(`Error updating tasks.json: ${error}`);
 			vscode.window.showErrorMessage(`Failed to update tasks.json: ${error}`);
@@ -164,8 +205,8 @@ export class APTaskProvider implements vscode.TaskProvider {
 		if (definition.nm === undefined) {
 			definition.nm = 'arm-none-eabi-nm';
 		}
-		// convert target to binary
-		const task_name = definition.configure + '-' + definition.target;
+		// Use configName for task label
+		const task_name = definition.configName;
 
 		return new vscode.Task(
 			definition,
@@ -197,8 +238,8 @@ export class APTaskProvider implements vscode.TaskProvider {
 			return;
 		}
 
-		// Filter out the task with the matching board name
-		const newTasks = tasks.filter((task: ArdupilotTaskDefinition) => task.configure !== taskName);
+		// Filter out the task with the matching configName
+		const newTasks = tasks.filter((task: ArdupilotTaskDefinition) => task.configName !== taskName);
 
 		// Only update if we actually removed a task
 		if (newTasks.length !== tasks.length) {
@@ -232,6 +273,10 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	 * target
 	 */
 	target: string;
+	/**
+	 * custom configuration name
+	 */
+	configName: string;
 	/**
 	 * target output binary
 	 */
@@ -357,8 +402,9 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 				const tasklist = JSON.parse(stdout.split('\n')[0]) as ArdupilotTaskDefinition[];
 				for (const boardtask of tasklist) {
 					for (const buildtask of boardtask.targets) {
-						// // check if task exists in tasks.json
-						const taskExists = tasks.tasks.some((task: ArdupilotTaskDefinition) => task.configure === boardtask.configure && task.target === buildtask);
+						// // check if task exists in tasks.json using the auto-generated configName pattern
+						const autoConfigName = `${boardtask.configure}-${buildtask}`;
+						const taskExists = tasks.tasks.some((task: ArdupilotTaskDefinition) => task.configName === autoConfigName);
 						if (taskExists) {
 							continue;
 						}
@@ -374,6 +420,7 @@ async function getArdupilotTasks(): Promise<vscode.Task[]> {
 							type: 'ardupilot',
 							configure: boardtask.configure,
 							target: buildtask,
+							configName: `${boardtask.configure}-${buildtask}`,
 							buildOptions: buildOptions,
 							configureOptions: configureOptions,
 						};
