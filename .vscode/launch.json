@@ -8,8 +8,8 @@
 			"request": "launch",
 			"runtimeExecutable": "${execPath}",
 			"args": [
-				// Get all extensions except cortex-debug, then disable them individually
-				"$(${execPath} --list-extensions | grep -v cortex-debug | grep -v mcu-debug | grep -v cpptools | xargs -I {} echo --disable-extension={})",
+				// // Get all extensions except cortex-debug, then disable them individually
+				// "$(${execPath} --list-extensions | grep -v cortex-debug | grep -v mcu-debug | grep -v cpptools | xargs -I {} echo --disable-extension={})",
 				"--extensionDevelopmentPath=${workspaceRoot}",
 				"${workspaceRoot}/ardupilot",
 			],
