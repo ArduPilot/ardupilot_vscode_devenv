@@ -318,7 +318,7 @@ export class ValidateEnvironmentPanel {
                 <button class="config-button config-path-btn">Configure Path</button>
             </div>
             <div class="custom-path-notification"></div>
-            <div class="tool-info">This Python is expected to be a Windows installation accessible from WSL (e.g., python.exe in your Windows PATH). It's used by tools like PySerial when running SITL in WSL.</div>
+            <div class="tool-info">This Python is expected to be a Windows installation accessible from WSL (e.g., python.exe in your Windows PATH). Used for connecting to Devices, if the error is present after installing Python in Windows, try restarting WSL Instance, and chacking if python.exe is accessible in your WSL terminal</div>
         </div>
         
         <div class="tool-container" id="mavproxy" data-tool-id="${ProgramUtils.TOOL_MAVPROXY}">
