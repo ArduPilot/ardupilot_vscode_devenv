@@ -26,6 +26,7 @@ import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { ToolsConfig } from './apToolsConfig';
 import * as fs from 'fs';
+import { install } from 'source-map-support';
 
 export class ValidateEnvironment extends apWelcomeItem {
 	static log = new apLog('validateEnvironment');
@@ -139,6 +140,9 @@ export class ValidateEnvironmentPanel {
 		case 'selectPythonInterpreter':
 			this._selectPythonInterpreter();
 			break;
+		case 'installTool':
+			this._installTool(message.toolId);
+			break;
 		}
 	}
 
@@ -193,6 +197,24 @@ export class ValidateEnvironmentPanel {
         .status-missing {
             background-color: #cc2222;
             color: white;
+        }
+        .install-button {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 5px;
+            margin-top: 0;
+            display: none;
+        }
+        .install-button:hover {
+            background-color: #005a9e;
+        }
+        .tool-container .install-button {
+            display: none;
         }
         .tool-version {
             margin-top: 5px;
@@ -303,6 +325,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button select-interpreter-btn" style="margin-left: 5px;">Select Interpreter</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_PYTHON}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -316,9 +339,10 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_PYTHON_WIN}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
-            <div class="tool-info">This Python is expected to be a Windows installation accessible from WSL (e.g., python.exe in your Windows PATH). Used for connecting to Devices, if the error is present after installing Python in Windows, try restarting WSL Instance, and chacking if python.exe is accessible in your WSL terminal</div>
+            <div class="tool-info">This Python is expected to be a Windows installation accessible from WSL (ensure python.exe is in your Windows PATH, if not Modify your installation and check the box to Add Python to  environment path). If the error is still present, try restarting WSL Instance, and chacking if python.exe is accessible in your WSL terminal</div>
         </div>
         
         <div class="tool-container" id="mavproxy" data-tool-id="${ProgramUtils.TOOL_MAVPROXY}">
@@ -330,6 +354,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_MAVPROXY}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -343,6 +368,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_ARM_GCC}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -356,6 +382,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_ARM_GDB}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -369,6 +396,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_CCACHE}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
             <div class="tool-info"></div>
@@ -383,6 +411,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_JLINK}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -396,6 +425,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_OPENOCD}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -409,6 +439,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_GDBSERVER}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -422,6 +453,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_PYSERIAL}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
             <div class="tool-info"></div>
@@ -436,6 +468,7 @@ export class ValidateEnvironmentPanel {
             <div class="tool-path">
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_TMUX}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -464,6 +497,21 @@ export class ValidateEnvironmentPanel {
                     
                     vscode.postMessage({
                         command: 'configureToolPath',
+                        toolId: toolId,
+                        toolName: toolName
+                    });
+                });
+            });
+            
+            // Setup install tool buttons
+            document.querySelectorAll('.install-button').forEach(btn => {
+                btn.addEventListener('click', (event) => {
+                    const toolContainer = event.target.closest('.tool-container');
+                    const toolId = toolContainer.getAttribute('data-tool-id');
+                    const toolName = toolContainer.querySelector('.tool-name').textContent;
+                    
+                    vscode.postMessage({
+                        command: 'installTool',
                         toolId: toolId,
                         toolName: toolName
                     });
@@ -502,7 +550,7 @@ export class ValidateEnvironmentPanel {
                 });
                 
                 // Clear all version and path info
-                document.querySelectorAll('.tool-version, .tool-path-text, .tool-info, .custom-path-notification').forEach(el => {
+                document.querySelectorAll('.tool-version, .tool-path-text, .custom-path-notification').forEach(el => {
                     el.textContent = '';
                 });
                 
@@ -536,9 +584,15 @@ export class ValidateEnvironmentPanel {
                         const pathElement = toolElement.querySelector('.tool-path-text');
                         const infoElement = toolElement.querySelector('.tool-info');
                         const notificationElement = toolElement.querySelector('.custom-path-notification');
+                        const installButton = toolElement.querySelector('.install-button');
                         
                         statusElement.className = 'tool-status ' + (available ? 'status-available' : 'status-missing');
                         statusElement.textContent = available ? 'Available' : 'Missing';
+                        
+                        // Show/hide install button based on availability
+                        if (installButton) {
+                            installButton.style.display = available ? 'none' : 'inline-block';
+                        }
                         
                         if (version) {
                             versionElement.textContent = 'Version: ' + version;
@@ -556,12 +610,6 @@ export class ValidateEnvironmentPanel {
                             notificationElement.textContent = 'Using custom configured path';
                         } else {
                             notificationElement.textContent = '';
-                        }
-                        
-                        if (info && infoElement) { // Check if infoElement exists
-                            infoElement.innerHTML = info;
-                        } else if (infoElement) {
-                            infoElement.innerHTML = ''; // Clear if no info
                         }
                     }
                 } else if (message.command === 'validationSummary') {
@@ -703,6 +751,173 @@ export class ValidateEnvironmentPanel {
 				vscode.commands.executeCommand('workbench.extensions.installExtension', 'ms-vscode-remote.remote-wsl');
 			}
 		});
+	}
+
+	/**
+	 * Installs a missing tool based on the tool ID and platform
+	 */
+	private _installTool(toolId: string): void {
+		const platform = process.platform;
+		const isWSL = ProgramUtils.isWSL();
+
+		// Get tool name for display
+		const toolNames: { [key: string]: string } = {
+			[ProgramUtils.TOOL_PYTHON]: 'Python',
+			[ProgramUtils.TOOL_PYTHON_WIN]: 'Python (Windows)',
+			[ProgramUtils.TOOL_MAVPROXY]: 'MAVProxy',
+			[ProgramUtils.TOOL_ARM_GCC]: 'ARM GCC Toolchain',
+			[ProgramUtils.TOOL_ARM_GDB]: 'ARM GDB',
+			[ProgramUtils.TOOL_CCACHE]: 'ccache',
+			[ProgramUtils.TOOL_JLINK]: 'J-Link',
+			[ProgramUtils.TOOL_OPENOCD]: 'OpenOCD',
+			[ProgramUtils.TOOL_GDBSERVER]: 'GDB Server',
+			[ProgramUtils.TOOL_PYSERIAL]: 'PySerial',
+			[ProgramUtils.TOOL_TMUX]: 'tmux'
+		};
+
+		const toolName = toolNames[toolId] || toolId;
+
+		// Define installation commands and web pages
+		const installations: { [key: string]: {
+			wsl?: string,
+			linux?: string,
+			darwin?: string,
+			win32?: string,
+			webUrl?: string,
+			description?: string
+		} } = {
+			[ProgramUtils.TOOL_PYTHON]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y python3 python3-pip',
+				darwin: 'brew install python3',
+				webUrl: 'https://www.python.org/downloads/',
+				description: 'Install Python 3 and pip'
+			},
+			[ProgramUtils.TOOL_PYTHON_WIN]: {
+				webUrl: 'https://www.python.org/downloads/',
+				description: 'Download and install Python for Windows, then restart WSL'
+			},
+			[ProgramUtils.TOOL_MAVPROXY]: {
+				linux: 'pip3 install mavproxy',
+				darwin: 'pip3 install mavproxy',
+				webUrl: isWSL ? 'https://firmware.ardupilot.org/Tools/MAVProxy/' : undefined,
+				description: isWSL ? 'Download MAVProxy installer for WSL' : 'Install MAVProxy via pip'
+			},
+			[ProgramUtils.TOOL_ARM_GCC]: {
+				linux: this._getArmGccInstallCommand('linux'),
+				darwin: this._getArmGccInstallCommand('darwin'),
+				webUrl: 'https://firmware.ardupilot.org/Tools/STM32-tools/',
+				description: 'Download and install ARM GCC toolchain version 10'
+			},
+			[ProgramUtils.TOOL_ARM_GDB]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y gdb-multiarch',
+				darwin: 'brew install gdb',
+				description: 'Install GDB for ARM debugging'
+			},
+			[ProgramUtils.TOOL_CCACHE]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y ccache',
+				darwin: 'brew install ccache',
+				description: 'Install ccache for faster builds'
+			},
+			[ProgramUtils.TOOL_JLINK]: {
+				webUrl: 'https://www.segger.com/downloads/jlink/',
+				description: 'Download J-Link software from SEGGER website'
+			},
+			[ProgramUtils.TOOL_OPENOCD]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y openocd',
+				darwin: 'brew install openocd',
+				description: 'Install OpenOCD for debugging'
+			},
+			[ProgramUtils.TOOL_GDBSERVER]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y gdbserver',
+				description: 'Install GDB server'
+			},
+			[ProgramUtils.TOOL_PYSERIAL]: {
+				wsl: 'pip.exe install pyserial',
+				linux: 'pip3 install pyserial',
+				darwin: 'pip3 install pyserial',
+				description: 'Install PySerial via pip'
+			},
+			[ProgramUtils.TOOL_TMUX]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y tmux',
+				darwin: 'brew install tmux',
+				description: 'Install tmux terminal multiplexer'
+			}
+		};
+
+		const installation = installations[toolId];
+		if (!installation) {
+			vscode.window.showErrorMessage(`Installation not supported for ${toolName}`);
+			return;
+		}
+
+		// Determine the appropriate installation method
+		let command: string | undefined;
+		
+		// Special handling for MAVProxy in WSL - use web installer
+		if (isWSL && toolId === ProgramUtils.TOOL_MAVPROXY) {
+			command = undefined; // Force web installation
+		} else if (platform === 'linux' || isWSL) {
+			command = installation.linux;
+		} else if (platform === 'darwin') {
+			command = installation.darwin;
+		} else if (platform === 'win32') {
+			command = installation.win32;
+		}
+
+		if (command) {
+			// Use terminal installation
+			const terminal = vscode.window.createTerminal(`Install ${toolName}`);
+			terminal.sendText(command);
+			terminal.show();
+
+			vscode.window.showInformationMessage(
+				`Installing ${toolName}... Check the terminal for progress.`,
+				'Refresh Validation'
+			).then(choice => {
+				if (choice === 'Refresh Validation') {
+					// Wait a bit for installation to complete, then refresh
+					setTimeout(() => {
+						this._validateEnvironment();
+					}, 2000);
+				}
+			});
+		} else if (installation.webUrl) {
+			// Use web-based installation
+			vscode.env.openExternal(vscode.Uri.parse(installation.webUrl));
+			vscode.window.showInformationMessage(
+				`Opening ${toolName} download page. ${installation.description || 'Please download and install manually.'}`,
+				'Refresh Validation'
+			).then(choice => {
+				if (choice === 'Refresh Validation') {
+					this._validateEnvironment();
+				}
+			});
+		} else {
+			vscode.window.showErrorMessage(`No installation method available for ${toolName} on ${platform}`);
+		}
+	}
+
+	/**
+	 * Gets the ARM GCC installation command for the specified platform
+	 */
+	private _getArmGccInstallCommand(platform: 'linux' | 'darwin'): string {
+		const arch = process.arch;
+		let filename: string;
+
+		if (platform === 'linux') {
+			if (arch === 'arm64') {
+				filename = 'gcc-arm-none-eabi-10-2020-q4-major-aarch64-linux.tar.bz2';
+			} else {
+				filename = 'gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2';
+			}
+		} else { // darwin
+			filename = 'gcc-arm-none-eabi-10-2020-q4-major-mac.tar.bz2';
+		}
+
+		const url = `https://firmware.ardupilot.org/Tools/STM32-tools/${filename}`;
+		const extractedDir = filename.replace('.tar.bz2', '');
+
+		return `cd /tmp && wget "${url}" && tar -xjf "${filename}" && sudo mv "${extractedDir}" /opt/gcc-arm-none-eabi && echo 'export PATH="/opt/gcc-arm-none-eabi/bin:\\$PATH"' >> ~/.bashrc && echo "ARM GCC installed! Please restart your terminal or run: source ~/.bashrc"`;
 	}
 
 	/**
