@@ -19,6 +19,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { apLog } from './apLog';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
+import { ProgramUtils } from './apProgramUtils';
 
 // Interface for launch configuration
 interface LaunchConfiguration {
@@ -47,6 +48,133 @@ export function setActiveConfiguration(task: vscode.Task): void {
 			taskDef.target,
 			taskDef.simVehicleCommand || ''
 		);
+		// Update c_cpp_properties.json for IntelliSense
+		updateCppProperties(taskDef.configure).catch(error => {
+			new apLog('setActiveConfiguration').log(`Error updating C++ properties: ${error}`);
+		});
+	}
+}
+
+// Interface for C++ configuration based on c_cpp_properties.json schema
+interface CppConfiguration {
+	name: string;
+	includePath?: string[];
+	defines?: string[];
+	compilerPath?: string;
+	cStandard?: string;
+	cppStandard?: string;
+	intelliSenseMode?: string;
+	compileCommands?: string;
+	configurationProvider?: string;
+	browse?: {
+		path?: string[];
+		limitSymbolsToIncludedHeaders?: boolean;
+		databaseFilename?: string;
+	};
+}
+
+// Interface for c_cpp_properties.json
+interface CppProperties {
+	configurations: CppConfiguration[];
+	version: number;
+}
+
+// Function to update c_cpp_properties.json with the current configuration's compile_commands.json path
+async function updateCppProperties(boardName: string): Promise<void> {
+	const log = new apLog('updateCppProperties').log;
+
+	const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+	if (!workspaceRoot) {
+		log('No workspace folder is open.');
+		return;
+	}
+
+	const vscodeDir = path.join(workspaceRoot, '.vscode');
+	const cppPropertiesPath = path.join(vscodeDir, 'c_cpp_properties.json');
+
+	// Create .vscode directory if it doesn't exist
+	if (!fs.existsSync(vscodeDir)) {
+		fs.mkdirSync(vscodeDir, { recursive: true });
+	}
+
+	// Check if this is a SITL configuration
+	const isSITL = boardName.toLowerCase().startsWith('sitl');
+
+	// Get the appropriate compiler path
+	let compilerPath: string;
+	if (isSITL) {
+		const gccInfo = await ProgramUtils.findGCC();
+		compilerPath = gccInfo.path || 'gcc';
+	} else {
+		const armGccInfo = await ProgramUtils.findArmGCC();
+		compilerPath = armGccInfo.path || 'arm-none-eabi-gcc';
+	}
+
+	// Default C++ properties structure
+	const defaultConfig: CppConfiguration = {
+		name: 'ArduPilot',
+		includePath: [
+			'${workspaceFolder}/**'
+		],
+		defines: [],
+		compilerPath: compilerPath,
+		cStandard: 'c11',
+		cppStandard: 'gnu++11',
+		intelliSenseMode: isSITL ? 'gcc-x64' : 'gcc-arm'
+	};
+
+	let cppProperties: CppProperties = {
+		configurations: [defaultConfig],
+		version: 4
+	};
+
+	// Read existing c_cpp_properties.json if it exists
+	if (fs.existsSync(cppPropertiesPath)) {
+		try {
+			const content = fs.readFileSync(cppPropertiesPath, 'utf8');
+			cppProperties = JSON.parse(content) as CppProperties;
+		} catch (error) {
+			log(`Error reading c_cpp_properties.json: ${error}`);
+		}
+	}
+
+	// Ensure configurations array exists
+	if (!cppProperties.configurations || !Array.isArray(cppProperties.configurations)) {
+		cppProperties.configurations = [];
+	}
+
+	// Find or create ArduPilot configuration
+	let apConfig = cppProperties.configurations.find((cfg: CppConfiguration) => cfg.name === 'ArduPilot');
+	if (!apConfig) {
+		apConfig = {
+			name: 'ArduPilot',
+			includePath: [
+				'${workspaceFolder}/**'
+			],
+			defines: [],
+			compilerPath: compilerPath,
+			cStandard: 'c11',
+			cppStandard: 'gnu++11',
+			intelliSenseMode: isSITL ? 'gcc-x64' : 'gcc-arm'
+		};
+		cppProperties.configurations.push(apConfig);
+	}
+
+	// Update compiler settings based on board type
+	apConfig.compilerPath = compilerPath;
+	apConfig.intelliSenseMode = isSITL ? 'gcc-x64' : 'gcc-arm';
+
+	// Update compile commands path
+	const compileCommandsPath = '${workspaceFolder}/build/' + boardName + '/compile_commands.json';
+	apConfig.compileCommands = compileCommandsPath;
+
+	// Write updated c_cpp_properties.json
+	try {
+		fs.writeFileSync(cppPropertiesPath, JSON.stringify(cppProperties, null, 4), 'utf8');
+		log(`Updated c_cpp_properties.json with compile commands path: ${compileCommandsPath}`);
+	} catch (error) {
+		log(`Error writing c_cpp_properties.json: ${error}`);
+		vscode.window.showErrorMessage(`Failed to update c_cpp_properties.json: ${error}`);
 	}
 }
 
