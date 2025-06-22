@@ -852,7 +852,7 @@ export class ValidateEnvironmentPanel {
 
 		// Determine the appropriate installation method
 		let command: string | undefined;
-		
+
 		// Special handling for MAVProxy in WSL - use web installer
 		if (isWSL && toolId === ProgramUtils.TOOL_MAVPROXY) {
 			command = undefined; // Force web installation

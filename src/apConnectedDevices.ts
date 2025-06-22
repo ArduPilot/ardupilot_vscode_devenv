@@ -16,6 +16,7 @@
 
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
+import * as os from 'os';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 
@@ -29,6 +30,20 @@ export interface DeviceInfo {
     serialNumber?: string;
     isArduPilot?: boolean;
     isMavproxyConnected?: boolean;
+}
+
+// USB device tree node interface for ioreg parsing
+interface UsbDeviceNode {
+    name: string;
+    vendorId?: string;
+    productId?: string;
+    manufacturer?: string;
+    product?: string;
+    serialNumber?: string;
+    locationId?: string;
+    children: UsbDeviceNode[];
+    parent?: UsbDeviceNode;
+    properties: Map<string, unknown>;
 }
 
 // FileDecorationProvider implementation for decorating connected devices
@@ -155,6 +170,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	private refreshTimer: NodeJS.Timeout | undefined;
 	private isWSL = false;
 	private activeConnections: Map<string, { process: cp.ChildProcess | null, terminal: vscode.Terminal | null }> = new Map();
+	private loggedDevices: Set<string> = new Set(); // Track which devices have been logged
 
 	public setIsWSL(isWSL: boolean): void {
 		this.isWSL = isWSL;
@@ -273,9 +289,9 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	}
 
 	private createDisplayName(device: DeviceInfo): string {
-		// Use the product name if available, otherwise use the path
+		// Use the product name with path in brackets, similar to WSL format
 		if (device.product) {
-			return device.product;
+			return `${device.product} (${device.path})`;
 		} else if (device.manufacturer) {
 			return `${device.manufacturer} (${device.path})`;
 		} else {
@@ -291,6 +307,8 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 
 		if (this.isWSL) {
 			newDevices = await this.getWSLDevices();
+		} else if (os.platform() === 'darwin') {
+			newDevices = await this.getDarwinDevices();
 		} else {
 			newDevices = await this.getLinuxDevices();
 		}
@@ -456,10 +474,289 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		}
 	}
 
+	private async getDarwinDevices(): Promise<DeviceInfo[]> {
+		return new Promise((resolve) => {
+			// Use ioreg to get USB device tree information
+			cp.exec('ioreg -r -c IOUSBHostDevice -w0 -l', { maxBuffer: 1024 * 1024 * 5 }, async (ioregError, ioregStdout) => {
+				if (ioregError) {
+					this.log.log(`Error executing ioreg: ${ioregError.message}`);
+					resolve([]);
+					return;
+				}
+
+				try {
+					// Parse the ioreg output to build USB device tree
+					const usbTree = this.parseIoregUsbTree(ioregStdout);
+
+					// Get serial ports
+					const serialPorts = await this.getDarwinSerialPorts();
+
+					// Find devices for each serial port
+					const devices: DeviceInfo[] = [];
+					for (const port of serialPorts) {
+						const deviceInfo = await this.findDeviceInfoForSerialPort(port, usbTree);
+						if (deviceInfo) {
+							devices.push(deviceInfo);
+						}
+					}
+
+					resolve(devices);
+				} catch (parseError) {
+					this.log.log(`Error parsing ioreg output: ${parseError}`);
+					resolve([]);
+				}
+			});
+		});
+	}
+
+	private parseIoregUsbTree(ioregOutput: string): UsbDeviceNode[] {
+		const lines = ioregOutput.split('\n');
+		const rootNodes: UsbDeviceNode[] = [];
+		const nodeStack: UsbDeviceNode[] = [];
+
+		for (const line of lines) {
+			if (!line.trim()) continue;
+
+			// Calculate depth by counting leading spaces and pipes
+			const depth = this.calculateIoregDepth(line);
+
+			// Handle device entry lines (contain "+-o" or "| +-o")
+			if (line.includes('+-o ')) {
+				const deviceName = this.extractDeviceName(line);
+
+				const node: UsbDeviceNode = {
+					name: deviceName,
+					children: [],
+					properties: new Map<string, unknown>()
+				};
+
+				// Set parent relationships
+				while (nodeStack.length > depth) {
+					nodeStack.pop();
+				}
+
+				if (nodeStack.length > 0) {
+					const parent = nodeStack[nodeStack.length - 1];
+					node.parent = parent;
+					parent.children.push(node);
+				} else {
+					rootNodes.push(node);
+				}
+
+				nodeStack.push(node);
+			}
+			// Handle property lines
+			else if (line.includes('=') && nodeStack.length > 0) {
+				const currentNode = nodeStack[nodeStack.length - 1];
+				this.parseIoregProperty(line, currentNode);
+			}
+		}
+
+		// Extract USB properties for each node
+		this.extractUsbProperties(rootNodes);
+
+		return rootNodes;
+	}
+
+	private calculateIoregDepth(line: string): number {
+		let depth = 0;
+		for (let i = 0; i < line.length; i++) {
+			if (line[i] === '|' || line[i] === ' ') {
+				if (line.substring(i, i + 4) === '| +-' || line.substring(i, i + 3) === '+-o') {
+					break;
+				}
+				if (line[i] === '|') depth++;
+			} else {
+				break;
+			}
+		}
+		return depth;
+	}
+
+	private extractDeviceName(line: string): string {
+		const match = line.match(/\+-o\s+([^<]+)/);
+		return match ? match[1].trim() : 'Unknown Device';
+	}
+
+	private parseIoregProperty(line: string, node: UsbDeviceNode): void {
+		const trimmed = line.trim();
+		if (!trimmed.includes('=')) return;
+
+		const [keyPart, ...valueParts] = trimmed.split('=');
+		const value = valueParts.join('=').trim();
+
+		// Extract the key from within quotes, filtering out the ioreg formatting
+		const keyMatch = keyPart.match(/"([^"]+)"/);
+		if (!keyMatch) return;
+
+		const key = keyMatch[1];
+
+		// Remove quotes if present from value
+		const cleanValue = value.replace(/^"|"$/g, '');
+
+		node.properties.set(key, cleanValue);
+	}
+
+	private extractUsbProperties(nodes: UsbDeviceNode[]): void {
+		for (const node of nodes) {
+			let hasUsbProperties = false;
+
+			// Extract vendor ID (ioreg gives decimal values, not hex)
+			const vendorId = node.properties.get('idVendor');
+			if (vendorId && typeof vendorId === 'string') {
+				const vendorIdNum = parseInt(vendorId, 10); // Parse as decimal, not hex
+				if (!isNaN(vendorIdNum)) {
+					node.vendorId = vendorIdNum.toString(16).toUpperCase().padStart(4, '0');
+					hasUsbProperties = true;
+				}
+			}
+
+			// Extract product ID (ioreg gives decimal values, not hex)
+			const productId = node.properties.get('idProduct');
+			if (productId && typeof productId === 'string') {
+				const productIdNum = parseInt(productId, 10); // Parse as decimal, not hex
+				if (!isNaN(productIdNum)) {
+					node.productId = productIdNum.toString(16).toUpperCase().padStart(4, '0');
+					hasUsbProperties = true;
+				}
+			}
+
+			// Extract USB Vendor Name (ioreg gives string values)
+			const usbVendorName = node.properties.get('USB Vendor Name');
+			if (usbVendorName && typeof usbVendorName === 'string') {
+				node.manufacturer = usbVendorName;
+				hasUsbProperties = true;
+			}
+
+			// Extract USB Product Name (ioreg gives string values)
+			const usbProductName = node.properties.get('USB Product Name');
+			if (usbProductName && typeof usbProductName === 'string') {
+				node.product = usbProductName;
+				hasUsbProperties = true;
+			}
+
+			// Extract serial number
+			const serialNumber = node.properties.get('USB Serial Number');
+			if (serialNumber && typeof serialNumber === 'string') {
+				node.serialNumber = serialNumber;
+			}
+
+			// Extract location ID
+			const locationId = node.properties.get('locationID');
+			if (locationId && typeof locationId === 'string') {
+				node.locationId = locationId;
+			}
+
+			if (hasUsbProperties) {
+				const deviceKey = `${node.name}-${node.vendorId}:${node.productId}`;
+				if (!this.loggedDevices.has(deviceKey)) {
+					this.log.log(`Found USB device: ${node.name} - ${node.vendorId}:${node.productId}`);
+					this.loggedDevices.add(deviceKey);
+				}
+			}
+
+			// Recursively process children
+			this.extractUsbProperties(node.children);
+		}
+	}
+
+	private async findDeviceInfoForSerialPort(port: string, usbTree: UsbDeviceNode[]): Promise<DeviceInfo | null> {
+		// Extract the device identifier from the port path
+		const portIdentifier = this.extractPortIdentifier(port);
+
+		// Find the device node that corresponds to this serial port
+		const deviceNode = this.findDeviceNodeForPort(portIdentifier, usbTree);
+
+		if (deviceNode) {
+			// Find the first parent with vendor ID and product ID
+			const parentWithVidPid = this.findParentWithVidPid(deviceNode);
+
+			if (parentWithVidPid && parentWithVidPid.vendorId && parentWithVidPid.productId) {
+				return {
+					path: port,
+					vendorId: parentWithVidPid.vendorId,
+					productId: parentWithVidPid.productId,
+					manufacturer: parentWithVidPid.manufacturer,
+					product: parentWithVidPid.product,
+					serialNumber: parentWithVidPid.serialNumber,
+					isArduPilot: this.isArduPilotDevice(parentWithVidPid.vendorId, parentWithVidPid.productId, parentWithVidPid.product)
+				};
+			}
+		}
+
+		return null;
+	}
+
+	private extractPortIdentifier(port: string): string {
+		// Extract identifier from port names like /dev/cu.usbserial-A50285BI
+		const match = port.match(/\/dev\/[^.]+\.(.+)/);
+		return match ? match[1] : '';
+	}
+
+	private findDeviceNodeForPort(portIdentifier: string, nodes: UsbDeviceNode[]): UsbDeviceNode | null {
+		for (const node of nodes) {
+			// Check if any of the node's properties contain the port identifier
+			for (const [, value] of node.properties.entries()) {
+				if (typeof value === 'string' && value.includes(portIdentifier)) {
+					return node;
+				}
+			}
+
+			// Recursively search children
+			const childResult = this.findDeviceNodeForPort(portIdentifier, node.children);
+			if (childResult) {
+				return childResult;
+			}
+		}
+
+		return null;
+	}
+
+	private findParentWithVidPid(node: UsbDeviceNode): UsbDeviceNode | null {
+		let current: UsbDeviceNode | undefined = node;
+
+		while (current) {
+			if (current.vendorId && current.productId) {
+				// Prefer nodes that also have manufacturer and product info
+				if (current.manufacturer && current.product) {
+					return current;
+				}
+			}
+			current = current.parent;
+		}
+
+		// Fallback: if no parent with product info found, try again but accept any parent with VID/PID
+		current = node;
+		while (current) {
+			if (current.vendorId && current.productId) {
+				return current;
+			}
+			current = current.parent;
+		}
+
+		return null;
+	}
+
+	private async getDarwinSerialPorts(): Promise<string[]> {
+		return new Promise((resolve) => {
+			// Look for both tty.* and cu.* devices (tty for incoming, cu for outgoing)
+			cp.exec('ls /dev/tty.* /dev/cu.* 2>/dev/null | grep -E "(usbserial|usbmodem|SLAB_USBtoUART|Bluetooth-Incoming-Port)" | grep -v Bluetooth', (error, stdout) => {
+				if (error) {
+					// No serial ports found
+					resolve([]);
+					return;
+				}
+
+				const ports = stdout.split('\n').filter(port => port.trim());
+				resolve(ports);
+			});
+		});
+	}
+
 	private async findSerialDeviceForUsbDevice(vendorId: string, productId: string): Promise<string[]> {
 		return new Promise((resolve) => {
 			// look through /dev/ttyUSB* and /dev/ttyACM*
-			cp.exec('ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null', (error, stdout) => {
+			cp.exec('ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null', (_error, stdout) => {
 				const devices: string[] = [];
 				const raw_device_paths = stdout.split('\n').filter(device => device.trim());
 				for (const device of raw_device_paths) {
@@ -476,7 +773,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	}
 
 	// Check if this is likely an ArduPilot board based on known VIDs/PIDs and names
-	private isArduPilotDevice(vendorId: string, productId: string, description?: string): boolean {
+	private isArduPilotDevice(vendorId: string, _productId: string, description?: string): boolean {
 		// Common ArduPilot board manufacturer IDs
 		const ardupilotVendorIds = [
 			'2341', // Arduino
