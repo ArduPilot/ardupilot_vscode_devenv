@@ -46,7 +46,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			let modified = false;
 
 			if (tasksJson.tasks) {
-				tasksJson.tasks.forEach((task: any) => {
+				tasksJson.tasks.forEach((task: vscode.TaskDefinition) => {
 					if (task.type === 'ardupilot' && !task.configName) {
 						task.configName = `${task.configure}-${task.target}`;
 						modified = true;
