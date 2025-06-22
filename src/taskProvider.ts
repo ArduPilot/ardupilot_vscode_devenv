@@ -77,10 +77,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 	}
 
 	public provideTasks(): Thenable<vscode.Task[]> | undefined {
-		if (!this.ardupilotPromise) {
-			this.ardupilotPromise = getArdupilotTasks();
-		}
-		return this.ardupilotPromise;
+		return undefined;
 	}
 
 	public static getOrCreateBuildConfig(board: string, target: string, configName: string, configureOptions?: string, simVehicleCommand?: string): vscode.Task | undefined {
@@ -208,13 +205,26 @@ export class APTaskProvider implements vscode.TaskProvider {
 		// Use configName for task label
 		const task_name = definition.configName;
 
+		// make build directory if it doesn't exist
+		const buildDir = path.join(workspaceRoot.uri.fsPath, 'build', definition.configure);
+		if (!fs.existsSync(buildDir)) {
+			try {
+				fs.mkdirSync(buildDir, { recursive: true });
+			} catch (error) {
+				APTaskProvider.log.log(`Failed to create build directory: ${error}`);
+				vscode.window.showErrorMessage(`Failed to create build directory: ${error}`);
+				return undefined;
+			}
+		}
+
 		return new vscode.Task(
 			definition,
 			vscode.TaskScope.Workspace,
 			task_name,
 			'ardupilot',
 			new vscode.ShellExecution(
-				`python3 ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions}`
+				`cd ../../ && python3 ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions}`,
+				{ cwd: buildDir }
 			),
 			'$apgcc'
 		);
