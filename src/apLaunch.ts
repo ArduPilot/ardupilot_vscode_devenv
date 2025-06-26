@@ -186,10 +186,10 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 
 				// Extract vehicle type from target (e.g., 'copter' from 'sitl-copter')
 				const vehicleBaseType = apConfig.target.replace('sitl-', '');
-				
+
 				// Get ArduPilot vehicle name for sim_vehicle.py -v argument (e.g., 'ArduCopter')
 				let vehicleType = targetToVehicleType[vehicleBaseType] || vehicleBaseType;
-				
+
 				// Special handling for helicopter - use ArduCopter with -f heli
 				let additionalArgs = '';
 				if (vehicleBaseType === 'heli') {

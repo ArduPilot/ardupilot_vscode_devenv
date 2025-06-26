@@ -445,10 +445,10 @@ export class apActionItem extends vscode.TreeItem {
 
 		// For SITL, run the simulation
 		const vehicleBaseType = config.target.replace('sitl-', '');
-		
+
 		// Get ArduPilot vehicle name for sim_vehicle.py -v argument (e.g., 'ArduCopter')
 		let vehicleType = targetToVehicleType[vehicleBaseType] || vehicleBaseType;
-		
+
 		// Special handling for helicopter - use ArduCopter with -f heli
 		let additionalArgs = '';
 		if (vehicleBaseType === 'heli') {
