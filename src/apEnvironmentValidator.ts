@@ -386,6 +386,20 @@ export class ValidateEnvironmentPanel {
             <div class="custom-path-notification"></div>
         </div>
         
+        <div class="tool-container" id="gpp" data-tool-id="${ProgramUtils.TOOL_GPP}">
+            <div class="tool-header">
+                <div class="tool-name">g++</div>
+                <div class="tool-status status-checking">Checking...</div>
+            </div>
+            <div class="tool-version"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_GPP}">Install</button>
+            </div>
+            <div class="custom-path-notification"></div>
+        </div>
+        
         <div class="tool-container" id="gdb" data-tool-id="${ProgramUtils.TOOL_ARM_GDB}">
             <div class="tool-header">
                 <div class="tool-name">arm-none-eabi-gdb / gdb-multiarch</div>
@@ -676,6 +690,7 @@ export class ValidateEnvironmentPanel {
 		const mavproxyCheck = ProgramUtils.findMavproxy();
 		const armGccCheck = ProgramUtils.findArmGCC();
 		const gccCheck = ProgramUtils.findGCC();
+		const gppCheck = ProgramUtils.findGPP();
 		const gdbCheck = ProgramUtils.findArmGDB();
 		const ccacheCheck = this._checkCCache();
 		const pyserialCheck = ProgramUtils.findPyserial();
@@ -693,6 +708,7 @@ export class ValidateEnvironmentPanel {
 			mavproxyResult,
 			armGccResult,
 			gccResult,
+			gppResult,
 			gdbResult,
 			ccacheResult,
 			jlinkResult,
@@ -706,6 +722,7 @@ export class ValidateEnvironmentPanel {
 			mavproxyCheck.catch(error => ({ available: false, error: error.message })),
 			armGccCheck.catch(error => ({ available: false, error: error.message })),
 			gccCheck.catch(error => ({ available: false, error: error.message })),
+			gppCheck.catch(error => ({ available: false, error: error.message })),
 			gdbCheck.catch(error => ({ available: false, error: error.message })),
 			ccacheCheck.catch(error => ({ available: false, error: error.message })),
 			jlinkCheck,
@@ -723,6 +740,7 @@ export class ValidateEnvironmentPanel {
 		this._reportToolStatus('mavproxy', mavproxyResult);
 		this._reportToolStatus('arm-gcc', armGccResult);
 		this._reportToolStatus('gcc', gccResult);
+		this._reportToolStatus('gpp', gppResult);
 		this._reportToolStatus('gdb', gdbResult);
 		this._reportToolStatus('ccache', ccacheResult);
 		this._reportToolStatus('jlink', jlinkResult);
@@ -732,7 +750,7 @@ export class ValidateEnvironmentPanel {
 		this._reportToolStatus('tmux', tmuxResult);
 
 		// Generate summary - only include required tools in the summary
-		const summaryTools = [pythonResult, mavproxyResult, armGccResult, gccResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult, tmuxResult];
+		const summaryTools = [pythonResult, mavproxyResult, armGccResult, gccResult, gppResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult, tmuxResult];
 		if (isWSL) {
 			// Add Windows Python to summary if in WSL, as it's important for SITL components like PySerial.
 			summaryTools.push(pythonWinResult);
@@ -1231,6 +1249,9 @@ export class ValidateEnvironmentPanel {
 			break;
 		case 'gcc':
 			toolId = ProgramUtils.TOOL_GCC;
+			break;
+		case 'gpp':
+			toolId = ProgramUtils.TOOL_GPP;
 			break;
 		case 'gdb':
 			toolId = ProgramUtils.TOOL_ARM_GDB;

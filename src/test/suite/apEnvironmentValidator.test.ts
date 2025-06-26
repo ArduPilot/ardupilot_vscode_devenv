@@ -94,6 +94,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			});
 			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findGCC').resolves({ available: true, version: '11.4.0', path: '/usr/bin/gcc' });
+			sandbox.stub(ProgramUtils, 'findGPP').resolves({ available: true, version: '11.4.0', path: '/usr/bin/g++' });
 			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: true });
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true });
@@ -121,7 +122,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 						call.args[0] && call.args[0].command === 'validationResult'
 					);
 					console.log(`DEBUG: Found ${validationResultCalls.length} validation result calls so far`);
-					return validationResultCalls.length >= 11; // Expect at least 11 tool validations
+					return validationResultCalls.length >= 12; // Expect at least 12 tool validations
 				},
 				'validation result messages to be sent',
 				maxWaitTime
@@ -144,7 +145,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
 
 			// Verify validationResult messages for all expected tools
-			const expectedTools = ['python', 'mavproxy', 'arm-gcc', 'gcc', 'gdb', 'ccache', 'jlink', 'openocd', 'gdbserver', 'pyserial', 'tmux'];
+			const expectedTools = ['python', 'mavproxy', 'arm-gcc', 'gcc', 'gpp', 'gdb', 'ccache', 'jlink', 'openocd', 'gdbserver', 'pyserial', 'tmux'];
 			for (const toolName of expectedTools) {
 				const toolValidationCall = validationResultCalls.find(call =>
 					call.args[0].tool === toolName
@@ -178,6 +179,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findGCC').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findGPP').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
@@ -205,7 +207,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 						call.args[0] && call.args[0].command === 'validationResult'
 					);
 					console.log(`DEBUG: Found ${validationResultCalls.length} validation result calls so far (failure test)`);
-					return validationResultCalls.length >= 7; // Expect at least 7 tool validations even with failures
+					return validationResultCalls.length >= 8; // Expect at least 8 tool validations even with failures
 				},
 				'validation result messages to be sent even with failures',
 				maxWaitTime
@@ -272,6 +274,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findGCC').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findGPP').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: false });
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
@@ -307,7 +310,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 						call.args[0] && call.args[0].command === 'validationResult'
 					);
 					console.log(`DEBUG: Found ${validationResultCalls.length} validation result calls so far (custom path test)`);
-					return validationResultCalls.length >= 7; // Expect at least 7 tool validations
+					return validationResultCalls.length >= 8; // Expect at least 8 tool validations
 				},
 				'validation result messages to be sent (custom path test)',
 				maxWaitTime
