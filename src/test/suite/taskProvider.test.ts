@@ -62,7 +62,6 @@ suite('APTaskProvider Test Suite', () => {
 			assert(mockWatcher.onDidDelete.called);
 		});
 
-
 		test('should resolve tasks through resolveTask()', () => {
 			const mockTaskDefinition: ArdupilotTaskDefinition = {
 				type: 'ardupilot',
@@ -462,7 +461,6 @@ suite('APTaskProvider Test Suite', () => {
 			assert.deepStrictEqual(features, {});
 		});
 	});
-
 
 	suite('Error Handling', () => {
 		test('should handle workspace folder access errors', () => {
