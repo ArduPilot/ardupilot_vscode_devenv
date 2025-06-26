@@ -26,6 +26,7 @@ import { apConnectedDevices, ConnectedDeviceDecorationProvider } from './apConne
 import { ToolsConfig } from './apToolsConfig';
 import { APLaunchConfigurationProvider } from './apLaunch';
 import { apActionItem, apActionsProvider, activeConfiguration, setActiveConfiguration } from './apActions';
+import { ProgramUtils } from './apProgramUtils';
 
 export interface APExtensionContext {
 	apTaskProvider?: vscode.Disposable;
@@ -49,6 +50,9 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	});
 	// Initialize ToolsConfig
 	ToolsConfig.initialize(_context);
+
+	// Initialize all tools cache asynchronously
+	ProgramUtils.initializeToolsCache();
 
 	apExtensionContext.apWelcomeProviderInstance = new apWelcomeProvider();
 

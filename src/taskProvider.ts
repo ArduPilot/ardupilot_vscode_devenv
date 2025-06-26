@@ -19,7 +19,6 @@ import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
-import { ToolsConfig } from './apToolsConfig';
 import { ProgramUtils } from './apProgramUtils';
 
 export class APTaskProvider implements vscode.TaskProvider {
@@ -193,11 +192,11 @@ export class APTaskProvider implements vscode.TaskProvider {
 	}
 
 	/**
-	 * Prepares environment variables for SITL builds with configured CC and CXX paths
-	 * @param isSITL Whether this is a SITL build
+	 * Prepares environment variables with configured CC and CXX paths
+	 * Uses cached tool paths for synchronous operation
 	 * @returns Environment variables object
 	 */
-	private static prepareEnvironmentVariables(isSITL: boolean): { [key: string]: string } {
+	private static prepareEnvironmentVariables(): { [key: string]: string } {
 		const env: { [key: string]: string } = {};
 
 		// Copy process.env but filter out undefined values
@@ -207,20 +206,18 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 		}
 
-		if (isSITL) {
-			// Get configured GCC and G++ paths for SITL builds
-			const gccPath = ToolsConfig.getToolPath(ProgramUtils.TOOL_GCC);
-			const gppPath = ToolsConfig.getToolPath(ProgramUtils.TOOL_GPP);
+		// Get GCC and G++ tool paths using cached values
+		const gccPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_GCC);
+		const gppPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_GPP);
 
-			if (gccPath) {
-				env.CC = gccPath;
-				APTaskProvider.log.log(`Setting CC environment variable to: ${gccPath}`);
-			}
+		if (gccPath) {
+			env.CC = gccPath;
+			APTaskProvider.log.log(`Setting CC environment variable to: ${gccPath}`);
+		}
 
-			if (gppPath) {
-				env.CXX = gppPath;
-				APTaskProvider.log.log(`Setting CXX environment variable to: ${gppPath}`);
-			}
+		if (gppPath) {
+			env.CXX = gppPath;
+			APTaskProvider.log.log(`Setting CXX environment variable to: ${gppPath}`);
 		}
 
 		return env;
@@ -253,9 +250,8 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 		}
 
-		// Check if this is a SITL build and prepare environment variables
-		const isSITL = definition.configure.toLowerCase().startsWith('sitl');
-		const env = this.prepareEnvironmentVariables(isSITL);
+		// Prepare environment variables with CC and CXX paths
+		const env = this.prepareEnvironmentVariables();
 
 		return new vscode.Task(
 			definition,
@@ -308,9 +304,63 @@ export class APTaskProvider implements vscode.TaskProvider {
 	public resolveTask(task: vscode.Task): vscode.Task | undefined {
 		const taskDef = task.definition;
 		if (taskDef) {
-			return APTaskProvider.createTask(taskDef as ArdupilotTaskDefinition);
+			// Note: resolveTask cannot be async, so we return the task without environment variables
+			// Environment variables will be set when the task is actually executed
+			return this.createTaskSync(taskDef as ArdupilotTaskDefinition);
 		}
 		return undefined;
+	}
+
+	/**
+	 * Creates a task synchronously without environment variable setup
+	 * Used by resolveTask which cannot be async
+	 */
+	private createTaskSync(definition: ArdupilotTaskDefinition): vscode.Task | undefined {
+		const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+		if (!workspaceRoot) {
+			return undefined;
+		}
+		if (definition.waffile === undefined) {
+			// use the waf file from the workspace
+			definition.waffile = workspaceRoot.uri.fsPath + '/waf';
+		}
+		if (definition.nm === undefined) {
+			definition.nm = 'arm-none-eabi-nm';
+		}
+		// Use configName for task label
+		const task_name = definition.configName;
+
+		// make build directory if it doesn't exist
+		const buildDir = path.join(workspaceRoot.uri.fsPath, 'build', definition.configure);
+		if (!fs.existsSync(buildDir)) {
+			try {
+				fs.mkdirSync(buildDir, { recursive: true });
+			} catch (error) {
+				APTaskProvider.log.log(`Failed to create build directory: ${error}`);
+				vscode.window.showErrorMessage(`Failed to create build directory: ${error}`);
+				return undefined;
+			}
+		}
+
+		// Use basic environment without CC/CXX setup for resolveTask
+		const env: { [key: string]: string } = {};
+		for (const [key, value] of Object.entries(process.env)) {
+			if (value !== undefined) {
+				env[key] = value;
+			}
+		}
+
+		return new vscode.Task(
+			definition,
+			vscode.TaskScope.Workspace,
+			task_name,
+			'ardupilot',
+			new vscode.ShellExecution(
+				`cd ../../ && python3 ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions}`,
+				{ cwd: buildDir, env: env }
+			),
+			'$apgcc'
+		);
 	}
 }
 

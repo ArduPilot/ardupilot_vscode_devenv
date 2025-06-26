@@ -331,14 +331,14 @@ suite('APTaskProvider Test Suite', () => {
 			assert.strictEqual(task, undefined);
 		});
 
-		test('should set CC and CXX environment variables for SITL builds with configured paths', () => {
+		test('should set CC and CXX environment variables for SITL builds with configured paths', async () => {
 			// Mock ToolsConfig to return custom paths
 			const mockToolsConfig = sandbox.stub();
 			mockToolsConfig.withArgs('gcc').returns('/custom/path/to/gcc');
 			mockToolsConfig.withArgs('g++').returns('/custom/path/to/g++');
 
 			// Replace ToolsConfig.getToolPath temporarily
-			const ToolsConfig = require('../../apToolsConfig').ToolsConfig;
+			const { ToolsConfig } = await import('../../apToolsConfig');
 			const originalGetToolPath = ToolsConfig.getToolPath;
 			ToolsConfig.getToolPath = mockToolsConfig;
 
@@ -371,14 +371,14 @@ suite('APTaskProvider Test Suite', () => {
 			ToolsConfig.getToolPath = originalGetToolPath;
 		});
 
-		test('should not set CC and CXX environment variables for non-SITL builds', () => {
+		test('should not set CC and CXX environment variables for non-SITL builds', async () => {
 			// Mock ToolsConfig to return custom paths
 			const mockToolsConfig = sandbox.stub();
 			mockToolsConfig.withArgs('gcc').returns('/custom/path/to/gcc');
 			mockToolsConfig.withArgs('g++').returns('/custom/path/to/g++');
 
 			// Replace ToolsConfig.getToolPath temporarily
-			const ToolsConfig = require('../../apToolsConfig').ToolsConfig;
+			const { ToolsConfig } = await import('../../apToolsConfig');
 			const originalGetToolPath = ToolsConfig.getToolPath;
 			ToolsConfig.getToolPath = mockToolsConfig;
 

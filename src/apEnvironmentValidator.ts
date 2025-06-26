@@ -1152,30 +1152,13 @@ export class ValidateEnvironmentPanel {
 				// Verify the file exists and is executable
 				const stat = fs.statSync(filePath);
 
-				// Check if file is executable
-				const isExecutable = !(stat.mode & fs.constants.S_IXUSR);
-
 				if (!stat.isFile()) {
 					vscode.window.showErrorMessage(`${filePath} is not a file.`);
 					return;
 				}
 
-				if (!isExecutable) {
-					const makeExecutable = await vscode.window.showWarningMessage(
-						`${filePath} is not executable. Do you want to make it executable?`,
-						'Yes', 'No'
-					);
-
-					if (makeExecutable === 'Yes') {
-						// Make the file executable (user+group+others)
-						fs.chmodSync(filePath, stat.mode | fs.constants.S_IXUSR | fs.constants.S_IXGRP | fs.constants.S_IXOTH);
-					} else {
-						return;
-					}
-				}
-
 				// Save the custom path in the configuration
-				ProgramUtils.setToolCustomPath(toolId, filePath);
+				await ProgramUtils.setToolCustomPath(toolId, filePath);
 
 				// Notify the webview that configuration was saved
 				this._panel.webview.postMessage({
@@ -1197,12 +1180,12 @@ export class ValidateEnvironmentPanel {
 	/**
 	 * Resets all custom tool paths
 	 */
-	private _resetAllToolPaths(): void {
+	private async _resetAllToolPaths(): Promise<void> {
 		// Confirm with the user
 		vscode.window.showWarningMessage(
 			'Are you sure you want to reset all custom tool paths?',
 			'Yes', 'No'
-		).then(answer => {
+		).then(async (answer) => {
 			if (answer === 'Yes') {
 				// Get all tool IDs from the ProgramUtils
 				const toolIds = [
@@ -1225,7 +1208,7 @@ export class ValidateEnvironmentPanel {
 
 				// Remove each tool path
 				for (const toolId of toolIds) {
-					ProgramUtils.removeToolCustomPath(toolId);
+					await ProgramUtils.removeToolCustomPath(toolId);
 				}
 
 				// Notify the webview that configuration was reset
@@ -1271,7 +1254,7 @@ export class ValidateEnvironmentPanel {
 			const interpreterPath = await ProgramUtils.selectPythonInterpreter();
 			if (interpreterPath) {
 				// Save the selected interpreter path as the Python tool path
-				ProgramUtils.setToolCustomPath(ProgramUtils.TOOL_PYTHON, interpreterPath);
+				await ProgramUtils.setToolCustomPath(ProgramUtils.TOOL_PYTHON, interpreterPath);
 
 				vscode.window.showInformationMessage(`Python interpreter set to: ${interpreterPath}`);
 

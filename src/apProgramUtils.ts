@@ -46,24 +46,48 @@ export interface ProgramInfo {
 export class ProgramUtils {
 	private static log = new apLog('ProgramUtils');
 
+	// Cache for tool paths from last full findTool call
+	private static toolPathCache = new Map<string, string>();
+
 	/**
-     * Tool IDs for configuration
+     * Tool IDs enum for configuration
      */
-	public static readonly TOOL_PYTHON = 'python';
-	public static readonly TOOL_PYTHON_WIN = 'python_win'; // Renamed ID for Windows Python used in WSL
-	public static readonly TOOL_MAVPROXY = 'mavproxy';
-	public static readonly TOOL_CCACHE = 'ccache';
-	public static readonly TOOL_OPENOCD = 'openocd';
-	public static readonly TOOL_JLINK = 'JLinkGDBServerCL';
-	public static readonly TOOL_GCC = 'gcc';
-	public static readonly TOOL_GPP = 'g++';
-	public static readonly TOOL_GDB = 'gdb';
-	public static readonly TOOL_ARM_GCC = 'arm-gcc';
-	public static readonly TOOL_ARM_GPP = 'arm-g++';
-	public static readonly TOOL_ARM_GDB = 'arm-gdb';
-	public static readonly TOOL_GDBSERVER = 'gdbserver';
-	public static readonly TOOL_PYSERIAL = 'pyserial';
-	public static readonly TOOL_TMUX = 'tmux';
+	public static readonly ToolId = {
+		PYTHON: 'python',
+		PYTHON_WIN: 'python_win', // Renamed ID for Windows Python used in WSL
+		MAVPROXY: 'mavproxy',
+		CCACHE: 'ccache',
+		OPENOCD: 'openocd',
+		JLINK: 'JLinkGDBServerCL',
+		GCC: 'gcc',
+		GPP: 'g++',
+		GDB: 'gdb',
+		ARM_GCC: 'arm-gcc',
+		ARM_GPP: 'arm-g++',
+		ARM_GDB: 'arm-gdb',
+		GDBSERVER: 'gdbserver',
+		PYSERIAL: 'pyserial',
+		TMUX: 'tmux'
+	} as const;
+
+	/**
+     * Tool IDs for configuration (legacy constants for backward compatibility)
+     */
+	public static readonly TOOL_PYTHON = ProgramUtils.ToolId.PYTHON;
+	public static readonly TOOL_PYTHON_WIN = ProgramUtils.ToolId.PYTHON_WIN;
+	public static readonly TOOL_MAVPROXY = ProgramUtils.ToolId.MAVPROXY;
+	public static readonly TOOL_CCACHE = ProgramUtils.ToolId.CCACHE;
+	public static readonly TOOL_OPENOCD = ProgramUtils.ToolId.OPENOCD;
+	public static readonly TOOL_JLINK = ProgramUtils.ToolId.JLINK;
+	public static readonly TOOL_GCC = ProgramUtils.ToolId.GCC;
+	public static readonly TOOL_GPP = ProgramUtils.ToolId.GPP;
+	public static readonly TOOL_GDB = ProgramUtils.ToolId.GDB;
+	public static readonly TOOL_ARM_GCC = ProgramUtils.ToolId.ARM_GCC;
+	public static readonly TOOL_ARM_GPP = ProgramUtils.ToolId.ARM_GPP;
+	public static readonly TOOL_ARM_GDB = ProgramUtils.ToolId.ARM_GDB;
+	public static readonly TOOL_GDBSERVER = ProgramUtils.ToolId.GDBSERVER;
+	public static readonly TOOL_PYSERIAL = ProgramUtils.ToolId.PYSERIAL;
+	public static readonly TOOL_TMUX = ProgramUtils.ToolId.TMUX;
 
 	// usual list of paths for the tools per platform per tool id
 	public static readonly TOOL_PATHS: {
@@ -576,60 +600,155 @@ export class ProgramUtils {
 
 	/**
 	 * Finds a tool and returns its information including custom path status
+	 * Also updates the tool path cache for fast synchronous access
 	 * @param toolId The ID of the tool to find
 	 * @returns Promise resolving to program information
 	 */
 	public static async findTool(toolId: string): Promise<ProgramInfo> {
+		let result: ProgramInfo;
+
 		switch (toolId) {
 		case this.TOOL_PYTHON:
-			return this.findPython();
+			result = await this.findPython();
+			break;
 		case this.TOOL_PYTHON_WIN:
-			return this.findPythonWin();
+			result = await this.findPythonWin();
+			break;
 		case this.TOOL_MAVPROXY:
-			return this.findMavproxy();
+			result = await this.findMavproxy();
+			break;
 		case this.TOOL_CCACHE:
-			return this.findCcache();
+			result = await this.findCcache();
+			break;
 		case this.TOOL_OPENOCD:
-			return this.findOpenOCD();
+			result = await this.findOpenOCD();
+			break;
 		case this.TOOL_JLINK:
-			return this.findJLinkGDBServerCLExe();
+			result = await this.findJLinkGDBServerCLExe();
+			break;
 		case this.TOOL_GCC:
-			return this.findGCC();
+			result = await this.findGCC();
+			break;
 		case this.TOOL_GPP:
-			return this.findGPP();
+			result = await this.findGPP();
+			break;
 		case this.TOOL_GDB:
-			return this.findGDB();
+			result = await this.findGDB();
+			break;
 		case this.TOOL_ARM_GCC:
-			return this.findArmGCC();
+			result = await this.findArmGCC();
+			break;
 		case this.TOOL_ARM_GPP:
-			return this.findArmGPP();
+			result = await this.findArmGPP();
+			break;
 		case this.TOOL_ARM_GDB:
-			return this.findArmGDB();
+			result = await this.findArmGDB();
+			break;
 		case this.TOOL_GDBSERVER:
-			return this.findGDBServer();
+			result = await this.findGDBServer();
+			break;
 		case this.TOOL_PYSERIAL:
-			return this.findPyserial();
+			result = await this.findPyserial();
+			break;
 		case this.TOOL_TMUX:
-			return this.findTmux();
+			result = await this.findTmux();
+			break;
 		default:
-			return { available: false, isCustomPath: false };
+			result = { available: false, isCustomPath: false };
+		}
+
+		// Cache the tool path for fast synchronous access
+		if (result.available && result.path) {
+			this.toolPathCache.set(toolId, result.path);
+		} else {
+			this.toolPathCache.delete(toolId);
+		}
+
+		return result;
+	}
+
+	/**
+	 * Gets cached tool path from the last findTool call
+	 * This is synchronous and fast, but may not reflect the latest state
+	 * @param toolId The ID of the tool
+	 * @returns Cached tool path or undefined if not cached or not available
+	 */
+	public static cachedToolPath(toolId: string): string | undefined {
+		return this.toolPathCache.get(toolId);
+	}
+
+	/**
+	 * Sets the custom path for a tool and updates the cache
+	 * @param toolId The ID of the tool
+	 * @param path The path to the tool
+	 */
+	public static async setToolCustomPath(toolId: string, path: string): Promise<void> {
+		ToolsConfig.setToolPath(toolId, path);
+
+		// Immediately update the cache with the new path by re-running findTool
+		try {
+			const result = await this.findTool(toolId);
+			if (result.available && result.path) {
+				this.log.log(`Updated cached tool ${toolId}: ${result.path}`);
+			} else {
+				this.log.log(`Failed to update cache for ${toolId} after setting custom path`);
+			}
+		} catch (error) {
+			this.log.log(`Error updating cache for ${toolId}: ${error}`);
 		}
 	}
 
 	/**
-	 * Sets the custom path for a tool
+	 * Removes the configured custom path for a tool and updates the cache
 	 * @param toolId The ID of the tool
-	 * @param path The path to the tool
 	 */
-	public static setToolCustomPath(toolId: string, path: string): void {
-		ToolsConfig.setToolPath(toolId, path);
+	public static async removeToolCustomPath(toolId: string): Promise<void> {
+		ToolsConfig.removeToolPath(toolId);
+
+		// Immediately update the cache by re-running findTool (will now use system path)
+		try {
+			const result = await this.findTool(toolId);
+			if (result.available && result.path) {
+				this.log.log(`Updated cached tool ${toolId} to system path: ${result.path}`);
+			} else {
+				this.log.log(`Tool ${toolId} not available after removing custom path`);
+				// Remove from cache if no longer available
+				this.toolPathCache.delete(toolId);
+			}
+		} catch (error) {
+			this.log.log(`Error updating cache for ${toolId}: ${error}`);
+			// Remove from cache on error
+			this.toolPathCache.delete(toolId);
+		}
 	}
 
 	/**
-	 * Removes the configured custom path for a tool
-	 * @param toolId The ID of the tool
+	 * Initialize tools cache by calling findTool for all tools
+	 * This populates the cache so CC/CXX environment variables are available when tasks are created
 	 */
-	public static removeToolCustomPath(toolId: string): void {
-		ToolsConfig.removeToolPath(toolId);
+	public static async initializeToolsCache(): Promise<void> {
+		this.log.log('Initializing tools cache...');
+
+		// Get all tool IDs from the ToolId object
+		const toolIds = Object.values(this.ToolId);
+
+		// Find all tools concurrently to populate cache
+		const promises = toolIds.map(async (toolId) => {
+			try {
+				const result = await this.findTool(toolId);
+				if (result.available && result.path) {
+					this.log.log(`Cached tool ${toolId}: ${result.path}`);
+				}
+			} catch (error) {
+				this.log.log(`Failed to cache tool ${toolId}: ${error}`);
+			}
+		});
+
+		try {
+			await Promise.all(promises);
+			this.log.log('Tools cache initialization completed');
+		} catch (error) {
+			this.log.log(`Tools cache initialization failed: ${error}`);
+		}
 	}
 }
