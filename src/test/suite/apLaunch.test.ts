@@ -95,7 +95,7 @@ suite('apLaunch Test Suite', () => {
 		});
 
 		test('should set default waf file path when not specified', async () => {
-			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false, isCustomPath: false });
 			const config = {
 				type: 'apLaunch',
 				request: 'launch',
@@ -113,7 +113,7 @@ suite('apLaunch Test Suite', () => {
 		});
 
 		test('should preserve custom waf file path when specified', async () => {
-			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false, isCustomPath: false });
 			const customWafPath = '/custom/path/to/waf';
 			const config = {
 				type: 'apLaunch',
@@ -152,7 +152,7 @@ suite('apLaunch Test Suite', () => {
 				return { dispose: sandbox.stub() };
 			});
 
-			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false, isCustomPath: false });
 
 			const config = {
 				type: 'apLaunch',
@@ -242,7 +242,7 @@ suite('apLaunch Test Suite', () => {
 	suite('SITL Debug Session Management', () => {
 		test('should require GDB for SITL debugging', async () => {
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
-			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findGDB').resolves({ available: false, isCustomPath: false });
 
 			const config = {
 				type: 'apLaunch',
@@ -267,9 +267,10 @@ suite('apLaunch Test Suite', () => {
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
-			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false, isCustomPath: false });
 
 			const config = {
 				type: 'apLaunch',
@@ -294,11 +295,13 @@ suite('apLaunch Test Suite', () => {
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 			sandbox.stub(fs, 'existsSync').returns(false);
 
@@ -324,11 +327,13 @@ suite('apLaunch Test Suite', () => {
 		test('should configure complete SITL debugging session successfully', async () => {
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 
 			const existsStub = sandbox.stub(fs, 'existsSync');
@@ -369,11 +374,13 @@ suite('apLaunch Test Suite', () => {
 		test('should extract vehicle type from SITL target correctly', async () => {
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 			sandbox.stub(fs, 'existsSync').returns(true);
 			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
@@ -399,11 +406,13 @@ suite('apLaunch Test Suite', () => {
 		test('should generate unique GDB ports for multiple sessions', async () => {
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 			sandbox.stub(fs, 'existsSync').returns(true);
 			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
@@ -448,11 +457,13 @@ suite('apLaunch Test Suite', () => {
 		test('should backup and replace run_in_terminal_window.sh when needed', async () => {
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 
 			const existsStub = sandbox.stub(fs, 'existsSync');
@@ -570,7 +581,8 @@ suite('apLaunch Test Suite', () => {
 			sandbox.stub(vscode.window, 'createTerminal').returns(mockCleanupTerminal);
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 
 			// Set up provider state as if SITL session is running
@@ -651,11 +663,13 @@ suite('apLaunch Test Suite', () => {
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 
 			// Force an error during processing
@@ -683,11 +697,13 @@ suite('apLaunch Test Suite', () => {
 		test('should validate target exists in targetToBin mapping', async () => {
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 			sandbox.stub(fs, 'existsSync').returns(true);
 			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
@@ -732,11 +748,13 @@ suite('apLaunch Test Suite', () => {
 		test('should integrate with targetToBin mapping correctly', async () => {
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 			sandbox.stub(fs, 'existsSync').returns(true);
 			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
@@ -777,11 +795,13 @@ suite('apLaunch Test Suite', () => {
 		test('should handle complete SITL workflow end-to-end', async () => {
 			sandbox.stub(ProgramUtils, 'findGDB').resolves({
 				available: true,
-				path: '/usr/bin/gdb'
+				path: '/usr/bin/gdb',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findTmux').resolves({
 				available: true,
-				path: '/usr/bin/tmux'
+				path: '/usr/bin/tmux',
+				isCustomPath: false
 			});
 			sandbox.stub(fs, 'existsSync').returns(true);
 			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');

@@ -36,6 +36,8 @@ export interface ProgramInfo {
 	info?: string;
 	/** command string */
 	command?: string;
+	/** Whether this program is using a custom configured path */
+	isCustomPath: boolean;
 }
 
 /**
@@ -107,7 +109,7 @@ export class ProgramUtils {
 		};
 
 	// find the tool path for the tool id
-	public static findToolPath(toolId: string): string | undefined {
+	private static findToolPath(toolId: string): string | undefined {
 		const toolPaths = ProgramUtils.TOOL_PATHS[toolId];
 		if (!toolPaths) {
 			return undefined;
@@ -178,6 +180,7 @@ export class ProgramUtils {
 				if (result) {
 					result.command = customPath; // Keep the original command name
 					result.path = customPath; // Use the custom path
+					result.isCustomPath = true; // Mark as custom path
 					return result;
 				}
 
@@ -188,19 +191,20 @@ export class ProgramUtils {
 			const command = this.findToolPath(toolId);
 			if (!command) {
 				this.log.log(`Command ${toolId} not found in system path`);
-				return { available: false };
+				return { available: false, isCustomPath: false };
 			}
 			const result = await this._tryExecuteCommand(command, args, options?.versionRegex, options?.ignoreRunError);
 			if (result) {
 				result.command = command;
+				result.isCustomPath = false; // Mark as system path
 				return result;
 			}
 
 			// If we get here, all attempts failed
-			return { available: false };
+			return { available: false, isCustomPath: false };
 		} catch (error) {
 			this.log.log(`Error finding program ${toolId}: ${error}`);
-			return { available: false };
+			return { available: false, isCustomPath: false };
 		}
 	}
 
@@ -226,6 +230,7 @@ export class ProgramUtils {
 						result.command = interpreterPath;
 						result.path = interpreterPath;
 						result.info = 'Selected via Microsoft Python Extension';
+						result.isCustomPath = false; // Extension-selected, not custom path
 						return result;
 					}
 				}
@@ -251,7 +256,7 @@ export class ProgramUtils {
 			// Linux/Darwin: check for ccache
 			return this.findProgram(this.TOOL_CCACHE, ['-V']);
 		}
-		return { available: false };
+		return { available: false, isCustomPath: false };
 	}
 
 	public static async findOpenOCD(): Promise<ProgramInfo> {
@@ -274,7 +279,7 @@ export class ProgramUtils {
 				ignoreRunError: true
 			});
 		}
-		return { available: false };
+		return { available: false, isCustomPath: false };
 	}
 
 	public static async findGCC(): Promise<ProgramInfo> {
@@ -336,7 +341,8 @@ export class ProgramUtils {
 
 				return {
 					available: false,
-					info: installInstructions
+					info: installInstructions,
+					isCustomPath: false
 				};
 			}
 
@@ -360,7 +366,8 @@ export class ProgramUtils {
 
 						resolve({
 							available: false,
-							info: installInstructions
+							info: installInstructions,
+							isCustomPath: false
 						});
 						return;
 					}
@@ -372,7 +379,8 @@ export class ProgramUtils {
 						available: true,
 						version,
 						path: pythonInfo.path,
-						info: 'Detected in Python installation'
+						info: 'Detected in Python installation',
+						isCustomPath: pythonInfo.isCustomPath || false
 					});
 				});
 			});
@@ -390,7 +398,8 @@ export class ProgramUtils {
 
 			return {
 				available: false,
-				info: installInstructions
+				info: installInstructions,
+				isCustomPath: false
 			};
 		}
 	}
@@ -470,7 +479,8 @@ export class ProgramUtils {
 						resolve({
 							available: true,
 							version,
-							path
+							path,
+							isCustomPath: false // Will be set by calling function
 						});
 					} else {
 						resolve(null);
@@ -565,77 +575,61 @@ export class ProgramUtils {
 	}
 
 	/**
-	 * Gets the path of the currently selected Python interpreter from the Python extension API
-	 * @param pythonApi The Python extension API
-	 * @returns Promise resolving to the interpreter path or undefined if not available
+	 * Finds a tool and returns its information including custom path status
+	 * @param toolId The ID of the tool to find
+	 * @returns Promise resolving to program information
 	 */
-	private static async getPythonInterpreterPath(pythonApi: unknown): Promise<string | undefined> {
-		try {
-			this.log.log('Getting Python interpreter path');
-
-			// Type guard and safe access patterns for the Python API
-			if (!pythonApi || typeof pythonApi !== 'object') {
-				return undefined;
-			}
-
-			// Try the newer API structure first (settings.getActiveInterpreterPath)
-			if ('settings' in pythonApi &&
-				pythonApi.settings &&
-				typeof pythonApi.settings === 'object' &&
-				'getActiveInterpreterPath' in pythonApi.settings) {
-
-				const getPath = (pythonApi.settings as { getActiveInterpreterPath: () => string }).getActiveInterpreterPath;
-				if (typeof getPath === 'function') {
-					const path = getPath();
-					if (path && typeof path === 'string') {
-						this.log.log(`Found interpreter via getActiveInterpreterPath: ${path}`);
-						return path;
-					}
-				}
-			}
-
-			// Try alternative API path (environments.getActiveEnvironmentPath)
-			if ('environments' in pythonApi &&
-				pythonApi.environments &&
-				typeof pythonApi.environments === 'object' &&
-				'getActiveEnvironmentPath' in pythonApi.environments) {
-
-				const getEnvPath = (pythonApi.environments as {
-					getActiveEnvironmentPath: () => Promise<{ path: string }>
-				}).getActiveEnvironmentPath;
-
-				if (typeof getEnvPath === 'function') {
-					try {
-						const envPath = await getEnvPath();
-						if (envPath && typeof envPath === 'object' && 'path' in envPath) {
-							this.log.log(`Found interpreter via getActiveEnvironmentPath: ${envPath.path}`);
-							return envPath.path as string;
-						}
-					} catch (e) {
-						this.log.log(`Error getting environment path: ${e}`);
-					}
-				}
-			}
-
-			// Fall back to VS Code settings
-			const pythonConfig = vscode.workspace.getConfiguration('python');
-			const defaultPath = pythonConfig.get<string>('defaultInterpreterPath');
-			if (defaultPath) {
-				this.log.log(`Found interpreter via settings (defaultInterpreterPath): ${defaultPath}`);
-				return defaultPath;
-			}
-
-			const legacyPath = pythonConfig.get<string>('pythonPath');
-			if (legacyPath) {
-				this.log.log(`Found interpreter via settings (pythonPath): ${legacyPath}`);
-				return legacyPath;
-			}
-
-			this.log.log('Could not determine Python interpreter path from extension API');
-			return undefined;
-		} catch (error) {
-			this.log.log(`Error getting Python interpreter path: ${error}`);
-			return undefined;
+	public static async findTool(toolId: string): Promise<ProgramInfo> {
+		switch (toolId) {
+		case this.TOOL_PYTHON:
+			return this.findPython();
+		case this.TOOL_PYTHON_WIN:
+			return this.findPythonWin();
+		case this.TOOL_MAVPROXY:
+			return this.findMavproxy();
+		case this.TOOL_CCACHE:
+			return this.findCcache();
+		case this.TOOL_OPENOCD:
+			return this.findOpenOCD();
+		case this.TOOL_JLINK:
+			return this.findJLinkGDBServerCLExe();
+		case this.TOOL_GCC:
+			return this.findGCC();
+		case this.TOOL_GPP:
+			return this.findGPP();
+		case this.TOOL_GDB:
+			return this.findGDB();
+		case this.TOOL_ARM_GCC:
+			return this.findArmGCC();
+		case this.TOOL_ARM_GPP:
+			return this.findArmGPP();
+		case this.TOOL_ARM_GDB:
+			return this.findArmGDB();
+		case this.TOOL_GDBSERVER:
+			return this.findGDBServer();
+		case this.TOOL_PYSERIAL:
+			return this.findPyserial();
+		case this.TOOL_TMUX:
+			return this.findTmux();
+		default:
+			return { available: false, isCustomPath: false };
 		}
+	}
+
+	/**
+	 * Sets the custom path for a tool
+	 * @param toolId The ID of the tool
+	 * @param path The path to the tool
+	 */
+	public static setToolCustomPath(toolId: string, path: string): void {
+		ToolsConfig.setToolPath(toolId, path);
+	}
+
+	/**
+	 * Removes the configured custom path for a tool
+	 * @param toolId The ID of the tool
+	 */
+	public static removeToolCustomPath(toolId: string): void {
+		ToolsConfig.removeToolPath(toolId);
 	}
 }

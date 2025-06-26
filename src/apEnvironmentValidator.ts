@@ -23,8 +23,7 @@ import * as vscode from 'vscode';
 import * as child_process from 'child_process';
 import { apWelcomeItem } from './apWelcomeItem';
 import { apLog } from './apLog';
-import { ProgramUtils } from './apProgramUtils';
-import { ToolsConfig } from './apToolsConfig';
+import { ProgramUtils, ProgramInfo } from './apProgramUtils';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -688,7 +687,7 @@ export class ValidateEnvironmentPanel {
 		const isWSL = ProgramUtils.isWSL();
 
 		const pythonCheck = ProgramUtils.findPython();
-		const pythonWinCheck = isWSL ? ProgramUtils.findPythonWin() : Promise.resolve({ available: false, info: 'Not applicable outside WSL.' });
+		const pythonWinCheck = isWSL ? ProgramUtils.findPythonWin() : Promise.resolve({ available: false, info: 'Not applicable outside WSL.', isCustomPath: false });
 		const mavproxyCheck = ProgramUtils.findMavproxy();
 		const armGccCheck = ProgramUtils.findArmGCC();
 		const gccCheck = ProgramUtils.findGCC();
@@ -699,9 +698,9 @@ export class ValidateEnvironmentPanel {
 		const tmuxCheck = ProgramUtils.findTmux();
 
 		// Check optional tools
-		const jlinkCheck = ProgramUtils.findJLinkGDBServerCLExe().catch(() => ({ available: false }));
-		const openocdCheck = ProgramUtils.findOpenOCD().catch(() => ({ available: false }));
-		const gdbserverCheck = ProgramUtils.findGDBServer().catch(() => ({ available: false }));
+		const jlinkCheck = ProgramUtils.findJLinkGDBServerCLExe().catch(() => ({ available: false, isCustomPath: false }));
+		const openocdCheck = ProgramUtils.findOpenOCD().catch(() => ({ available: false, isCustomPath: false }));
+		const gdbserverCheck = ProgramUtils.findGDBServer().catch(() => ({ available: false, isCustomPath: false }));
 
 		// Await all checks
 		const [
@@ -719,19 +718,19 @@ export class ValidateEnvironmentPanel {
 			pyserialResult,
 			tmuxResult
 		] = await Promise.all([
-			pythonCheck.catch(error => ({ available: false, error: error.message })),
-			pythonWinCheck.catch(error => ({ available: false, error: error.message })),
-			mavproxyCheck.catch(error => ({ available: false, error: error.message })),
-			armGccCheck.catch(error => ({ available: false, error: error.message })),
-			gccCheck.catch(error => ({ available: false, error: error.message })),
-			gppCheck.catch(error => ({ available: false, error: error.message })),
-			gdbCheck.catch(error => ({ available: false, error: error.message })),
-			ccacheCheck.catch(error => ({ available: false, error: error.message })),
+			pythonCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			pythonWinCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			mavproxyCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			armGccCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			gccCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			gppCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			gdbCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			ccacheCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
 			jlinkCheck,
 			openocdCheck,
 			gdbserverCheck,
-			pyserialCheck.catch(error => ({ available: false, error: error.message })),
-			tmuxCheck.catch(error => ({ available: false, error: error.message }))
+			pyserialCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			tmuxCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message }))
 		]);
 
 		// Report results to webview
@@ -998,7 +997,7 @@ export class ValidateEnvironmentPanel {
 			});
 	}
 
-	private _checkCCache(): Promise<{ available: boolean, version?: string, path?: string, info?: string }> {
+	private _checkCCache(): Promise<ProgramInfo> {
 		// disabled eslint rule for async promise executor as we are
 		// specifically catching errors for each check
 		// and handling them in the promise chain
@@ -1082,7 +1081,8 @@ export class ValidateEnvironmentPanel {
 					available: true,
 					version: ccacheResult.version,
 					path: ccacheResult.path,
-					info: ccacheInfo.join('<br>')
+					info: ccacheInfo.join('<br>'),
+					isCustomPath: ccacheResult.isCustomPath
 				});
 			} catch (error) {
 				reject(error);
@@ -1120,8 +1120,9 @@ export class ValidateEnvironmentPanel {
 	 * @param toolName The display name of the tool
 	 */
 	private async _configureToolPath(toolId: string, toolName: string): Promise<void> {
-		// Get the existing tool path to use its directory as default location
-		const existingToolPath = ToolsConfig.getToolPath(toolId);
+		// Get the existing tool info to use its directory as default location
+		const existingToolInfo = await ProgramUtils.findTool(toolId);
+		const existingToolPath = existingToolInfo.path;
 
 		// Show open file dialog to select the tool executable
 		const options: vscode.OpenDialogOptions = {
@@ -1174,7 +1175,7 @@ export class ValidateEnvironmentPanel {
 				}
 
 				// Save the custom path in the configuration
-				ToolsConfig.setToolPath(toolId, filePath);
+				ProgramUtils.setToolCustomPath(toolId, filePath);
 
 				// Notify the webview that configuration was saved
 				this._panel.webview.postMessage({
@@ -1224,7 +1225,7 @@ export class ValidateEnvironmentPanel {
 
 				// Remove each tool path
 				for (const toolId of toolIds) {
-					ToolsConfig.removeToolPath(toolId);
+					ProgramUtils.removeToolCustomPath(toolId);
 				}
 
 				// Notify the webview that configuration was reset
@@ -1246,53 +1247,9 @@ export class ValidateEnvironmentPanel {
 	 * @param tool The tool ID in the webview
 	 * @param result The result of the tool check
 	 */
-	private _reportToolStatus(tool: string, result: { available: boolean, version?: string, path?: string, info?: string, command?: string }): void {
-		// Map the tool ID in the webview to the actual tool ID for configuration
-		let toolId: string;
-		switch (tool) {
-		case 'python':
-			toolId = ProgramUtils.TOOL_PYTHON;
-			break;
-		case 'python-win':
-			toolId = ProgramUtils.TOOL_PYTHON_WIN;
-			break;
-		case 'mavproxy':
-			toolId = ProgramUtils.TOOL_MAVPROXY;
-			break;
-		case 'arm-gcc':
-			toolId = ProgramUtils.TOOL_ARM_GCC;
-			break;
-		case 'gcc':
-			toolId = ProgramUtils.TOOL_GCC;
-			break;
-		case 'gpp':
-			toolId = ProgramUtils.TOOL_GPP;
-			break;
-		case 'gdb':
-			toolId = ProgramUtils.TOOL_ARM_GDB;
-			break;
-		case 'ccache':
-			toolId = ProgramUtils.TOOL_CCACHE;
-			break;
-		case 'jlink':
-			toolId = ProgramUtils.TOOL_JLINK;
-			break;
-		case 'openocd':
-			toolId = ProgramUtils.TOOL_OPENOCD;
-			break;
-		case 'pyserial':
-			toolId = ProgramUtils.TOOL_PYSERIAL;
-			break;
-		case 'tmux':
-			toolId = ProgramUtils.TOOL_TMUX;
-			break;
-		default:
-			toolId = '';
-		}
-
-		// Check if this tool is using a custom path
-		const customPath = ToolsConfig.getToolPath(toolId);
-		const isCustomPath = !!customPath && result.path === customPath;
+	private _reportToolStatus(tool: string, result: ProgramInfo): void {
+		// The isCustomPath is already set in the result from ProgramUtils.findTool()
+		const isCustomPath = result.isCustomPath;
 
 		this._panel.webview.postMessage({
 			command: 'validationResult',
@@ -1314,7 +1271,7 @@ export class ValidateEnvironmentPanel {
 			const interpreterPath = await ProgramUtils.selectPythonInterpreter();
 			if (interpreterPath) {
 				// Save the selected interpreter path as the Python tool path
-				ToolsConfig.setToolPath(ProgramUtils.TOOL_PYTHON, interpreterPath);
+				ProgramUtils.setToolCustomPath(ProgramUtils.TOOL_PYTHON, interpreterPath);
 
 				vscode.window.showInformationMessage(`Python interpreter set to: ${interpreterPath}`);
 

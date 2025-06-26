@@ -645,7 +645,7 @@ Manufacturer : Generic Inc`;
 			};
 
 			// Mock ProgramUtils.findMavproxy to return available MAVProxy
-			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: true, path: '/usr/bin/mavproxy.py' });
+			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: true, path: '/usr/bin/mavproxy.py', isCustomPath: false });
 
 			// Mock terminal creation
 			const mockTerminal = {

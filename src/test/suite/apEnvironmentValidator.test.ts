@@ -86,18 +86,20 @@ suite('apEnvironmentValidator Test Suite', () => {
 			sandbox.stub(ProgramUtils, 'findPython').resolves({
 				available: true,
 				version: '3.9.0',
-				path: '/usr/bin/python3'
+				path: '/usr/bin/python3',
+				isCustomPath: false
 			});
 			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({
 				available: true,
-				version: '1.8.0'
+				version: '1.8.0',
+				isCustomPath: false
 			});
-			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findGCC').resolves({ available: true, version: '11.4.0', path: '/usr/bin/gcc' });
-			sandbox.stub(ProgramUtils, 'findGPP').resolves({ available: true, version: '11.4.0', path: '/usr/bin/g++' });
-			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: true });
-			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true });
+			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findGCC').resolves({ available: true, version: '11.4.0', path: '/usr/bin/gcc', isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findGPP').resolves({ available: true, version: '11.4.0', path: '/usr/bin/g++', isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: true, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: true, isCustomPath: false });
 			sandbox.stub(ProgramUtils, 'findCcache').rejects(new Error('ccache not found'));
 			sandbox.stub(ProgramUtils, 'isWSL').returns(false);
 
@@ -176,14 +178,14 @@ suite('apEnvironmentValidator Test Suite', () => {
 			console.log(`DEBUG: Running failure test in ${isWSL() ? 'WSL' : 'standard'} environment`);
 
 			sandbox.stub(ProgramUtils, 'findPython').rejects(new Error('Python not found'));
-			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findGCC').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findGPP').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findCcache').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findGCC').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findGPP').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findCcache').resolves({ available: false, isCustomPath: false });
 			sandbox.stub(ProgramUtils, 'isWSL').returns(false);
 
 			// Clear any existing panels
@@ -268,17 +270,18 @@ suite('apEnvironmentValidator Test Suite', () => {
 			sandbox.stub(ProgramUtils, 'findPython').resolves({
 				available: true,
 				version: '3.9.0',
-				path: customPath
+				path: customPath,
+				isCustomPath: true
 			});
 			sandbox.stub(ProgramUtils, 'isWSL').returns(false);
-			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findGCC').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findGPP').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false });
-			sandbox.stub(ProgramUtils, 'findCcache').resolves({ available: false });
+			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findArmGCC').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findGCC').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findGPP').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findArmGDB').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findPyserial').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findTmux').resolves({ available: false, isCustomPath: false });
+			sandbox.stub(ProgramUtils, 'findCcache').resolves({ available: false, isCustomPath: false });
 
 			// Set up ToolsConfig stub to return the custom path for Python
 			const getToolPathStub = sandbox.stub(ToolsConfig, 'getToolPath');
