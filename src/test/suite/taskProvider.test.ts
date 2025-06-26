@@ -330,6 +330,88 @@ suite('APTaskProvider Test Suite', () => {
 			const task = APTaskProvider.createTask(definition);
 			assert.strictEqual(task, undefined);
 		});
+
+		test('should set CC and CXX environment variables for SITL builds with configured paths', () => {
+			// Mock ToolsConfig to return custom paths
+			const mockToolsConfig = sandbox.stub();
+			mockToolsConfig.withArgs('gcc').returns('/custom/path/to/gcc');
+			mockToolsConfig.withArgs('g++').returns('/custom/path/to/g++');
+
+			// Replace ToolsConfig.getToolPath temporarily
+			const ToolsConfig = require('../../apToolsConfig').ToolsConfig;
+			const originalGetToolPath = ToolsConfig.getToolPath;
+			ToolsConfig.getToolPath = mockToolsConfig;
+
+			// Create a SITL task definition
+			const definition: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configName: 'sitl-copter-test',
+				configureOptions: '',
+				buildOptions: '',
+				waffile: ardupilotDir + '/waf',
+				nm: 'arm-none-eabi-nm'
+			};
+
+			const task = APTaskProvider.createTask(definition);
+			assert.ok(task);
+
+			// Check that the task has a ShellExecution with environment variables
+			const execution = task.execution as vscode.ShellExecution;
+			assert.ok(execution);
+			assert.ok(execution.options);
+			assert.ok(execution.options.env);
+
+			const env = execution.options.env as { [key: string]: string };
+			assert.strictEqual(env.CC, '/custom/path/to/gcc');
+			assert.strictEqual(env.CXX, '/custom/path/to/g++');
+
+			// Restore original method
+			ToolsConfig.getToolPath = originalGetToolPath;
+		});
+
+		test('should not set CC and CXX environment variables for non-SITL builds', () => {
+			// Mock ToolsConfig to return custom paths
+			const mockToolsConfig = sandbox.stub();
+			mockToolsConfig.withArgs('gcc').returns('/custom/path/to/gcc');
+			mockToolsConfig.withArgs('g++').returns('/custom/path/to/g++');
+
+			// Replace ToolsConfig.getToolPath temporarily
+			const ToolsConfig = require('../../apToolsConfig').ToolsConfig;
+			const originalGetToolPath = ToolsConfig.getToolPath;
+			ToolsConfig.getToolPath = mockToolsConfig;
+
+			// Create a hardware task definition
+			const definition: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configure: 'CubeOrange',
+				target: 'plane',
+				configName: 'CubeOrange-plane-test',
+				configureOptions: '',
+				buildOptions: '',
+				waffile: ardupilotDir + '/waf',
+				nm: 'arm-none-eabi-nm'
+			};
+
+			const task = APTaskProvider.createTask(definition);
+			assert.ok(task);
+
+			// Check that the task has a ShellExecution
+			const execution = task.execution as vscode.ShellExecution;
+			assert.ok(execution);
+			assert.ok(execution.options);
+			assert.ok(execution.options.env);
+
+			const env = execution.options.env as { [key: string]: string };
+			// For non-SITL builds, CC and CXX should not be set by our custom logic
+			// They might still exist from process.env, but they shouldn't be our custom paths
+			assert.notStrictEqual(env.CC, '/custom/path/to/gcc');
+			assert.notStrictEqual(env.CXX, '/custom/path/to/g++');
+
+			// Restore original method
+			ToolsConfig.getToolPath = originalGetToolPath;
+		});
 	});
 
 	suite('Task Deletion', () => {

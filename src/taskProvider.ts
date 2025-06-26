@@ -19,6 +19,8 @@ import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
+import { ToolsConfig } from './apToolsConfig';
+import { ProgramUtils } from './apProgramUtils';
 
 export class APTaskProvider implements vscode.TaskProvider {
 	static ardupilotTaskType = 'ardupilot';
@@ -190,6 +192,40 @@ export class APTaskProvider implements vscode.TaskProvider {
 		return task;
 	}
 
+	/**
+	 * Prepares environment variables for SITL builds with configured CC and CXX paths
+	 * @param isSITL Whether this is a SITL build
+	 * @returns Environment variables object
+	 */
+	private static prepareEnvironmentVariables(isSITL: boolean): { [key: string]: string } {
+		const env: { [key: string]: string } = {};
+
+		// Copy process.env but filter out undefined values
+		for (const [key, value] of Object.entries(process.env)) {
+			if (value !== undefined) {
+				env[key] = value;
+			}
+		}
+
+		if (isSITL) {
+			// Get configured GCC and G++ paths for SITL builds
+			const gccPath = ToolsConfig.getToolPath(ProgramUtils.TOOL_GCC);
+			const gppPath = ToolsConfig.getToolPath(ProgramUtils.TOOL_GPP);
+
+			if (gccPath) {
+				env.CC = gccPath;
+				APTaskProvider.log.log(`Setting CC environment variable to: ${gccPath}`);
+			}
+
+			if (gppPath) {
+				env.CXX = gppPath;
+				APTaskProvider.log.log(`Setting CXX environment variable to: ${gppPath}`);
+			}
+		}
+
+		return env;
+	}
+
 	static createTask(definition: ArdupilotTaskDefinition): vscode.Task | undefined {
 		const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
 		if (!workspaceRoot) {
@@ -217,6 +253,10 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 		}
 
+		// Check if this is a SITL build and prepare environment variables
+		const isSITL = definition.configure.toLowerCase().startsWith('sitl');
+		const env = this.prepareEnvironmentVariables(isSITL);
+
 		return new vscode.Task(
 			definition,
 			vscode.TaskScope.Workspace,
@@ -224,7 +264,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			'ardupilot',
 			new vscode.ShellExecution(
 				`cd ../../ && python3 ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions}`,
-				{ cwd: buildDir }
+				{ cwd: buildDir, env: env }
 			),
 			'$apgcc'
 		);

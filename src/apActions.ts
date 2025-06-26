@@ -20,6 +20,7 @@ import * as fs from 'fs';
 import { apLog } from './apLog';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { ProgramUtils } from './apProgramUtils';
+import { ToolsConfig } from './apToolsConfig';
 
 // Interface for launch configuration
 interface LaunchConfiguration {
@@ -450,8 +451,35 @@ export class apActionItem extends vscode.TreeItem {
 			return;
 		}
 
+		// Prepare environment variables with configured CC and CXX paths
+		const terminalEnv: { [key: string]: string } = {};
+
+		// Copy process.env but filter out undefined values
+		for (const [key, value] of Object.entries(process.env)) {
+			if (value !== undefined) {
+				terminalEnv[key] = value;
+			}
+		}
+
+		// Get configured GCC and G++ paths for SITL builds
+		const gccPath = ToolsConfig.getToolPath(ProgramUtils.TOOL_GCC);
+		const gppPath = ToolsConfig.getToolPath(ProgramUtils.TOOL_GPP);
+
+		if (gccPath) {
+			terminalEnv.CC = gccPath;
+			apActionItem.log(`Setting CC environment variable to: ${gccPath}`);
+		}
+
+		if (gppPath) {
+			terminalEnv.CXX = gppPath;
+			apActionItem.log(`Setting CXX environment variable to: ${gppPath}`);
+		}
+
 		// Run the SITL simulation using sim_vehicle.py
-		const terminal = vscode.window.createTerminal('ArduPilot SITL');
+		const terminal = vscode.window.createTerminal({
+			name: 'ArduPilot SITL',
+			env: terminalEnv
+		});
 		terminal.sendText(`cd ${workspaceRoot}`);
 		const simVehicleCommand = `python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${config.simVehicleCommand || ''}`;
 		terminal.sendText(simVehicleCommand);
