@@ -26,6 +26,8 @@ import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { ToolsConfig } from './apToolsConfig';
 import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 export class ValidateEnvironment extends apWelcomeItem {
 	static log = new apLog('validateEnvironment');
@@ -1118,6 +1120,9 @@ export class ValidateEnvironmentPanel {
 	 * @param toolName The display name of the tool
 	 */
 	private async _configureToolPath(toolId: string, toolName: string): Promise<void> {
+		// Get the existing tool path to use its directory as default location
+		const existingToolPath = ToolsConfig.getToolPath(toolId);
+
 		// Show open file dialog to select the tool executable
 		const options: vscode.OpenDialogOptions = {
 			canSelectMany: false,
@@ -1127,6 +1132,16 @@ export class ValidateEnvironmentPanel {
 				'All Files': ['*']
 			}
 		};
+
+		// If there's an existing tool path, set the default URI to its directory
+		// Otherwise, open the home directory
+		if (existingToolPath && fs.existsSync(existingToolPath)) {
+			const toolDir = path.dirname(existingToolPath);
+			options.defaultUri = vscode.Uri.file(toolDir);
+		} else {
+			const homeDir = os.homedir();
+			options.defaultUri = vscode.Uri.file(homeDir);
+		}
 
 		const fileUri = await vscode.window.showOpenDialog(options);
 		if (fileUri && fileUri.length > 0) {
