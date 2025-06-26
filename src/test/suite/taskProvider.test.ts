@@ -332,15 +332,11 @@ suite('APTaskProvider Test Suite', () => {
 		});
 
 		test('should set CC and CXX environment variables for SITL builds with configured paths', async () => {
-			// Mock ToolsConfig to return custom paths
-			const mockToolsConfig = sandbox.stub();
-			mockToolsConfig.withArgs('gcc').returns('/custom/path/to/gcc');
-			mockToolsConfig.withArgs('g++').returns('/custom/path/to/g++');
-
-			// Replace ToolsConfig.getToolPath temporarily
-			const { ToolsConfig } = await import('../../apToolsConfig');
-			const originalGetToolPath = ToolsConfig.getToolPath;
-			ToolsConfig.getToolPath = mockToolsConfig;
+			// Mock ProgramUtils.cachedToolPath to return custom paths
+			const { ProgramUtils } = await import('../../apProgramUtils');
+			const cachedToolPathStub = sandbox.stub(ProgramUtils, 'cachedToolPath');
+			cachedToolPathStub.withArgs(ProgramUtils.TOOL_GCC).returns('/custom/path/to/gcc');
+			cachedToolPathStub.withArgs(ProgramUtils.TOOL_GPP).returns('/custom/path/to/g++');
 
 			// Create a SITL task definition
 			const definition: ArdupilotTaskDefinition = {
@@ -366,21 +362,14 @@ suite('APTaskProvider Test Suite', () => {
 			const env = execution.options.env as { [key: string]: string };
 			assert.strictEqual(env.CC, '/custom/path/to/gcc');
 			assert.strictEqual(env.CXX, '/custom/path/to/g++');
-
-			// Restore original method
-			ToolsConfig.getToolPath = originalGetToolPath;
 		});
 
-		test('should not set CC and CXX environment variables for non-SITL builds', async () => {
-			// Mock ToolsConfig to return custom paths
-			const mockToolsConfig = sandbox.stub();
-			mockToolsConfig.withArgs('gcc').returns('/custom/path/to/gcc');
-			mockToolsConfig.withArgs('g++').returns('/custom/path/to/g++');
-
-			// Replace ToolsConfig.getToolPath temporarily
-			const { ToolsConfig } = await import('../../apToolsConfig');
-			const originalGetToolPath = ToolsConfig.getToolPath;
-			ToolsConfig.getToolPath = mockToolsConfig;
+		test('should set CC and CXX environment variables for non-SITL builds with configured paths', async () => {
+			// Mock ProgramUtils.cachedToolPath to return custom paths
+			const { ProgramUtils } = await import('../../apProgramUtils');
+			const cachedToolPathStub = sandbox.stub(ProgramUtils, 'cachedToolPath');
+			cachedToolPathStub.withArgs(ProgramUtils.TOOL_GCC).returns('/custom/path/to/gcc');
+			cachedToolPathStub.withArgs(ProgramUtils.TOOL_GPP).returns('/custom/path/to/g++');
 
 			// Create a hardware task definition
 			const definition: ArdupilotTaskDefinition = {
@@ -404,13 +393,9 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(execution.options.env);
 
 			const env = execution.options.env as { [key: string]: string };
-			// For non-SITL builds, CC and CXX should not be set by our custom logic
-			// They might still exist from process.env, but they shouldn't be our custom paths
-			assert.notStrictEqual(env.CC, '/custom/path/to/gcc');
-			assert.notStrictEqual(env.CXX, '/custom/path/to/g++');
-
-			// Restore original method
-			ToolsConfig.getToolPath = originalGetToolPath;
+			// For all builds, CC and CXX should be set to our custom paths when configured
+			assert.strictEqual(env.CC, '/custom/path/to/gcc');
+			assert.strictEqual(env.CXX, '/custom/path/to/g++');
 		});
 	});
 
