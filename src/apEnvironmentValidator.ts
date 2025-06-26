@@ -143,6 +143,9 @@ export class ValidateEnvironmentPanel {
 		case 'installTool':
 			this._installTool(message.toolId);
 			break;
+		case 'installPythonPackages':
+			this._installPythonPackages();
+			break;
 		}
 	}
 
@@ -286,6 +289,48 @@ export class ValidateEnvironmentPanel {
             margin-top: 5px;
             font-size: 12px;
         }
+        .python-packages {
+            margin-top: 10px;
+            margin-left: 20px;
+            border-left: 2px solid var(--vscode-panel-border);
+            padding-left: 15px;
+        }
+        .package-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            padding: 5px 8px;
+            border-radius: 3px;
+            background-color: var(--vscode-editor-background);
+        }
+        .package-name {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .package-status {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 2px;
+        }
+        .package-version {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            margin-top: 2px;
+        }
+        .install-packages-button {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        .install-packages-button:hover {
+            background-color: #005a9e;
+        }
         .platform-warning {
             margin-bottom: 20px;
             padding: 15px;
@@ -328,6 +373,10 @@ export class ValidateEnvironmentPanel {
                 <button class="install-button" data-tool-id="${ProgramUtils.TOOL_PYTHON}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
+            <div class="python-packages" id="python-packages">
+                <!-- Python packages will be dynamically populated -->
+                <button class="install-packages-button" id="install-python-packages" style="display: none;">Install Missing Packages in Terminal</button>
+            </div>
         </div>
 
         <div class="tool-container" id="python-win" data-tool-id="${ProgramUtils.TOOL_PYTHON_WIN}" style="display:none;">
@@ -555,6 +604,13 @@ export class ValidateEnvironmentPanel {
                 });
             });
             
+            // Setup Python packages install button
+            document.getElementById('install-python-packages').addEventListener('click', () => {
+                vscode.postMessage({
+                    command: 'installPythonPackages'
+                });
+            });
+            
             // Setup WSL launch button
             document.getElementById('launch-wsl-btn').addEventListener('click', () => {
                 vscode.postMessage({
@@ -647,6 +703,35 @@ export class ValidateEnvironmentPanel {
                 } else if (message.command === 'configurationSaved') {
                     // Refresh validation after configuration is saved
                     vscode.postMessage({ command: 'checkEnvironment' });
+                } else if (message.command === 'createPythonPackages') {
+                    const pythonPackagesContainer = document.getElementById('python-packages');
+                    const installButton = document.getElementById('install-python-packages');
+                    pythonPackagesContainer.innerHTML = message.html + installButton.outerHTML;
+                    
+                    // Re-attach event listener to the new install button
+                    document.getElementById('install-python-packages').addEventListener('click', () => {
+                        vscode.postMessage({
+                            command: 'installPythonPackages'
+                        });
+                    });
+                } else if (message.command === 'packageResult') {
+                    const packageElement = document.querySelector('[data-package="' + message.package + '"]');
+                    if (packageElement) {
+                        const statusElement = packageElement.querySelector('.package-status');
+                        const versionElement = packageElement.querySelector('.package-version');
+                        
+                        statusElement.className = 'package-status ' + (message.available ? 'status-available' : 'status-missing');
+                        statusElement.textContent = message.available ? 'Available' : 'Missing';
+                        
+                        if (message.version && message.available) {
+                            versionElement.textContent = 'v' + message.version;
+                        } else {
+                            versionElement.textContent = '';
+                        }
+                    }
+                } else if (message.command === 'updateInstallButton') {
+                    const installButton = document.getElementById('install-python-packages');
+                    installButton.style.display = message.show ? 'block' : 'none';
                 } else if (message.command === 'platformCheck') {
                     currentPlatform = message.platform;
                     const platformWarningElement = document.getElementById('platform-warning');
@@ -688,6 +773,10 @@ export class ValidateEnvironmentPanel {
 
 		const pythonCheck = ProgramUtils.findPython();
 		const pythonWinCheck = isWSL ? ProgramUtils.findPythonWin() : Promise.resolve({ available: false, info: 'Not applicable outside WSL.', isCustomPath: false });
+
+		// Python package checks
+		const pythonPackagesCheck = ProgramUtils.checkAllPythonPackages();
+
 		const mavproxyCheck = ProgramUtils.findMavproxy();
 		const armGccCheck = ProgramUtils.findArmGCC();
 		const gccCheck = ProgramUtils.findGCC();
@@ -706,6 +795,7 @@ export class ValidateEnvironmentPanel {
 		const [
 			pythonResult,
 			pythonWinResult,
+			pythonPackagesResult,
 			mavproxyResult,
 			armGccResult,
 			gccResult,
@@ -720,6 +810,7 @@ export class ValidateEnvironmentPanel {
 		] = await Promise.all([
 			pythonCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
 			pythonWinCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			pythonPackagesCheck.catch(() => []),
 			mavproxyCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
 			armGccCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
 			gccCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
@@ -738,6 +829,17 @@ export class ValidateEnvironmentPanel {
 		if (isWSL) {
 			this._reportToolStatus('python-win', pythonWinResult);
 		}
+
+		// Create Python packages HTML and report results
+		this._createPythonPackagesHTML();
+		for (const {packageName, result} of pythonPackagesResult) {
+			this._reportPackageStatus(packageName, result);
+		}
+
+		// Check if any Python packages are missing to show install button
+		const hasMissingPackages = pythonPackagesResult.some(({result}) => !result.available);
+		this._updateInstallPackagesButton(hasMissingPackages);
+
 		this._reportToolStatus('mavproxy', mavproxyResult);
 		this._reportToolStatus('arm-gcc', armGccResult);
 		this._reportToolStatus('gcc', gccResult);
@@ -1264,6 +1366,111 @@ export class ValidateEnvironmentPanel {
 		} catch (error) {
 			ValidateEnvironmentPanel.log.log(`Error selecting Python interpreter: ${error}`);
 			vscode.window.showErrorMessage(`Failed to select Python interpreter: ${error}`);
+		}
+	}
+
+	/**
+	 * Creates the HTML structure for Python packages dynamically
+	 */
+	private _createPythonPackagesHTML(): void {
+		const packagesHTML = ProgramUtils.REQUIRED_PYTHON_PACKAGES.map(pkg => `
+			<div class="package-item" data-package="${pkg.name}">
+				<div>
+					<div class="package-name">${pkg.name}</div>
+					<div class="package-version"></div>
+				</div>
+				<div class="package-status status-checking">Checking...</div>
+			</div>
+		`).join('');
+
+		this._panel.webview.postMessage({
+			command: 'createPythonPackages',
+			html: packagesHTML
+		});
+	}
+
+	/**
+	 * Reports a Python package's status to the webview
+	 * @param packageName The package name
+	 * @param result The result of the package check
+	 */
+	private _reportPackageStatus(packageName: string, result: ProgramInfo): void {
+		this._panel.webview.postMessage({
+			command: 'packageResult',
+			package: packageName,
+			available: result.available,
+			version: result.version,
+			info: result.info
+		});
+	}
+
+	/**
+	 * Updates the install packages button visibility
+	 * @param showButton Whether to show the install button
+	 */
+	private _updateInstallPackagesButton(showButton: boolean): void {
+		this._panel.webview.postMessage({
+			command: 'updateInstallButton',
+			show: showButton
+		});
+	}
+
+	/**
+	 * Opens a terminal to install missing Python packages
+	 */
+	private async _installPythonPackages(): Promise<void> {
+		const packages = ProgramUtils.REQUIRED_PYTHON_PACKAGES.map(pkg => pkg.name);
+		const packageList = packages.join(' ');
+
+		// Get the same Python interpreter that was used for validation
+		try {
+			const pythonInfo = await ProgramUtils.findPython();
+			if (!pythonInfo.available || !pythonInfo.command) {
+				vscode.window.showErrorMessage('Python not found. Please install Python first.');
+				return;
+			}
+
+			const installCommand = `${pythonInfo.command} -m pip install ${packageList}`;
+
+			// Create terminal with a unique name to track it
+			const terminalName = 'Install Python Packages';
+			const terminal = vscode.window.createTerminal({
+				name: terminalName,
+				shellPath: '/bin/bash'
+			});
+
+			// Monitor terminal close event to auto-refresh validation
+			const disposable = vscode.window.onDidCloseTerminal((closedTerminal) => {
+				if (closedTerminal.name === terminalName) {
+					// Terminal closed, automatically refresh validation
+					ValidateEnvironmentPanel.log.log('Package installation terminal closed, refreshing validation...');
+					setTimeout(() => {
+						this._validateEnvironment();
+					}, 1000); // Small delay to ensure pip install has completed
+
+					// Clean up the event listener
+					disposable.dispose();
+				}
+			});
+
+			// Add the disposable to our list for cleanup
+			this._disposables.push(disposable);
+
+			// Send installation command with conditional exit (only on success)
+			terminal.sendText(`${installCommand} && echo "\nInstallation completed successfully! Terminal will close in 3 seconds..." && sleep 3 && exit || echo "\nInstallation failed. Please check the errors above. Terminal will remain open."`);
+			terminal.show();
+
+			vscode.window.showInformationMessage(
+				'Installing Python packages... Validation will refresh automatically when installation completes successfully.',
+				'Manual Refresh'
+			).then(choice => {
+				if (choice === 'Manual Refresh') {
+					this._validateEnvironment();
+				}
+			});
+
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to get Python path: ${error}`);
 		}
 	}
 

@@ -89,6 +89,16 @@ export class ProgramUtils {
 	public static readonly TOOL_PYSERIAL = ProgramUtils.ToolId.PYSERIAL;
 	public static readonly TOOL_TMUX = ProgramUtils.ToolId.TMUX;
 
+	// Python packages for ArduPilot
+	public static readonly REQUIRED_PYTHON_PACKAGES = [
+		{ name: 'empy', description: 'Template engine for code generation' },
+		{ name: 'future', description: 'Python 2/3 compatibility' },
+		{ name: 'pymavlink', description: 'MAVLink protocol implementation' },
+		{ name: 'lxml', description: 'XML processing for MAVLink' },
+		{ name: 'pexpect', description: 'Process control and automation' },
+		{ name: 'dronecan', description: 'DroneCAN protocol implementation' }
+	] as const;
+
 	// usual list of paths for the tools per platform per tool id
 	public static readonly TOOL_PATHS: {
         [key: string]: {
@@ -432,6 +442,73 @@ export class ProgramUtils {
 	public static async findTmux(): Promise<ProgramInfo> {
 		// check for tmux
 		return this.findProgram(this.TOOL_TMUX, ['-V']);
+	}
+
+	/**
+	 * Check for Python package using pip show command
+	 * @param packageName The name of the Python package to check
+	 * @returns Promise with package information
+	 */
+	public static async checkPythonPackage(packageName: string): Promise<ProgramInfo> {
+		try {
+			const pythonInfo = await this.findPython();
+			if (!pythonInfo.available || !pythonInfo.command) {
+				return {
+					available: false,
+					info: `Python not available. Please install Python first, then run: pip install ${packageName}`,
+					isCustomPath: false
+				};
+			}
+
+			const pythonCmd = pythonInfo.command;
+			// Use pip show to check if package is installed
+			const cmd = `${pythonCmd} -m pip show ${packageName}`;
+
+			return new Promise<ProgramInfo>((resolve) => {
+				child_process.exec(cmd, (error, stdout) => {
+					if (error) {
+						resolve({
+							available: false,
+							info: `To install ${packageName}, run: ${pythonCmd} -m pip install ${packageName}`,
+							isCustomPath: false
+						});
+						return;
+					}
+
+					// Extract version from pip show output
+					const versionMatch = stdout.match(/Version: ([\d.\w-]+)/);
+					const version = versionMatch ? versionMatch[1] : 'Unknown';
+
+					resolve({
+						available: true,
+						version,
+						path: pythonInfo.path,
+						info: `Installed via pip in Python ${pythonInfo.version}`,
+						isCustomPath: pythonInfo.isCustomPath || false
+					});
+				});
+			});
+		} catch (error) {
+			this.log.log(`Error checking Python package ${packageName}: ${error}`);
+			return {
+				available: false,
+				info: `Error checking package. Run: pip install ${packageName}`,
+				isCustomPath: false
+			};
+		}
+	}
+
+	/**
+	 * Check all required Python packages
+	 * @returns Promise with array of package check results
+	 */
+	public static async checkAllPythonPackages(): Promise<Array<{packageName: string, result: ProgramInfo}>> {
+		const results = [];
+		for (const pkg of this.REQUIRED_PYTHON_PACKAGES) {
+			const result = await this.checkPythonPackage(pkg.name);
+			results.push({ packageName: pkg.name, result });
+		}
+		return results;
 	}
 
 	/**
