@@ -21,6 +21,7 @@ import { apLog } from './apLog';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { ProgramUtils } from './apProgramUtils';
 import { ToolsConfig } from './apToolsConfig';
+import { targetToVehicleType } from './apLaunch';
 
 // Interface for launch configuration
 interface LaunchConfiguration {
@@ -443,7 +444,22 @@ export class apActionItem extends vscode.TreeItem {
 		}
 
 		// For SITL, run the simulation
-		const vehicleType = config.target.replace('sitl-', '');
+		const vehicleBaseType = config.target.replace('sitl-', '');
+		
+		// Get ArduPilot vehicle name for sim_vehicle.py -v argument (e.g., 'ArduCopter')
+		let vehicleType = targetToVehicleType[vehicleBaseType] || vehicleBaseType;
+		
+		// Special handling for helicopter - use ArduCopter with -f heli
+		let additionalArgs = '';
+		if (vehicleBaseType === 'heli') {
+			vehicleType = 'ArduCopter';
+			// Only add -f heli if not already in the user's command
+			const userCommand = config.simVehicleCommand || '';
+			if (!userCommand.includes('-f ')) {
+				additionalArgs = '-f heli';
+			}
+		}
+
 		const simVehiclePath = path.join(workspaceRoot, 'Tools', 'autotest', 'sim_vehicle.py');
 
 		if (!fs.existsSync(simVehiclePath)) {
@@ -481,7 +497,7 @@ export class apActionItem extends vscode.TreeItem {
 			env: terminalEnv
 		});
 		terminal.sendText(`cd ${workspaceRoot}`);
-		const simVehicleCommand = `python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${config.simVehicleCommand || ''}`;
+		const simVehicleCommand = `python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${config.simVehicleCommand || ''}`;
 		terminal.sendText(simVehicleCommand);
 		terminal.show();
 	}

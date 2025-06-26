@@ -765,10 +765,11 @@ suite('apActions Test Suite', () => {
 				// Mock vscode.window.createTerminal and terminal methods using sandbox
 				const mockTerminal = {
 					sendText: sandbox.stub().callsFake((text: string) => {
+						console.log(`Mock terminal command: ${text}`);
 						// Verify the commands being sent
 						if (text.includes('sim_vehicle.py')) {
 							assert.ok(text.includes('python3'));
-							assert.ok(text.includes('copter'));
+							assert.ok(text.includes('ArduCopter'));
 							assert.ok(text.includes('--map --console'));
 						}
 					}),

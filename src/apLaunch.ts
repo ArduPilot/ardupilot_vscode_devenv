@@ -21,6 +21,18 @@ import { ProgramUtils } from './apProgramUtils';
 import { targetToBin } from './apBuildConfig';
 import * as fs from 'fs';
 
+// Map vehicle types to ArduPilot binary names
+export const targetToVehicleType: { [key: string]: string } = {
+	'copter': 'ArduCopter',
+	'heli': 'Helicopter',
+	'blimp': 'Blimp',
+	'plane': 'ArduPlane',
+	'rover': 'Rover',
+	'sub': 'ArduSub',
+	'antennatracker': 'AntennaTracker',
+	'sitl_periph_universal': 'AP_Periph'
+};
+
 export interface APLaunchDefinition {
 	/**
 	 * Type of launch (must be 'apLaunch')
@@ -173,8 +185,21 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				const simVehiclePath = path.join(workspaceRoot, 'Tools', 'autotest', 'sim_vehicle.py');
 
 				// Extract vehicle type from target (e.g., 'copter' from 'sitl-copter')
-				const vehicleType = apConfig.target.replace('sitl-', '');
-
+				const vehicleBaseType = apConfig.target.replace('sitl-', '');
+				
+				// Get ArduPilot vehicle name for sim_vehicle.py -v argument (e.g., 'ArduCopter')
+				let vehicleType = targetToVehicleType[vehicleBaseType] || vehicleBaseType;
+				
+				// Special handling for helicopter - use ArduCopter with -f heli
+				let additionalArgs = '';
+				if (vehicleBaseType === 'heli') {
+					vehicleType = 'ArduCopter';
+					// Only add -f heli if not already in the user's command
+					const userCommand = apConfig.simVehicleCommand || '';
+					if (!userCommand.includes('-f ')) {
+						additionalArgs = '-f heli';
+					}
+				}
 				// Check if GDB is available
 				const gdb = await ProgramUtils.findGDB();
 				if (!gdb.available) {
@@ -189,8 +214,8 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					return undefined;
 				}
 
-				// Find the binary path for the vehicle
-				const binaryPath = path.join(workspaceRoot, 'build', 'sitl', targetToBin[vehicleType]);
+				// Find the binary path for the vehicle (use base type for targetToBin lookup)
+				const binaryPath = path.join(workspaceRoot, 'build', 'sitl', targetToBin[vehicleBaseType]);
 				APLaunchConfigurationProvider.log.log(`Debug binary path: ${binaryPath}`);
 
 				// Generate a unique port for gdbserver (between 3000-4000)
@@ -224,7 +249,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				// Set up the environment to use gdbserver through TMUX_PREFIX
 				const tmuxPath = tmux.path; // Use the discovered tmux path
 				const tmuxCommand = `"${tmuxPath}" new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
-				const simVehicleCmd = `export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${apConfig.simVehicleCommand || ''}`;
+				const simVehicleCmd = `export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
 				APLaunchConfigurationProvider.log.log(`Running SITL simulation with debug: ${simVehicleCmd}`);
 
 				// Start the SITL simulation in a terminal and store the terminal reference

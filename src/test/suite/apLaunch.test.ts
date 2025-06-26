@@ -364,7 +364,7 @@ suite('apLaunch Test Suite', () => {
 
 			assert(result, 'Should return debug configuration');
 			assert.strictEqual(result.type, 'cppdbg');
-			assert.strictEqual(result.name, 'Debug copter SITL');
+			assert.strictEqual(result.name, 'Debug ArduCopter SITL');
 			assert.strictEqual(result.miDebuggerPath, '/usr/bin/gdb');
 			assert(result.miDebuggerServerAddress?.includes('localhost:'));
 			assert(mockTerminal.sendText.called);
@@ -400,7 +400,7 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			assert(result, 'Should return debug configuration');
-			assert.strictEqual(result.name, 'Debug plane SITL');
+			assert.strictEqual(result.name, 'Debug ArduPlane SITL');
 		});
 
 		test('should generate unique GDB ports for multiple sessions', async () => {
