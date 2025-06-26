@@ -26,7 +26,6 @@ import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { ToolsConfig } from './apToolsConfig';
 import * as fs from 'fs';
-import { install } from 'source-map-support';
 
 export class ValidateEnvironment extends apWelcomeItem {
 	static log = new apLog('validateEnvironment');
@@ -359,7 +358,7 @@ export class ValidateEnvironmentPanel {
             <div class="custom-path-notification"></div>
         </div>
         
-        <div class="tool-container" id="gcc" data-tool-id="${ProgramUtils.TOOL_ARM_GCC}">
+        <div class="tool-container" id="arm-gcc" data-tool-id="${ProgramUtils.TOOL_ARM_GCC}">
             <div class="tool-header">
                 <div class="tool-name">arm-none-eabi-gcc</div>
                 <div class="tool-status status-checking">Checking...</div>
@@ -369,6 +368,20 @@ export class ValidateEnvironmentPanel {
                 <div class="tool-path-text"></div>
                 <button class="config-button config-path-btn">Configure Path</button>
                 <button class="install-button" data-tool-id="${ProgramUtils.TOOL_ARM_GCC}">Install</button>
+            </div>
+            <div class="custom-path-notification"></div>
+        </div>
+        
+        <div class="tool-container" id="gcc" data-tool-id="${ProgramUtils.TOOL_GCC}">
+            <div class="tool-header">
+                <div class="tool-name">gcc</div>
+                <div class="tool-status status-checking">Checking...</div>
+            </div>
+            <div class="tool-version"></div>
+            <div class="tool-path">
+                <div class="tool-path-text"></div>
+                <button class="config-button config-path-btn">Configure Path</button>
+                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_GCC}">Install</button>
             </div>
             <div class="custom-path-notification"></div>
         </div>
@@ -661,7 +674,8 @@ export class ValidateEnvironmentPanel {
 		const pythonCheck = ProgramUtils.findPython();
 		const pythonWinCheck = isWSL ? ProgramUtils.findPythonWin() : Promise.resolve({ available: false, info: 'Not applicable outside WSL.' });
 		const mavproxyCheck = ProgramUtils.findMavproxy();
-		const gccCheck = ProgramUtils.findArmGCC();
+		const armGccCheck = ProgramUtils.findArmGCC();
+		const gccCheck = ProgramUtils.findGCC();
 		const gdbCheck = ProgramUtils.findArmGDB();
 		const ccacheCheck = this._checkCCache();
 		const pyserialCheck = ProgramUtils.findPyserial();
@@ -677,6 +691,7 @@ export class ValidateEnvironmentPanel {
 			pythonResult,
 			pythonWinResult,
 			mavproxyResult,
+			armGccResult,
 			gccResult,
 			gdbResult,
 			ccacheResult,
@@ -689,6 +704,7 @@ export class ValidateEnvironmentPanel {
 			pythonCheck.catch(error => ({ available: false, error: error.message })),
 			pythonWinCheck.catch(error => ({ available: false, error: error.message })),
 			mavproxyCheck.catch(error => ({ available: false, error: error.message })),
+			armGccCheck.catch(error => ({ available: false, error: error.message })),
 			gccCheck.catch(error => ({ available: false, error: error.message })),
 			gdbCheck.catch(error => ({ available: false, error: error.message })),
 			ccacheCheck.catch(error => ({ available: false, error: error.message })),
@@ -705,6 +721,7 @@ export class ValidateEnvironmentPanel {
 			this._reportToolStatus('python-win', pythonWinResult);
 		}
 		this._reportToolStatus('mavproxy', mavproxyResult);
+		this._reportToolStatus('arm-gcc', armGccResult);
 		this._reportToolStatus('gcc', gccResult);
 		this._reportToolStatus('gdb', gdbResult);
 		this._reportToolStatus('ccache', ccacheResult);
@@ -715,7 +732,7 @@ export class ValidateEnvironmentPanel {
 		this._reportToolStatus('tmux', tmuxResult);
 
 		// Generate summary - only include required tools in the summary
-		const summaryTools = [pythonResult, mavproxyResult, gccResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult, tmuxResult];
+		const summaryTools = [pythonResult, mavproxyResult, armGccResult, gccResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult, tmuxResult];
 		if (isWSL) {
 			// Add Windows Python to summary if in WSL, as it's important for SITL components like PySerial.
 			summaryTools.push(pythonWinResult);
@@ -767,6 +784,9 @@ export class ValidateEnvironmentPanel {
 			[ProgramUtils.TOOL_MAVPROXY]: 'MAVProxy',
 			[ProgramUtils.TOOL_ARM_GCC]: 'ARM GCC Toolchain',
 			[ProgramUtils.TOOL_ARM_GDB]: 'ARM GDB',
+			[ProgramUtils.TOOL_GCC]: 'GCC',
+			[ProgramUtils.TOOL_GPP]: 'G++',
+			[ProgramUtils.TOOL_GDB]: 'GDB',
 			[ProgramUtils.TOOL_CCACHE]: 'ccache',
 			[ProgramUtils.TOOL_JLINK]: 'J-Link',
 			[ProgramUtils.TOOL_OPENOCD]: 'OpenOCD',
@@ -812,6 +832,21 @@ export class ValidateEnvironmentPanel {
 				linux: 'sudo apt-get update && sudo apt-get install -y gdb-multiarch',
 				darwin: 'brew install gdb',
 				description: 'Install GDB for ARM debugging'
+			},
+			[ProgramUtils.TOOL_GCC]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y gcc',
+				darwin: 'xcode-select --install',
+				description: 'Install GCC compiler'
+			},
+			[ProgramUtils.TOOL_GPP]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y g++',
+				darwin: 'xcode-select --install',
+				description: 'Install G++ compiler'
+			},
+			[ProgramUtils.TOOL_GDB]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y gdb',
+				darwin: 'brew install gdb',
+				description: 'Install GDB debugger'
 			},
 			[ProgramUtils.TOOL_CCACHE]: {
 				linux: 'sudo apt-get update && sudo apt-get install -y ccache',
@@ -1150,7 +1185,8 @@ export class ValidateEnvironmentPanel {
 					ProgramUtils.TOOL_ARM_GPP,
 					ProgramUtils.TOOL_ARM_GDB,
 					ProgramUtils.TOOL_GDBSERVER,
-					ProgramUtils.TOOL_PYSERIAL
+					ProgramUtils.TOOL_PYSERIAL,
+					ProgramUtils.TOOL_TMUX
 				];
 
 				// Remove each tool path
@@ -1190,8 +1226,11 @@ export class ValidateEnvironmentPanel {
 		case 'mavproxy':
 			toolId = ProgramUtils.TOOL_MAVPROXY;
 			break;
-		case 'gcc':
+		case 'arm-gcc':
 			toolId = ProgramUtils.TOOL_ARM_GCC;
+			break;
+		case 'gcc':
+			toolId = ProgramUtils.TOOL_GCC;
 			break;
 		case 'gdb':
 			toolId = ProgramUtils.TOOL_ARM_GDB;
