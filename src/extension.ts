@@ -54,6 +54,9 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	// Initialize all tools cache asynchronously
 	ProgramUtils.initializeToolsCache();
 
+	// Configure venv-ardupilot as default Python interpreter if available
+	ProgramUtils.configureVenvArdupilot();
+
 	apExtensionContext.apWelcomeProviderInstance = new apWelcomeProvider();
 
 	vscode.window.registerTreeDataProvider('apWelcome', apExtensionContext.apWelcomeProviderInstance);

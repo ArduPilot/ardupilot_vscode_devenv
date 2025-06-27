@@ -18,6 +18,7 @@ import * as child_process from 'child_process';
 import * as os from 'os';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
 import * as glob from 'fast-glob';
 import { ToolsConfig } from './apToolsConfig';
 import { apLog } from './apLog';
@@ -672,6 +673,54 @@ export class ProgramUtils {
 			this.log.log(`Error selecting Python interpreter: ${error}`);
 			vscode.window.showErrorMessage(`Failed to select Python interpreter: ${error}`);
 			return undefined;
+		}
+	}
+
+	/**
+	 * Adds venv-ardupilot to the VS Code Python extension's venvFolders list if it exists
+	 * @returns Promise resolving to true if venv-ardupilot was added, false otherwise
+	 */
+	public static async configureVenvArdupilot(): Promise<boolean> {
+		// Get the workspace folder
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			this.log.log('No workspace folder found');
+			return false;
+		}
+
+		// Check if venv-ardupilot exists
+		const venvDir = path.join(workspaceFolder.uri.fsPath, 'venv-ardupilot');
+		const pythonExe = path.join(venvDir, 'bin', 'python');
+
+		if (!fs.existsSync(venvDir) || !fs.existsSync(pythonExe)) {
+			this.log.log('venv-ardupilot not found');
+			return false;
+		}
+
+		this.log.log(`Found venv-ardupilot at: ${venvDir}`);
+
+		try {
+			const config = vscode.workspace.getConfiguration('python', workspaceFolder.uri);
+			
+			// Get current venvFolders setting
+			const currentVenvFolders = config.get<string[]>('venvFolders') || [];
+			
+			// Check if venv-ardupilot directory is already in the list
+			if (!currentVenvFolders.includes(venvDir)) {
+				// Add venv-ardupilot directory to venvFolders so VS Code can discover it
+				const updatedVenvFolders = [...currentVenvFolders, venvDir];
+				await config.update('venvFolders', updatedVenvFolders, vscode.ConfigurationTarget.Global);
+				
+				this.log.log(`Added ${venvDir} to Python venvFolders list`);
+				
+				return true;
+			} else {
+				this.log.log(`${venvDir} already in venvFolders list`);
+				return false;
+			}
+		} catch (error) {
+			this.log.log(`Error configuring venv-ardupilot: ${error}`);
+			return false;
 		}
 	}
 
