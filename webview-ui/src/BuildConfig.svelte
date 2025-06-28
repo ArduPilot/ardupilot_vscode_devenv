@@ -172,7 +172,7 @@
 
 
   function isSitlBoard(): boolean {
-    return board && board.toLowerCase() === "sitl";
+    return board?.toLowerCase() === "sitl";
   }
 
   function parseConfigOptions(options: string): { featureConfig: string, extraConfig: string } {

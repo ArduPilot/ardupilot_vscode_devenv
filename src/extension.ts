@@ -148,7 +148,7 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 // this method is called when your extension is deactivated
 export async function deactivate(): Promise<void> {
 	let apExtensionContext: APExtensionContext = {};
-	const extension: vscode.Extension<any> | undefined = vscode.extensions.getExtension('ardupilot-org.ardupilot-devenv');
+	const extension: vscode.Extension<APExtensionContext> | undefined = vscode.extensions.getExtension('ardupilot-org.ardupilot-devenv');
 	if (!extension?.isActive) {
 		return;
 	} else {

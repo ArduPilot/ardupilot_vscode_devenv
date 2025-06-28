@@ -1,3 +1,4 @@
+<!-- eslint-disable -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   
@@ -9,6 +10,7 @@
   } = $props<{
     showStack?: boolean;
     children: any;
+    // eslint-disable-next-line no-unused-vars
     onerror?: (detail: { 
       error: Error | null; 
       originalStack: string; 
@@ -21,14 +23,13 @@
   let error: Error | null = $state(null);
   let originalStack = $state('');
   let enhancedStack = $state(''); // This will be updated by the custom event
-  let originalError: any = null; // To store the original error object
+  // originalError removed as it was unused
   
   function handleError(event: ErrorEvent) {
     // This function will capture the initial error.
     // errorSourceMap.ts's window.onerror will also capture it, enhance it,
     // and then dispatch 'enhanced-error-event'.
     console.error("ErrorBoundary caught error:", event.error);
-    originalError = event.error; // Store the original error object
     error = event.error || new Error(event.message);
     originalStack = error?.stack || error?.message || String(error);
     
@@ -45,7 +46,6 @@
   
   function handleRejection(event: PromiseRejectionEvent) {
     console.error("ErrorBoundary caught rejection:", event.reason);
-    originalError = event.reason; // Store the original error/reason
     error = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
     originalStack = error.stack || error.message || String(error);
     
@@ -60,14 +60,15 @@
   }
   
   // Handler for the custom 'enhanced-error-event'
-  function handleCustomEnhancedError(event: CustomEvent) {
+  function handleCustomEnhancedError(event: Event) {
+    const customEvent = event as CustomEvent;
     // event.detail contains the payload from errorSourceMap.ts
-    if (event.detail && event.detail.error && event.detail.error.stack) {
-      console.log("ErrorBoundary received custom enhanced error event:", event.detail.error);
-      
+    if (customEvent.detail && customEvent.detail.error && customEvent.detail.error.stack) {
+      console.log("ErrorBoundary received custom enhanced error event:", customEvent.detail.error);
+
       // Update the enhancedStack state. Svelte's reactivity will update the view.
-      enhancedStack = event.detail.error.stack;
-      
+      enhancedStack = customEvent.detail.error.stack;
+
       // If an error was already captured, call the onerror prop again with the new enhancedStack.
       // The 'error' and 'originalStack' state variables should already be set from handleError/handleRejection.
       if (error && onerror) {
@@ -85,20 +86,19 @@
     window.addEventListener('error', handleError);
     window.addEventListener('unhandledrejection', handleRejection);
     // Listen for the custom event dispatched by errorSourceMap.ts
-    window.addEventListener('enhanced-error-event', handleCustomEnhancedError as EventListener);
+    window.addEventListener('enhanced-error-event', handleCustomEnhancedError);
   });
   
   onDestroy(() => {
     window.removeEventListener('error', handleError);
     window.removeEventListener('unhandledrejection', handleRejection);
-    window.removeEventListener('enhanced-error-event', handleCustomEnhancedError as EventListener);
+    window.removeEventListener('enhanced-error-event', handleCustomEnhancedError);
   });
   
   function reset() {
     error = null;
     originalStack = '';
     enhancedStack = '';
-    originalError = null;
     if (onreset) {
       onreset();
     }

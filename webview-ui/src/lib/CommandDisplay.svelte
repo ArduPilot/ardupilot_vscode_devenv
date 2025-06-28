@@ -118,7 +118,7 @@
   </div>
 
   <div class="command-group">
-    <label>Configure Command:</label>
+    <label for="configure-command">Configure Command:</label>
     {#if overrideEnabled}
       <vscode-textarea 
         bind:this={configureTextArea}
@@ -127,16 +127,17 @@
         rows="1"
         resize="vertical"
         class="command-textarea"
+        id="configure-command"
       ></vscode-textarea>
     {:else}
-      <div class="command-display">
+      <div class="command-display" id="configure-command">
         <code>{displayedConfigureCommand || "Select board and target to see command"}</code>
       </div>
     {/if}
   </div>
 
   <div class="command-group">
-    <label>Build Command:</label>
+    <label for="build-command">Build Command:</label>
     {#if overrideEnabled}
       <vscode-textarea 
         bind:this={buildTextArea}
@@ -145,9 +146,10 @@
         rows="1"
         resize="vertical"
         class="command-textarea"
+        id="build-command"
       ></vscode-textarea>
     {:else}
-      <div class="command-display">
+      <div class="command-display" id="build-command">
         <code>{displayedBuildCommand || "Select board and target to see command"}</code>
       </div>
     {/if}

@@ -1,5 +1,12 @@
 import { SourceMapConsumer, type RawSourceMap } from 'source-map';
 
+// Extend the SourceMapConsumer type to include the initialize method
+declare module 'source-map' {
+  interface SourceMapConsumerConstructor {
+    initialize(opts: { [key: string]: ArrayBuffer }): Promise<void>;
+  }
+}
+
 // Store source map data once loaded
 let sourceMapData: RawSourceMap | null = null;
 let sourceMapConsumer: SourceMapConsumer | null = null;

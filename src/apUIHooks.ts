@@ -228,12 +228,12 @@ export class UIHooks {
 
 			// Get feature list to filter out feature-specific options
 			const featuresData = getFeaturesList(this._extensionUri);
-			const featuresObject = (featuresData as any)?.features || {};
+			const featuresObject = (featuresData as Record<string, unknown>)?.features || {};
 			const featureOptions = new Set<string>();
 
 			// Convert feature labels to option format
-			Object.values(featuresObject).forEach((feature: any) => {
-				if (feature.label) {
+			Object.values(featuresObject).forEach((feature: Record<string, unknown>) => {
+				if (feature.label && typeof feature.label === 'string') {
 					const optionName = feature.label.replace(/\s+/g, '-');
 					featureOptions.add(`--enable-${optionName}`);
 					featureOptions.add(`--disable-${optionName}`);

@@ -18,6 +18,8 @@ interface WebviewApi {
     postMessage: (message: unknown) => void;
 }
 
+declare function acquireVsCodeApi(): WebviewApi;
+
 interface VSCodeMessage {
     command: string;
     response?: string;

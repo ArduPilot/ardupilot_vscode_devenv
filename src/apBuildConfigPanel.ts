@@ -216,7 +216,11 @@ export class apBuildConfigPanel {
 		}
 
 		try {
-			const tasksConfig = vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders![0].uri);
+			const workspaceFolders = vscode.workspace.workspaceFolders;
+			if (!workspaceFolders || workspaceFolders.length === 0) {
+				return [];
+			}
+			const tasksConfig = vscode.workspace.getConfiguration('tasks', workspaceFolders[0].uri);
 			const tasks = tasksConfig.get('tasks') as Array<ArdupilotTaskDefinition> || [];
 
 			// Extract all configName values from tasks
