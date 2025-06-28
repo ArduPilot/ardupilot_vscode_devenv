@@ -230,6 +230,11 @@
           : "Create a new build configuration"}
       </h1>
       <div class="config-form" class:disabled={overrideEnabled}>
+        <ConfigName
+          bind:value={configName}
+          label="Configuration Name:"
+          id="configName"
+        />
         <BoardsList
           bind:value={board}
           boards={tasksList.getBoards()}
@@ -263,11 +268,6 @@
           />
         {/if}
       </div>
-      <ConfigName
-        bind:value={configName}
-        label="Configuration Name:"
-        id="configName"
-      />
 
       <CommandDisplay 
         {vscodeHooks} 
