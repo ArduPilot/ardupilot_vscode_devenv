@@ -324,15 +324,31 @@ export class UIHooks {
 			const line = lines[i];
 
 			// Match option patterns for sim_vehicle.py format:
-			// "  -A SITL_INSTANCE_ARGS, --sitl-instance-args=SITL_INSTANCE_ARGS"
-			// "  -h, --help            show this help message and exit"
-			// "    -N, --no-rebuild    don't rebuild before starting ardupilot"
-			const optionMatch = line.match(/^\s*(-[A-Za-z](?:\s+\w+)?),?\s*(--[\w-]+(?:=[\w-]+)?)?(?:\s+(.*))?$/);
+			// "  -A SITL_INSTANCE_ARGS, --sitl-instance-args=SITL_INSTANCE_ARGS" (short + long)
+			// "  -h, --help            show this help message and exit" (short + long)
+			// "  --version             show program's version number and exit" (long only)
+			// "    -N, --no-rebuild    don't rebuild before starting ardupilot" (indented)
+			
+			// Try to match lines with short options first (may have long options too)
+			let optionMatch = line.match(/^\s*(-[A-Za-z](?:\s+\w+)?),?\s*(--[\w-]+(?:=[\w-]+)?)?(?:\s+(.*))?$/);
+			let shortOption = '';
+			let longOption = '';
+			let description = '';
+			
 			if (optionMatch) {
-				const shortOption = optionMatch[1];
-				const longOption = optionMatch[2];
-				let description = optionMatch[3] || '';
+				shortOption = optionMatch[1] || '';
+				longOption = optionMatch[2] || '';
+				description = optionMatch[3] || '';
+			} else {
+				// Try to match lines with long options only
+				optionMatch = line.match(/^\s*(--[\w-]+(?:=[\w-]+)?)(?:\s+(.*))?$/);
+				if (optionMatch) {
+					longOption = optionMatch[1];
+					description = optionMatch[2] || '';
+				}
+			}
 
+			if (shortOption || longOption) {
 				// Collect multi-line descriptions
 				let j = i + 1;
 				while (j < lines.length && lines[j].match(/^\s{20,}/)) {
@@ -340,20 +356,23 @@ export class UIHooks {
 					j++;
 				}
 
-				// Clean up short option (remove arguments like "SITL_INSTANCE_ARGS")
-				const cleanShortOption = shortOption.split(/\s+/)[0];
-				if (cleanShortOption.startsWith('-')) {
-					options.push({
-						name: cleanShortOption,
-						description: description.trim()
-					});
+				// Clean up options (remove arguments and =VALUE)
+				const cleanShortOption = shortOption ? shortOption.split(/\s+/)[0] : '';
+				const cleanLongOption = longOption ? longOption.split('=')[0] : '';
+
+				// Combine short and long options into a single entry
+				let combinedName = '';
+				if (cleanShortOption && cleanLongOption) {
+					combinedName = `${cleanShortOption}, ${cleanLongOption}`;
+				} else if (cleanShortOption) {
+					combinedName = cleanShortOption;
+				} else if (cleanLongOption) {
+					combinedName = cleanLongOption;
 				}
 
-				// Add long option if it exists
-				if (longOption) {
-					const cleanLongOption = longOption.split('=')[0]; // Remove =VALUE
+				if (combinedName) {
 					options.push({
-						name: cleanLongOption,
+						name: combinedName,
 						description: description.trim()
 					});
 				}
@@ -372,15 +391,31 @@ export class UIHooks {
 			const line = lines[i];
 
 			// Match option patterns for waf configure format:
-			// "  -c COLORS, --color=COLORS"
-			// "  -g, --debug-symbols"
-			// "    -o OUT, --out=OUT   build dir for the project"
-			const optionMatch = line.match(/^\s*(-[A-Za-z](?:\s+\w+)?),?\s*(--[\w-]+(?:=[\w-]+)?)?(?:\s+(.*))?$/);
+			// "  -c COLORS, --color=COLORS" (short + long)
+			// "  -g, --debug-symbols" (short + long)
+			// "  --version             show program's version number and exit" (long only)
+			// "    -o OUT, --out=OUT   build dir for the project" (indented)
+			
+			// Try to match lines with short options first (may have long options too)
+			let optionMatch = line.match(/^\s*(-[A-Za-z](?:\s+\w+)?),?\s*(--[\w-]+(?:=[\w-]+)?)?(?:\s+(.*))?$/);
+			let shortOption = '';
+			let longOption = '';
+			let description = '';
+			
 			if (optionMatch) {
-				const shortOption = optionMatch[1];
-				const longOption = optionMatch[2];
-				let description = optionMatch[3] || '';
+				shortOption = optionMatch[1] || '';
+				longOption = optionMatch[2] || '';
+				description = optionMatch[3] || '';
+			} else {
+				// Try to match lines with long options only
+				optionMatch = line.match(/^\s*(--[\w-]+(?:=[\w-]+)?)(?:\s+(.*))?$/);
+				if (optionMatch) {
+					longOption = optionMatch[1];
+					description = optionMatch[2] || '';
+				}
+			}
 
+			if (shortOption || longOption) {
 				// Collect multi-line descriptions
 				let j = i + 1;
 				while (j < lines.length && lines[j].match(/^\s{20,}/)) {
@@ -388,20 +423,24 @@ export class UIHooks {
 					j++;
 				}
 
-				// Clean up short option (remove arguments like "COLORS")
-				const cleanShortOption = shortOption.split(/\s+/)[0];
-				if (cleanShortOption.startsWith('-')) {
-					options.push({
-						name: cleanShortOption,
-						description: description.trim()
-					});
+				// Clean up options (remove arguments and =VALUE)
+				const cleanShortOption = shortOption ? shortOption.split(/\s+/)[0] : '';
+				const cleanLongOption = longOption ? longOption.split('=')[0] : '';
+
+				// Combine short and long options into a single entry
+				let combinedName = '';
+				if (cleanShortOption && cleanLongOption) {
+					combinedName = `${cleanShortOption}, ${cleanLongOption}`;
+				} else if (cleanShortOption) {
+					combinedName = cleanShortOption;
+				} else if (cleanLongOption) {
+					combinedName = cleanLongOption;
 				}
 
-				// Add long option if it exists
-				if (longOption) {
-					const cleanLongOption = longOption.split('=')[0]; // Remove =VALUE
+				// Ensure we have a valid option name
+				if (combinedName && (cleanShortOption.startsWith('-') || cleanLongOption.startsWith('--'))) {
 					options.push({
-						name: cleanLongOption,
+						name: combinedName,
 						description: description.trim()
 					});
 				}

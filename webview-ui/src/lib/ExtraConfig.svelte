@@ -82,14 +82,20 @@
 		
 		// Filter options based on current word
 		if (currentWord.length > 0) {
-			const filtered = options.filter(opt => 
-				opt.name.toLowerCase().startsWith(currentWord.toLowerCase())
-			);
+			const filtered = options.filter(opt => {
+				// Check if the current word matches any part of the combined option name
+				// For combined options like "-g, --debug-symbols", check both parts
+				const parts = opt.name.split(',').map(p => p.trim());
+				return parts.some(part => 
+					part.toLowerCase().startsWith(currentWord.toLowerCase())
+				);
+			});
 			
 			// Sort to show single character options first, then long options
 			filteredOptions = filtered.sort((a, b) => {
-				const aIsSingle = a.name.match(/^-[a-zA-Z]$/);
-				const bIsSingle = b.name.match(/^-[a-zA-Z]$/);
+				// Check if option has a single character short form
+				const aIsSingle = a.name.match(/^-[a-zA-Z](?:,|$)/);
+				const bIsSingle = b.name.match(/^-[a-zA-Z](?:,|$)/);
 				
 				// Single character options come first
 				if (aIsSingle && !bIsSingle) return -1;
@@ -160,6 +166,23 @@
 		
 		const currentValue = textField.value || '';
 		
+		// For combined options like "-g, --debug-symbols", determine which part to use
+		// based on what the user was typing
+		let selectedOptionName = option.name;
+		if (option.name.includes(',')) {
+			const parts = option.name.split(',').map(p => p.trim());
+			// Find the part that matches what the user was typing
+			const matchingPart = parts.find(part => 
+				part.toLowerCase().startsWith(currentWord.toLowerCase())
+			);
+			if (matchingPart) {
+				selectedOptionName = matchingPart;
+			} else {
+				// Default to the first part (usually short option)
+				selectedOptionName = parts[0];
+			}
+		}
+		
 		// Replace current word with selected option
 		const before = currentValue.substring(0, wordStartIndex);
 		const after = currentValue.substring(wordStartIndex + currentWord.length);
@@ -167,14 +190,14 @@
 		// Add a space after the option if there isn't one
 		const spacing = after.startsWith(' ') ? '' : ' ';
 		
-		const newValue = before + option.name + spacing + after;
+		const newValue = before + selectedOptionName + spacing + after;
 		textField.value = newValue;
 		value = newValue;
 		
 		// Try to set cursor position on the internal input element
 		const internalInput = textField.querySelector('input');
 		if (internalInput) {
-			const newPos = wordStartIndex + option.name.length + spacing.length;
+			const newPos = wordStartIndex + selectedOptionName.length + spacing.length;
 			setTimeout(() => {
 				internalInput.setSelectionRange(newPos, newPos);
 				internalInput.focus();
