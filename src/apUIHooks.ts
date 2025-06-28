@@ -67,6 +67,9 @@ export class UIHooks {
 		case 'getConfigureOptions':
 			this.getConfigureOptions();
 			break;
+		case 'getSITLOptions':
+			this.getSITLOptions();
+			break;
 		case 'error':
 			UIHooks.log(`Error from webview: ${message.message} at ${message.location}`);
 			UIHooks.log(`Stack: ${message.stack}`);
@@ -269,7 +272,50 @@ export class UIHooks {
 		}
 	}
 
-	private parseConfigureOptions(helpText: string): { name: string; description: string }[] {
+	public getSITLOptions(): void {
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			this._panel.webview.postMessage({ command: 'getSITLOptions', options: [], error: 'No workspace folder found' });
+			return;
+		}
+
+		try {
+			// Execute sim_vehicle.py --help
+			const simVehiclePath = path.join(workspaceRoot, 'Tools', 'autotest', 'sim_vehicle.py');
+			const result = cp.spawnSync('python3', [simVehiclePath, '--help'], {
+				cwd: workspaceRoot,
+				encoding: 'utf8'
+			});
+
+			if (result.status !== 0) {
+				UIHooks.log(`sim_vehicle.py --help failed: ${result.stderr?.toString()}`);
+				this._panel.webview.postMessage({
+					command: 'getSITLOptions',
+					options: [],
+					error: `Failed to get SITL options: ${result.stderr?.toString() || 'Unknown error'}`
+				});
+				return;
+			}
+
+			const output = result.stdout?.toString() || '';
+			const options = this.parseSITLOptions(output);
+
+			this._panel.webview.postMessage({
+				command: 'getSITLOptions',
+				options: options
+			});
+			UIHooks.log(`Successfully retrieved SITL options: ${options.length} options found`);
+		} catch (error) {
+			UIHooks.log(`Error getting SITL options: ${error}`);
+			this._panel.webview.postMessage({
+				command: 'getSITLOptions',
+				options: [],
+				error: `Error getting SITL options: ${error}`
+			});
+		}
+	}
+
+	private parseSITLOptions(helpText: string): { name: string; description: string }[] {
 		const options: { name: string; description: string }[] = [];
 		const lines = helpText.split('\n');
 
@@ -277,11 +323,15 @@ export class UIHooks {
 		for (let i = 0; i < lines.length; i++) {
 			const line = lines[i];
 
-			// Match option patterns like: --enable-something, --option=VALUE, -g, or -c COLORS, --color=COLORS
-			const optionMatch = line.match(/^\s*(-[\w-]+(?:=[\w-]+)?(?:,\s+--[\w-]+(?:=[\w-]+)?)?)\s*(.*)$/);
+			// Match option patterns for sim_vehicle.py format:
+			// "  -A SITL_INSTANCE_ARGS, --sitl-instance-args=SITL_INSTANCE_ARGS"
+			// "  -h, --help            show this help message and exit"
+			// "    -N, --no-rebuild    don't rebuild before starting ardupilot"
+			const optionMatch = line.match(/^\s*(-[A-Za-z](?:\s+\w+)?),?\s*(--[\w-]+(?:=[\w-]+)?)?(?:\s+(.*))?$/);
 			if (optionMatch) {
-				const optionPart = optionMatch[1];
-				let description = optionMatch[2] || '';
+				const shortOption = optionMatch[1];
+				const longOption = optionMatch[2];
+				let description = optionMatch[3] || '';
 
 				// Collect multi-line descriptions
 				let j = i + 1;
@@ -290,19 +340,71 @@ export class UIHooks {
 					j++;
 				}
 
-				// Handle combined short and long options like "-c COLORS, --color=COLORS"
-				const optionParts = optionPart.split(',').map(p => p.trim());
+				// Clean up short option (remove arguments like "SITL_INSTANCE_ARGS")
+				const cleanShortOption = shortOption.split(/\s+/)[0];
+				if (cleanShortOption.startsWith('-')) {
+					options.push({
+						name: cleanShortOption,
+						description: description.trim()
+					});
+				}
 
-				optionParts.forEach(part => {
-					// Clean up the option name
-					const cleanOption = part.split(/\s+/)[0].split('=')[0]; // Remove =VALUE and arguments
-					if (cleanOption.startsWith('-')) {
-						options.push({
-							name: cleanOption,
-							description: description.trim()
-						});
-					}
-				});
+				// Add long option if it exists
+				if (longOption) {
+					const cleanLongOption = longOption.split('=')[0]; // Remove =VALUE
+					options.push({
+						name: cleanLongOption,
+						description: description.trim()
+					});
+				}
+			}
+		}
+
+		return options;
+	}
+
+	private parseConfigureOptions(helpText: string): { name: string; description: string }[] {
+		const options: { name: string; description: string }[] = [];
+		const lines = helpText.split('\n');
+
+		// Look for option patterns throughout the help text
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+
+			// Match option patterns for waf configure format:
+			// "  -c COLORS, --color=COLORS"
+			// "  -g, --debug-symbols"
+			// "    -o OUT, --out=OUT   build dir for the project"
+			const optionMatch = line.match(/^\s*(-[A-Za-z](?:\s+\w+)?),?\s*(--[\w-]+(?:=[\w-]+)?)?(?:\s+(.*))?$/);
+			if (optionMatch) {
+				const shortOption = optionMatch[1];
+				const longOption = optionMatch[2];
+				let description = optionMatch[3] || '';
+
+				// Collect multi-line descriptions
+				let j = i + 1;
+				while (j < lines.length && lines[j].match(/^\s{20,}/)) {
+					description += ' ' + lines[j].trim();
+					j++;
+				}
+
+				// Clean up short option (remove arguments like "COLORS")
+				const cleanShortOption = shortOption.split(/\s+/)[0];
+				if (cleanShortOption.startsWith('-')) {
+					options.push({
+						name: cleanShortOption,
+						description: description.trim()
+					});
+				}
+
+				// Add long option if it exists
+				if (longOption) {
+					const cleanLongOption = longOption.split('=')[0]; // Remove =VALUE
+					options.push({
+						name: cleanLongOption,
+						description: description.trim()
+					});
+				}
 			}
 		}
 

@@ -209,6 +209,7 @@
           bind:value={simVehicleCommand}
           id="sitlConfig"
           label="SITL Command:"
+          {vscodeHooks}
         />
       {/if}
       <FeatureConfig
