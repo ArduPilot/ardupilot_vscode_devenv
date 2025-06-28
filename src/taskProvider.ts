@@ -118,14 +118,14 @@ export class APTaskProvider implements vscode.TaskProvider {
 	public static getOrCreateBuildConfig(board: string, target: string, configName: string, configureOptions?: string, simVehicleCommand?: string, overrideEnabled?: boolean, customConfigureCommand?: string, customBuildCommand?: string): vscode.Task | undefined {
 		// create a new task definition in tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		
+
 		// Log with appropriate information based on override mode
 		if (overrideEnabled) {
 			APTaskProvider.log.log(`Creating new override build configuration for ${configName} @ ${workspaceRoot}`);
 		} else {
 			APTaskProvider.log.log(`Creating new build configuration for ${board} ${target} @ ${workspaceRoot}`);
 		}
-		
+
 		if (!workspaceRoot || !vscode.workspace.workspaceFolders) {
 			vscode.window.showErrorMessage('No workspace folder is open.');
 			return;
@@ -322,7 +322,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 
 			buildDir = path.join(workspaceRoot.uri.fsPath, 'build', definition.configure);
-			
+
 			// make build directory if it doesn't exist
 			if (!fs.existsSync(buildDir)) {
 				try {
@@ -447,7 +447,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 
 			buildDir = path.join(workspaceRoot.uri.fsPath, 'build', definition.configure);
-			
+
 			// make build directory if it doesn't exist
 			if (!fs.existsSync(buildDir)) {
 				try {

@@ -992,5 +992,54 @@ Options:
 			assert(mockListener.calledWith(testMessage));
 		});
 	});
+
+	suite('getBuildCommands Method', () => {
+		let generateBuildCommandsStub: sinon.SinonStub;
+
+		setup(() => {
+			generateBuildCommandsStub = sandbox.stub(taskProvider.APTaskProvider, 'generateBuildCommands');
+		});
+
+		test('should get build commands and post to webview', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+
+			generateBuildCommandsStub.returns({
+				configureCommand: 'python3 /mock/workspace/waf configure --board=sitl',
+				buildCommand: 'python3 /mock/workspace/waf copter',
+				taskCommand: 'cd ../../ && python3 /mock/workspace/waf configure --board=sitl && python3 /mock/workspace/waf copter'
+			});
+
+			uiHooks.getBuildCommands({
+				board: 'sitl',
+				target: 'copter',
+				configureOptions: '--debug',
+				buildOptions: '--verbose'
+			});
+
+			assert(generateBuildCommandsStub.calledWith('sitl', 'copter', '--debug', '--verbose', '/mock/workspace'));
+			assert(mockWebview.postMessage.calledWith({
+				command: 'getBuildCommands',
+				configureCommand: 'python3 /mock/workspace/waf configure --board=sitl',
+				buildCommand: 'python3 /mock/workspace/waf copter'
+			}));
+		});
+
+		test('should handle missing workspace folder', () => {
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
+
+			uiHooks.getBuildCommands({
+				board: 'sitl',
+				target: 'copter'
+			});
+
+			assert(mockWebview.postMessage.calledWith({
+				command: 'getBuildCommands',
+				configureCommand: '',
+				buildCommand: '',
+				error: 'No workspace folder found'
+			}));
+		});
+	});
 });
 

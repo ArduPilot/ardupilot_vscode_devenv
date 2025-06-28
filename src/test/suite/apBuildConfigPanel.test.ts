@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { apBuildConfigPanel } from '../../apBuildConfigPanel';
 import { UIHooks } from '../../apUIHooks';
 import { APExtensionContext } from '../../extension';
+import { APTaskProvider } from '../../taskProvider';
 import { getApExtApi } from './common';
 
 suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
@@ -283,6 +284,43 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 
 			assert((disposeStub as sinon.SinonStub).calledOnce, 'Previous panel should be disposed');
 			assert.strictEqual((vscode.window.createWebviewPanel as sinon.SinonStub).callCount, 2, 'New panel should be created');
+		});
+
+		test('should handle override configuration build message', () => {
+			// Mock APTaskProvider.getOrCreateBuildConfig
+			const getOrCreateBuildConfigStub = sandbox.stub(APTaskProvider, 'getOrCreateBuildConfig');
+			const mockTask = {
+				definition: {
+					type: 'ardupilot',
+					configName: 'custom-build',
+					overrideEnabled: true,
+					customConfigureCommand: 'custom configure',
+					customBuildCommand: 'custom build'
+				}
+			} as unknown as vscode.Task;
+			getOrCreateBuildConfigStub.returns(mockTask);
+
+			// Create panel and simulate build message with override
+			apBuildConfigPanel.createOrShow(mockExtensionUri);
+			const panel = (apBuildConfigPanel as any).currentPanel;
+
+			// Simulate build message with override configuration
+			panel._uiHooks._onMessage({
+				command: 'build',
+				board: '',
+				target: '',
+				configName: 'custom-build',
+				extraConfig: '',
+				simVehicleCommand: '',
+				overrideEnabled: true,
+				customConfigureCommand: 'custom configure',
+				customBuildCommand: 'custom build'
+			});
+
+			// Verify getOrCreateBuildConfig was called with override parameters
+			assert(getOrCreateBuildConfigStub.calledWith(
+				'', '', 'custom-build', '', '', true, 'custom configure', 'custom build'
+			), 'Should call getOrCreateBuildConfig with override parameters');
 		});
 	});
 });

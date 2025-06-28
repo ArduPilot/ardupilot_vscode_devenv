@@ -44,7 +44,7 @@ export function setActiveConfiguration(task: vscode.Task): void {
 	// After successful build, create matching launch configuration
 	if (activeConfiguration && activeConfiguration.definition) {
 		const taskDef = activeConfiguration.definition as ArdupilotTaskDefinition;
-		
+
 		// Only create launch config and update properties for non-override tasks
 		if (!taskDef.overrideEnabled && taskDef.configure && taskDef.target) {
 			activeLaunchConfig = apActionItem.createMatchingLaunchConfig(
@@ -434,18 +434,18 @@ export class apActionItem extends vscode.TreeItem {
 		}
 
 		const config = activeConfiguration.definition as ArdupilotTaskDefinition;
-		
+
 		// Check if this is an override configuration or if we have standard fields
 		if (config.overrideEnabled) {
 			vscode.window.showInformationMessage('Run is not supported for override configurations');
 			return;
 		}
-		
+
 		if (!config.configure) {
 			vscode.window.showErrorMessage('Configuration is missing board information');
 			return;
 		}
-		
+
 		const isSITL = config.configure.toLowerCase().startsWith('sitl');
 
 		if (!isSITL) {
@@ -464,7 +464,7 @@ export class apActionItem extends vscode.TreeItem {
 			vscode.window.showErrorMessage('Configuration is missing target information');
 			return;
 		}
-		
+
 		const vehicleBaseType = config.target.replace('sitl-', '');
 
 		// Get ArduPilot vehicle name for sim_vehicle.py -v argument (e.g., 'ArduCopter')

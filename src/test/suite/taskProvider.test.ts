@@ -578,8 +578,8 @@ suite('APTaskProvider Test Suite', () => {
 			const commands = APTaskProvider.generateBuildCommands('sitl', 'copter');
 
 			assert.ok(commands);
-			assert.ok(commands.configureCommand.includes('python3 /waf'));
-			assert.ok(commands.buildCommand.includes('python3 /waf'));
+			assert.ok(commands.configureCommand.includes('python3 waf'));
+			assert.ok(commands.buildCommand.includes('python3 waf'));
 		});
 
 		test('should properly escape and format command strings', () => {
@@ -594,6 +594,219 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(commands);
 			assert.strictEqual(commands.configureCommand, 'python3 /path/with/spaces/waf configure --board=board-with-dash --option=value --another-option');
 			assert.strictEqual(commands.buildCommand, 'python3 /path/with/spaces/waf target_with_underscore --build-flag');
+		});
+	});
+
+	suite('Command Override Functionality', () => {
+		let mockConfiguration: any;
+		let mockTasks: any[];
+
+		setup(() => {
+			mockTasks = [];
+			mockConfiguration = {
+				get: sandbox.stub().callsFake((key: string) => {
+					if (key === 'tasks') {
+						return mockTasks;
+					}
+					return undefined;
+				}),
+				update: sandbox.stub().callsFake((key: string, value: any[]) => {
+					if (key === 'tasks') {
+						mockTasks = value;
+					}
+					return Promise.resolve();
+				})
+			};
+
+			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
+			sandbox.stub(fs, 'existsSync').returns(true);
+			sandbox.stub(fs, 'mkdirSync');
+		});
+
+		test('should create override configuration with custom commands', () => {
+			const task = APTaskProvider.getOrCreateBuildConfig(
+				'', // board not needed for override
+				'', // target not needed for override
+				'custom-build',
+				'', // configureOptions not needed
+				'', // simVehicleCommand not needed
+				true, // overrideEnabled
+				'python3 ./waf configure --custom-flags',
+				'python3 ./waf build --custom-build-flags'
+			);
+
+			assert.ok(task);
+			assert.strictEqual(task.name, 'custom-build');
+			assert.strictEqual(task.definition.configName, 'custom-build');
+			assert.strictEqual(task.definition.overrideEnabled, true);
+			assert.strictEqual(task.definition.customConfigureCommand, 'python3 ./waf configure --custom-flags');
+			assert.strictEqual(task.definition.customBuildCommand, 'python3 ./waf build --custom-build-flags');
+
+			// Verify standard fields are not included
+			assert.strictEqual(task.definition.configure, undefined);
+			assert.strictEqual(task.definition.target, undefined);
+			assert.strictEqual(task.definition.configureOptions, undefined);
+			assert.strictEqual(task.definition.buildOptions, undefined);
+		});
+
+		test('should validate required fields for override configuration', () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			// Missing custom configure command
+			let task = APTaskProvider.getOrCreateBuildConfig(
+				'', '', 'custom-build', '', '', true, '', 'build command only'
+			);
+
+			assert.strictEqual(task, undefined);
+			assert(showErrorStub.calledWith('Custom configure and build commands are required when override is enabled.'));
+
+			// Missing custom build command
+			showErrorStub.resetHistory();
+			task = APTaskProvider.getOrCreateBuildConfig(
+				'', '', 'custom-build', '', '', true, 'configure command only', ''
+			);
+
+			assert.strictEqual(task, undefined);
+			assert(showErrorStub.calledWith('Custom configure and build commands are required when override is enabled.'));
+		});
+
+		test('should create standard configuration when override is false', () => {
+			const task = APTaskProvider.getOrCreateBuildConfig(
+				'sitl',
+				'copter',
+				'sitl-copter',
+				'--debug',
+				'--map --console',
+				false, // overrideEnabled
+				'', // customConfigureCommand not used
+				''  // customBuildCommand not used
+			);
+
+			assert.ok(task);
+			assert.strictEqual(task.definition.overrideEnabled, false);
+			assert.strictEqual(task.definition.configure, 'sitl');
+			assert.strictEqual(task.definition.target, 'copter');
+			assert.strictEqual(task.definition.configureOptions, '--debug');
+			assert.strictEqual(task.definition.simVehicleCommand, '--map --console');
+
+			// Verify custom commands are not present when override is disabled
+			assert.strictEqual(task.definition.customConfigureCommand, undefined);
+			assert.strictEqual(task.definition.customBuildCommand, undefined);
+		});
+
+		test('should validate required fields for standard configuration', () => {
+			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
+
+			// Missing board
+			let task = APTaskProvider.getOrCreateBuildConfig(
+				'', 'copter', 'config-name', '', '', false
+			);
+
+			assert.strictEqual(task, undefined);
+			assert(showErrorStub.calledWith('Board and target are required for standard configurations.'));
+
+			// Missing target
+			showErrorStub.resetHistory();
+			task = APTaskProvider.getOrCreateBuildConfig(
+				'sitl', '', 'config-name', '', '', false
+			);
+
+			assert.strictEqual(task, undefined);
+			assert(showErrorStub.calledWith('Board and target are required for standard configurations.'));
+		});
+
+		test('should use custom commands in task execution when override is enabled', () => {
+			const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+			const customConfigureCmd = 'python3 ./custom-waf configure --my-board';
+			const customBuildCmd = 'python3 ./custom-waf build --my-target';
+
+			const taskDef: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configName: 'custom-build',
+				overrideEnabled: true,
+				customConfigureCommand: customConfigureCmd,
+				customBuildCommand: customBuildCmd
+			};
+
+			const task = APTaskProvider.createTask(taskDef);
+
+			assert.ok(task);
+			const execution = task.execution as vscode.ShellExecution;
+			assert.ok(execution);
+			assert.ok(execution.commandLine);
+			assert.strictEqual(
+				execution.commandLine,
+				`cd ../../ && ${customConfigureCmd} && ${customBuildCmd}`
+			);
+
+			// Verify working directory is workspace root for override
+			assert.strictEqual(execution.options?.cwd, workspaceRoot);
+		});
+
+		test('should use generated commands when override is disabled', () => {
+			const taskDef: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configName: 'sitl-copter',
+				overrideEnabled: false,
+				configure: 'sitl',
+				target: 'copter',
+				configureOptions: '--debug',
+				buildOptions: '--verbose'
+			};
+
+			const task = APTaskProvider.createTask(taskDef);
+
+			assert.ok(task);
+			const execution = task.execution as vscode.ShellExecution;
+			assert.ok(execution);
+			assert.ok(execution.commandLine);
+
+			// Should use standard waf commands
+			assert.ok(execution.commandLine.includes('configure --board=sitl --debug'));
+			assert.ok(execution.commandLine.includes('copter --verbose'));
+		});
+
+		test('should handle missing required fields in createTask', () => {
+			// Override enabled but missing custom commands
+			let taskDef: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configName: 'custom-build',
+				overrideEnabled: true
+			};
+
+			let task = APTaskProvider.createTask(taskDef);
+			assert.strictEqual(task, undefined);
+
+			// Standard mode but missing board/target
+			taskDef = {
+				type: 'ardupilot',
+				configName: 'standard-build',
+				overrideEnabled: false
+			};
+
+			task = APTaskProvider.createTask(taskDef);
+			assert.strictEqual(task, undefined);
+		});
+
+		test('should persist override configuration correctly in tasks.json', () => {
+			APTaskProvider.getOrCreateBuildConfig(
+				'', '', 'override-config', '', '', true,
+				'custom configure', 'custom build'
+			);
+
+			assert(mockConfiguration.update.called);
+			const savedTasks = mockConfiguration.update.getCall(0).args[1];
+			assert.strictEqual(savedTasks.length, 1);
+
+			const savedTask = savedTasks[0];
+			assert.strictEqual(savedTask.configName, 'override-config');
+			assert.strictEqual(savedTask.overrideEnabled, true);
+			assert.strictEqual(savedTask.customConfigureCommand, 'custom configure');
+			assert.strictEqual(savedTask.customBuildCommand, 'custom build');
+
+			// Verify no standard fields are saved
+			assert.strictEqual(savedTask.configure, undefined);
+			assert.strictEqual(savedTask.target, undefined);
 		});
 	});
 
