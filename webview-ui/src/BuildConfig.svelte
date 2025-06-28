@@ -220,6 +220,7 @@
         bind:value={extraConfig}
         id="extraConfig"
         label="Additional Configure Options:"
+        {vscodeHooks}
       />
 
       <vscode-divider style="visibility: hidden;"></vscode-divider>

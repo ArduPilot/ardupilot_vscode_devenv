@@ -64,6 +64,9 @@ export class UIHooks {
 		case 'extractFeatures':
 			this.extractFeatures(message);
 			break;
+		case 'getConfigureOptions':
+			this.getConfigureOptions();
+			break;
 		case 'error':
 			UIHooks.log(`Error from webview: ${message.message} at ${message.location}`);
 			UIHooks.log(`Stack: ${message.stack}`);
@@ -187,5 +190,122 @@ export class UIHooks {
 			this.listeners[event] = [];
 		}
 		this.listeners[event].push(listener);
+	}
+
+	public getConfigureOptions(): void {
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			this._panel.webview.postMessage({ command: 'getConfigureOptions', options: [], error: 'No workspace folder found' });
+			return;
+		}
+
+		try {
+			// Execute waf configure --help
+			const wafPath = path.join(workspaceRoot, 'waf');
+			const result = cp.spawnSync('python3', [wafPath, 'configure', '--help'], {
+				cwd: workspaceRoot,
+				encoding: 'utf8'
+			});
+
+			if (result.status !== 0) {
+				UIHooks.log(`waf configure --help failed: ${result.stderr?.toString()}`);
+				this._panel.webview.postMessage({
+					command: 'getConfigureOptions',
+					options: [],
+					error: `Failed to get configure options: ${result.stderr?.toString() || 'Unknown error'}`
+				});
+				return;
+			}
+
+			const output = result.stdout?.toString() || '';
+			const options = this.parseConfigureOptions(output);
+
+			// Get feature list to filter out feature-specific options
+			const featuresData = getFeaturesList(this._extensionUri);
+			const features = Array.isArray(featuresData) ? featuresData : [];
+			const featureOptions = new Set<string>();
+
+			// Convert feature labels to option format
+			features.forEach((feature: any) => {
+				if (feature.label) {
+					const optionName = feature.label.replace(/\s+/g, '-');
+					featureOptions.add(`--enable-${optionName}`);
+					featureOptions.add(`--disable-${optionName}`);
+				}
+			});
+
+			// Filter out feature options and embed commands
+			const filteredOptions = options.filter(opt => {
+				// Filter out feature-specific options
+				if (featureOptions.has(opt.name)) {
+					return false;
+				}
+
+				// Filter out embed commands
+				if (opt.name.includes('embed') || opt.description?.toLowerCase().includes('embed')) {
+					return false;
+				}
+
+				// Filter out board selection (handled separately)
+				if (opt.name === '--board') {
+					return false;
+				}
+
+				return true;
+			});
+
+			this._panel.webview.postMessage({
+				command: 'getConfigureOptions',
+				options: filteredOptions
+			});
+			UIHooks.log(`Successfully retrieved configure options: ${filteredOptions.length} options found`);
+		} catch (error) {
+			UIHooks.log(`Error getting configure options: ${error}`);
+			this._panel.webview.postMessage({
+				command: 'getConfigureOptions',
+				options: [],
+				error: `Error getting configure options: ${error}`
+			});
+		}
+	}
+
+	private parseConfigureOptions(helpText: string): { name: string; description: string }[] {
+		const options: { name: string; description: string }[] = [];
+		const lines = helpText.split('\n');
+
+		// Look for option patterns throughout the help text
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+
+			// Match option patterns like: --enable-something, --option=VALUE, -g, or -c COLORS, --color=COLORS
+			const optionMatch = line.match(/^\s*(-[\w-]+(?:=[\w-]+)?(?:,\s+--[\w-]+(?:=[\w-]+)?)?)\s*(.*)$/);
+			if (optionMatch) {
+				const optionPart = optionMatch[1];
+				let description = optionMatch[2] || '';
+
+				// Collect multi-line descriptions
+				let j = i + 1;
+				while (j < lines.length && lines[j].match(/^\s{20,}/)) {
+					description += ' ' + lines[j].trim();
+					j++;
+				}
+
+				// Handle combined short and long options like "-c COLORS, --color=COLORS"
+				const optionParts = optionPart.split(',').map(p => p.trim());
+
+				optionParts.forEach(part => {
+					// Clean up the option name
+					const cleanOption = part.split(/\s+/)[0].split('=')[0]; // Remove =VALUE and arguments
+					if (cleanOption.startsWith('-')) {
+						options.push({
+							name: cleanOption,
+							description: description.trim()
+						});
+					}
+				});
+			}
+		}
+
+		return options;
 	}
 }
