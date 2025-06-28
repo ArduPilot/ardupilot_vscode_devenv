@@ -18,7 +18,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { apLog } from './apLog';
-import { getFeaturesList } from './taskProvider';
+import { getFeaturesList, APTaskProvider } from './taskProvider';
 import * as cp from 'child_process';
 import { targetToBin } from './apBuildConfig';
 
@@ -69,6 +69,9 @@ export class UIHooks {
 			break;
 		case 'getSITLOptions':
 			this.getSITLOptions();
+			break;
+		case 'getBuildCommands':
+			this.getBuildCommands(message);
 			break;
 		case 'error':
 			UIHooks.log(`Error from webview: ${message.message} at ${message.location}`);
@@ -448,5 +451,58 @@ export class UIHooks {
 		}
 
 		return options;
+	}
+
+	public getBuildCommands(message: Record<string, unknown>): void {
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			this._panel.webview.postMessage({
+				command: 'getBuildCommands',
+				configureCommand: '',
+				buildCommand: '',
+				error: 'No workspace folder found'
+			});
+			return;
+		}
+
+		const board = message.board as string;
+		const target = message.target as string;
+		const configureOptions = message.configureOptions as string || '';
+		const buildOptions = message.buildOptions as string || '';
+
+		if (!board || !target) {
+			this._panel.webview.postMessage({
+				command: 'getBuildCommands',
+				configureCommand: '',
+				buildCommand: ''
+			});
+			return;
+		}
+
+		try {
+			// Use shared command generation method from APTaskProvider
+			const commands = APTaskProvider.generateBuildCommands(
+				board,
+				target,
+				configureOptions,
+				buildOptions,
+				workspaceRoot
+			);
+
+			this._panel.webview.postMessage({
+				command: 'getBuildCommands',
+				configureCommand: commands.configureCommand,
+				buildCommand: commands.buildCommand
+			});
+
+		} catch (error) {
+			UIHooks.log(`Error generating build commands: ${error}`);
+			this._panel.webview.postMessage({
+				command: 'getBuildCommands',
+				configureCommand: '',
+				buildCommand: '',
+				error: `Error generating build commands: ${error}`
+			});
+		}
 	}
 }

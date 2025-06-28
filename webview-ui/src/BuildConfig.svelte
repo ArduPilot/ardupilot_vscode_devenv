@@ -7,6 +7,7 @@
   import FeatureConfig from "./lib/FeatureConfig.svelte";
   import SITLConfig from "./lib/SITLConfig.svelte";
   import FeatureViewer from "./lib/FeatureViewer.svelte";
+  import CommandDisplay from "./lib/CommandDisplay.svelte";
   import ErrorBoundary from "./lib/ErrorBoundary.svelte";
   import "@vscode-elements/elements/dist/vscode-form-container/index.js";
   import "@vscode-elements/elements/dist/vscode-divider/index.js";
@@ -224,6 +225,8 @@
         {vscodeHooks}
       />
 
+      <CommandDisplay {vscodeHooks} {board} {target} {featureConfig} {extraConfig} />
+      
       <vscode-divider style="visibility: hidden;"></vscode-divider>
       <vscode-button bind:this={buildButton} class="build-button">
         Save Configuration & Build

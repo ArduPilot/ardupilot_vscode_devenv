@@ -31,6 +31,40 @@ export class APTaskProvider implements vscode.TaskProvider {
 	/**
 	 * Migrates existing tasks.json to add configName field if missing
 	 */
+	/**
+	 * Generates build commands from task definition parameters
+	 * This method is used both by task creation and UI display
+	 */
+	public static generateBuildCommands(
+		board: string,
+		target: string,
+		configureOptions: string = '',
+		buildOptions: string = '',
+		workspaceRoot?: string
+	): { configureCommand: string; buildCommand: string; taskCommand: string } {
+		if (!workspaceRoot) {
+			workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
+		}
+
+		const waffile = path.join(workspaceRoot, 'waf');
+		const wafCommand = `python3 ${waffile}`;
+
+		// Generate configure command
+		const configureCommand = `${wafCommand} configure --board=${board}${configureOptions ? ' ' + configureOptions : ''}`;
+
+		// Generate build command
+		const buildCommand = `${wafCommand} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
+
+		// Generate task command (with cd prefix for task execution)
+		const taskCommand = `cd ../../ && ${configureCommand} && python3 ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
+
+		return {
+			configureCommand,
+			buildCommand,
+			taskCommand
+		};
+	}
+
 	public static migrateTasksJsonForConfigName(): boolean {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
@@ -253,13 +287,22 @@ export class APTaskProvider implements vscode.TaskProvider {
 		// Prepare environment variables with CC and CXX paths
 		const env = this.prepareEnvironmentVariables();
 
+		// Generate commands using shared method
+		const commands = this.generateBuildCommands(
+			definition.configure,
+			definition.target,
+			definition.configureOptions,
+			definition.buildOptions,
+			workspaceRoot.uri.fsPath
+		);
+
 		return new vscode.Task(
 			definition,
 			vscode.TaskScope.Workspace,
 			task_name,
 			'ardupilot',
 			new vscode.ShellExecution(
-				`cd ../../ && python3 ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions}`,
+				commands.taskCommand,
 				{ cwd: buildDir, env: env }
 			),
 			'$apgcc'
@@ -350,13 +393,22 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 		}
 
+		// Generate commands using shared method
+		const commands = APTaskProvider.generateBuildCommands(
+			definition.configure,
+			definition.target,
+			definition.configureOptions,
+			definition.buildOptions,
+			workspaceRoot.uri.fsPath
+		);
+
 		return new vscode.Task(
 			definition,
 			vscode.TaskScope.Workspace,
 			task_name,
 			'ardupilot',
 			new vscode.ShellExecution(
-				`cd ../../ && python3 ${definition.waffile} configure --board=${definition.configure} ${definition.configureOptions} && python3 ${definition.waffile} ${definition.target} ${definition.buildOptions}`,
+				commands.taskCommand,
 				{ cwd: buildDir, env: env }
 			),
 			'$apgcc'
