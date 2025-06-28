@@ -39,18 +39,21 @@
       {
         "type": "ardupilot",
         "required": [
-          "configure",
-          "target",
           "configName"
         ],
         "properties": {
+          "overrideEnabled": {
+            "type": "boolean",
+            "description": "Whether to override commands with custom ones",
+            "default": false
+          },
           "configure": {
             "type": "string",
-            "description": "Ardupilot board configuration"
+            "description": "Ardupilot board configuration (only used when override is false)"
           },
           "target": {
             "type": "string",
-            "description": "Ardupilot binary target(s)"
+            "description": "Ardupilot binary target(s) (only used when override is false)"
           },
           "configName": {
             "type": "string",
@@ -58,11 +61,19 @@
           },
           "configureOptions": {
             "type": "string",
-            "description": "waf configure option"
+            "description": "waf configure option (only used when override is false)"
           },
           "buildOptions": {
             "type": "string",
-            "description": "waf build option"
+            "description": "waf build option (only used when override is false)"
+          },
+          "customConfigureCommand": {
+            "type": "string",
+            "description": "Custom configure command (only used when override is true)"
+          },
+          "customBuildCommand": {
+            "type": "string",
+            "description": "Custom build command (only used when override is true)"
           },
           "waffile": {
             "type": "string",
@@ -93,10 +104,7 @@
           },
           "simVehicleCommand": {
             "type": "string",
-            "description": "sim_vehicle.py command arguments for SITL builds",
-            "items": {
-              "type": "string"
-            }
+            "description": "sim_vehicle.py command arguments for SITL builds (only used when override is false)"
           }
         }
       }

@@ -529,6 +529,74 @@ suite('APTaskProvider Test Suite', () => {
 		});
 	});
 
+	suite('Build Command Generation', () => {
+		test('should generate correct build commands for SITL configuration', () => {
+			const commands = APTaskProvider.generateBuildCommands(
+				'sitl',
+				'copter',
+				'--debug',
+				'--verbose',
+				'/mock/workspace'
+			);
+
+			assert.ok(commands);
+			assert.strictEqual(commands.configureCommand, 'python3 /mock/workspace/waf configure --board=sitl --debug');
+			assert.strictEqual(commands.buildCommand, 'python3 /mock/workspace/waf copter --verbose');
+			assert.strictEqual(commands.taskCommand, 'cd ../../ && python3 /mock/workspace/waf configure --board=sitl --debug && python3 /mock/workspace/waf copter --verbose');
+		});
+
+		test('should generate correct build commands without options', () => {
+			const commands = APTaskProvider.generateBuildCommands(
+				'CubeOrange',
+				'plane',
+				'',
+				'',
+				'/mock/workspace'
+			);
+
+			assert.ok(commands);
+			assert.strictEqual(commands.configureCommand, 'python3 /mock/workspace/waf configure --board=CubeOrange');
+			assert.strictEqual(commands.buildCommand, 'python3 /mock/workspace/waf plane');
+			assert.strictEqual(commands.taskCommand, 'cd ../../ && python3 /mock/workspace/waf configure --board=CubeOrange && python3 /mock/workspace/waf plane');
+		});
+
+		test('should handle missing workspace root by using current workspace', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/test/workspace' } };
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+
+			const commands = APTaskProvider.generateBuildCommands('sitl', 'copter');
+
+			assert.ok(commands);
+			assert.ok(commands.configureCommand.includes('/test/workspace/waf'));
+			assert.ok(commands.buildCommand.includes('/test/workspace/waf'));
+			assert.ok(commands.taskCommand.includes('/test/workspace/waf'));
+		});
+
+		test('should handle empty workspace folders', () => {
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
+
+			const commands = APTaskProvider.generateBuildCommands('sitl', 'copter');
+
+			assert.ok(commands);
+			assert.ok(commands.configureCommand.includes('python3 /waf'));
+			assert.ok(commands.buildCommand.includes('python3 /waf'));
+		});
+
+		test('should properly escape and format command strings', () => {
+			const commands = APTaskProvider.generateBuildCommands(
+				'board-with-dash',
+				'target_with_underscore',
+				'--option=value --another-option',
+				'--build-flag',
+				'/path/with/spaces'
+			);
+
+			assert.ok(commands);
+			assert.strictEqual(commands.configureCommand, 'python3 /path/with/spaces/waf configure --board=board-with-dash --option=value --another-option');
+			assert.strictEqual(commands.buildCommand, 'python3 /path/with/spaces/waf target_with_underscore --build-flag');
+		});
+	});
+
 	suite('Error Handling', () => {
 		test('should handle workspace folder access errors', () => {
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value(null);

@@ -115,13 +115,33 @@ export class APTaskProvider implements vscode.TaskProvider {
 		return undefined;
 	}
 
-	public static getOrCreateBuildConfig(board: string, target: string, configName: string, configureOptions?: string, simVehicleCommand?: string): vscode.Task | undefined {
+	public static getOrCreateBuildConfig(board: string, target: string, configName: string, configureOptions?: string, simVehicleCommand?: string, overrideEnabled?: boolean, customConfigureCommand?: string, customBuildCommand?: string): vscode.Task | undefined {
 		// create a new task definition in tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		APTaskProvider.log.log(`Creating new build configuration for ${board} ${target} @ ${workspaceRoot}`);
+		
+		// Log with appropriate information based on override mode
+		if (overrideEnabled) {
+			APTaskProvider.log.log(`Creating new override build configuration for ${configName} @ ${workspaceRoot}`);
+		} else {
+			APTaskProvider.log.log(`Creating new build configuration for ${board} ${target} @ ${workspaceRoot}`);
+		}
+		
 		if (!workspaceRoot || !vscode.workspace.workspaceFolders) {
 			vscode.window.showErrorMessage('No workspace folder is open.');
 			return;
+		}
+
+		// Validate required fields based on mode
+		if (overrideEnabled) {
+			if (!customConfigureCommand || !customConfigureCommand.trim() || !customBuildCommand || !customBuildCommand.trim()) {
+				vscode.window.showErrorMessage('Custom configure and build commands are required when override is enabled.');
+				return;
+			}
+		} else {
+			if (!board || !board.trim() || !target || !target.trim()) {
+				vscode.window.showErrorMessage('Board and target are required for standard configurations.');
+				return;
+			}
 		}
 
 		// Prepare .vscode folder if it doesn't exist
@@ -139,18 +159,27 @@ export class APTaskProvider implements vscode.TaskProvider {
 		// Create task definition
 		const taskDef: ArdupilotTaskDefinition = {
 			type: 'ardupilot',
-			configure: board,
-			target: target,
 			configName: configName,
-			configureOptions: configureOptions === undefined ? '' : configureOptions,
-			buildOptions: '',
+			overrideEnabled: overrideEnabled || false,
 			group: {
 				kind: 'build',
 			}
 		};
 
-		// Add simVehicleCommand for SITL builds (case insensitive check)
-		if (board.toLowerCase().startsWith('sitl')) {
+		// Only include standard fields if override is not enabled
+		if (!overrideEnabled) {
+			taskDef.configure = board;
+			taskDef.target = target;
+			taskDef.configureOptions = configureOptions === undefined ? '' : configureOptions;
+			taskDef.buildOptions = '';
+		} else {
+			// Include custom commands when override is enabled
+			taskDef.customConfigureCommand = customConfigureCommand || '';
+			taskDef.customBuildCommand = customBuildCommand || '';
+		}
+
+		// Add simVehicleCommand for SITL builds (only when not using override)
+		if (!overrideEnabled && board.toLowerCase().startsWith('sitl')) {
 			// If simVehicleCommand is provided, use it
 			if (simVehicleCommand) {
 				taskDef.simVehicleCommand = simVehicleCommand;
@@ -262,39 +291,58 @@ export class APTaskProvider implements vscode.TaskProvider {
 		if (!workspaceRoot) {
 			return undefined;
 		}
-		if (definition.waffile === undefined) {
-			// use the waf file from the workspace
-			definition.waffile = workspaceRoot.uri.fsPath + '/waf';
-		}
-		if (definition.nm === undefined) {
-			definition.nm = 'arm-none-eabi-nm';
-		}
+
 		// Use configName for task label
 		const task_name = definition.configName;
-
-		// make build directory if it doesn't exist
-		const buildDir = path.join(workspaceRoot.uri.fsPath, 'build', definition.configure);
-		if (!fs.existsSync(buildDir)) {
-			try {
-				fs.mkdirSync(buildDir, { recursive: true });
-			} catch (error) {
-				APTaskProvider.log.log(`Failed to create build directory: ${error}`);
-				vscode.window.showErrorMessage(`Failed to create build directory: ${error}`);
-				return undefined;
-			}
-		}
 
 		// Prepare environment variables with CC and CXX paths
 		const env = this.prepareEnvironmentVariables();
 
-		// Generate commands using shared method
-		const commands = this.generateBuildCommands(
-			definition.configure,
-			definition.target,
-			definition.configureOptions,
-			definition.buildOptions,
-			workspaceRoot.uri.fsPath
-		);
+		// Generate commands using shared method or use custom commands
+		let taskCommand: string;
+		let buildDir: string;
+
+		if (definition.overrideEnabled && definition.customConfigureCommand && definition.customBuildCommand) {
+			// For override mode, use custom commands and a generic build directory
+			taskCommand = `cd ../../ && ${definition.customConfigureCommand} && ${definition.customBuildCommand}`;
+			buildDir = workspaceRoot.uri.fsPath; // Use workspace root as working directory
+		} else {
+			// For standard mode, use generated commands and board-specific build directory
+			if (!definition.configure || !definition.target) {
+				APTaskProvider.log.log('Missing configure or target for non-override task');
+				return undefined;
+			}
+
+			if (definition.waffile === undefined) {
+				// use the waf file from the workspace
+				definition.waffile = workspaceRoot.uri.fsPath + '/waf';
+			}
+			if (definition.nm === undefined) {
+				definition.nm = 'arm-none-eabi-nm';
+			}
+
+			buildDir = path.join(workspaceRoot.uri.fsPath, 'build', definition.configure);
+			
+			// make build directory if it doesn't exist
+			if (!fs.existsSync(buildDir)) {
+				try {
+					fs.mkdirSync(buildDir, { recursive: true });
+				} catch (error) {
+					APTaskProvider.log.log(`Failed to create build directory: ${error}`);
+					vscode.window.showErrorMessage(`Failed to create build directory: ${error}`);
+					return undefined;
+				}
+			}
+
+			const commands = this.generateBuildCommands(
+				definition.configure,
+				definition.target,
+				definition.configureOptions || '',
+				definition.buildOptions || '',
+				workspaceRoot.uri.fsPath
+			);
+			taskCommand = commands.taskCommand;
+		}
 
 		return new vscode.Task(
 			definition,
@@ -302,7 +350,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			task_name,
 			'ardupilot',
 			new vscode.ShellExecution(
-				commands.taskCommand,
+				taskCommand,
 				{ cwd: buildDir, env: env }
 			),
 			'$apgcc'
@@ -363,27 +411,9 @@ export class APTaskProvider implements vscode.TaskProvider {
 		if (!workspaceRoot) {
 			return undefined;
 		}
-		if (definition.waffile === undefined) {
-			// use the waf file from the workspace
-			definition.waffile = workspaceRoot.uri.fsPath + '/waf';
-		}
-		if (definition.nm === undefined) {
-			definition.nm = 'arm-none-eabi-nm';
-		}
+
 		// Use configName for task label
 		const task_name = definition.configName;
-
-		// make build directory if it doesn't exist
-		const buildDir = path.join(workspaceRoot.uri.fsPath, 'build', definition.configure);
-		if (!fs.existsSync(buildDir)) {
-			try {
-				fs.mkdirSync(buildDir, { recursive: true });
-			} catch (error) {
-				APTaskProvider.log.log(`Failed to create build directory: ${error}`);
-				vscode.window.showErrorMessage(`Failed to create build directory: ${error}`);
-				return undefined;
-			}
-		}
 
 		// Use basic environment without CC/CXX setup for resolveTask
 		const env: { [key: string]: string } = {};
@@ -393,14 +423,51 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 		}
 
-		// Generate commands using shared method
-		const commands = APTaskProvider.generateBuildCommands(
-			definition.configure,
-			definition.target,
-			definition.configureOptions,
-			definition.buildOptions,
-			workspaceRoot.uri.fsPath
-		);
+		// Generate commands using shared method or use custom commands
+		let taskCommand: string;
+		let buildDir: string;
+
+		if (definition.overrideEnabled && definition.customConfigureCommand && definition.customBuildCommand) {
+			// For override mode, use custom commands and workspace root as working directory
+			taskCommand = `cd ../../ && ${definition.customConfigureCommand} && ${definition.customBuildCommand}`;
+			buildDir = workspaceRoot.uri.fsPath;
+		} else {
+			// For standard mode, use generated commands and board-specific build directory
+			if (!definition.configure || !definition.target) {
+				APTaskProvider.log.log('Missing configure or target for non-override task');
+				return undefined;
+			}
+
+			if (definition.waffile === undefined) {
+				// use the waf file from the workspace
+				definition.waffile = workspaceRoot.uri.fsPath + '/waf';
+			}
+			if (definition.nm === undefined) {
+				definition.nm = 'arm-none-eabi-nm';
+			}
+
+			buildDir = path.join(workspaceRoot.uri.fsPath, 'build', definition.configure);
+			
+			// make build directory if it doesn't exist
+			if (!fs.existsSync(buildDir)) {
+				try {
+					fs.mkdirSync(buildDir, { recursive: true });
+				} catch (error) {
+					APTaskProvider.log.log(`Failed to create build directory: ${error}`);
+					vscode.window.showErrorMessage(`Failed to create build directory: ${error}`);
+					return undefined;
+				}
+			}
+
+			const commands = APTaskProvider.generateBuildCommands(
+				definition.configure || '',
+				definition.target || '',
+				definition.configureOptions || '',
+				definition.buildOptions || '',
+				workspaceRoot.uri.fsPath
+			);
+			taskCommand = commands.taskCommand;
+		}
 
 		return new vscode.Task(
 			definition,
@@ -408,7 +475,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			task_name,
 			'ardupilot',
 			new vscode.ShellExecution(
-				commands.taskCommand,
+				taskCommand,
 				{ cwd: buildDir, env: env }
 			),
 			'$apgcc'
@@ -418,29 +485,33 @@ export class APTaskProvider implements vscode.TaskProvider {
 
 export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	/**
-	 * configure boardname
-	 */
-	configure: string;
-	/**
-	 * target
-	 */
-	target: string;
-	/**
 	 * custom configuration name
 	 */
 	configName: string;
+	/**
+	 * whether to override commands with custom ones
+	 */
+	overrideEnabled?: boolean;
+	/**
+	 * configure boardname (only used when override is false)
+	 */
+	configure?: string;
+	/**
+	 * target (only used when override is false)
+	 */
+	target?: string;
 	/**
 	 * target output binary
 	 */
 	target_output?: string;
 	/**
-	 * configure options
+	 * configure options (only used when override is false)
 	 */
-	configureOptions: string;
+	configureOptions?: string;
     /**
-     * build options
+     * build options (only used when override is false)
      */
-    buildOptions: string;
+    buildOptions?: string;
     /**
      * waf file
      */
@@ -450,9 +521,17 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	 */
 	nm?: string;
 	/**
-	 * sim_vehicle.py command for SITL builds
+	 * sim_vehicle.py command for SITL builds (only used when override is false)
 	 */
 	simVehicleCommand?: string;
+	/**
+	 * custom configure command (only used when override is true)
+	 */
+	customConfigureCommand?: string;
+	/**
+	 * custom build command (only used when override is true)
+	 */
+	customBuildCommand?: string;
 }
 
 export function getFeaturesList(extensionUri: vscode.Uri): Record<string, unknown> {

@@ -44,16 +44,20 @@ export function setActiveConfiguration(task: vscode.Task): void {
 	// After successful build, create matching launch configuration
 	if (activeConfiguration && activeConfiguration.definition) {
 		const taskDef = activeConfiguration.definition as ArdupilotTaskDefinition;
-		activeLaunchConfig = apActionItem.createMatchingLaunchConfig(
-			taskDef.configName,
-			taskDef.configure,
-			taskDef.target,
-			taskDef.simVehicleCommand || ''
-		);
-		// Update c_cpp_properties.json for IntelliSense
-		updateCppProperties(taskDef.configure).catch(error => {
-			new apLog('setActiveConfiguration').log(`Error updating C++ properties: ${error}`);
-		});
+		
+		// Only create launch config and update properties for non-override tasks
+		if (!taskDef.overrideEnabled && taskDef.configure && taskDef.target) {
+			activeLaunchConfig = apActionItem.createMatchingLaunchConfig(
+				taskDef.configName,
+				taskDef.configure,
+				taskDef.target,
+				taskDef.simVehicleCommand || ''
+			);
+			// Update c_cpp_properties.json for IntelliSense
+			updateCppProperties(taskDef.configure).catch(error => {
+				new apLog('setActiveConfiguration').log(`Error updating C++ properties: ${error}`);
+			});
+		}
 	}
 }
 
@@ -430,6 +434,18 @@ export class apActionItem extends vscode.TreeItem {
 		}
 
 		const config = activeConfiguration.definition as ArdupilotTaskDefinition;
+		
+		// Check if this is an override configuration or if we have standard fields
+		if (config.overrideEnabled) {
+			vscode.window.showInformationMessage('Run is not supported for override configurations');
+			return;
+		}
+		
+		if (!config.configure) {
+			vscode.window.showErrorMessage('Configuration is missing board information');
+			return;
+		}
+		
 		const isSITL = config.configure.toLowerCase().startsWith('sitl');
 
 		if (!isSITL) {
@@ -444,6 +460,11 @@ export class apActionItem extends vscode.TreeItem {
 		}
 
 		// For SITL, run the simulation
+		if (!config.target) {
+			vscode.window.showErrorMessage('Configuration is missing target information');
+			return;
+		}
+		
 		const vehicleBaseType = config.target.replace('sitl-', '');
 
 		// Get ArduPilot vehicle name for sim_vehicle.py -v argument (e.g., 'ArduCopter')
@@ -655,7 +676,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 		// Only add other actions if we have an active configuration
 		if (activeConfiguration) {
 			const def = activeConfiguration.definition as ArdupilotTaskDefinition;
-			const isSITL = def.configure.toLowerCase().startsWith('sitl');
+			const isSITL = !def.overrideEnabled && def.configure && def.configure.toLowerCase().startsWith('sitl');
 
 			// Add Build action
 			actionItems.push(new apActionItem(
@@ -688,12 +709,13 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 					activeConfiguration
 				));
 			} else {
+				const boardName = def.configure || 'unknown board';
 				actionItems.push(new apActionItem(
 					this,
 					'Upload to Board',
 					vscode.TreeItemCollapsibleState.None,
 					'upload',
-					`Upload firmware to ${def.configure} board`,
+					`Upload firmware to ${boardName}`,
 					activeConfiguration
 				));
 			}

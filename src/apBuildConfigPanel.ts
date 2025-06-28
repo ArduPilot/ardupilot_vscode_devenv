@@ -128,11 +128,22 @@ export class apBuildConfigPanel {
 					taskDefinition.target,
 					message?.configName as string,
 					taskDefinition.configureOptions,
-					message?.simVehicleCommand as string || ''
+					message?.simVehicleCommand as string || '',
+					message?.overrideEnabled as boolean || false,
+					message?.customConfigureCommand as string || '',
+					message?.customBuildCommand as string || ''
 				);
 
 				if (currentTaskDef?.definition.simVehicleCommand) {
 					currentTaskDef.definition.simVehicleCommand = message.simVehicleCommand as string || '';
+				}
+
+				// Update override fields in the task definition
+				if (currentTaskDef?.definition) {
+					const def = currentTaskDef.definition as ArdupilotTaskDefinition;
+					def.overrideEnabled = message?.overrideEnabled as boolean || false;
+					def.customConfigureCommand = message?.customConfigureCommand as string || '';
+					def.customBuildCommand = message?.customBuildCommand as string || '';
 				}
 
 				if (!currentTaskDef) {

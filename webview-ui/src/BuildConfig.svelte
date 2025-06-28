@@ -22,6 +22,9 @@
   let extraConfig = $state("");
   let simVehicleCommand = $state("");
   let isEditMode = $state(false);
+  let overrideEnabled = $state(false);
+  let customConfigureCommand = $state("");
+  let customBuildCommand = $state("");
 
   let buildButton: any = $state(null);
   let addNewButton: any = $state(null);
@@ -54,6 +57,10 @@
       featureConfig = parts.featureConfig;
       extraConfig = parts.extraConfig;
       simVehicleCommand = task.simVehicleCommand || "";
+      // Load override state and custom commands
+      overrideEnabled = task.overrideEnabled || false;
+      customConfigureCommand = task.customConfigureCommand || "";
+      customBuildCommand = task.customBuildCommand || "";
       isEditMode = true;
     } else {
       isEditMode = false;
@@ -63,18 +70,50 @@
 
 
   function sendBuildRequest() {
+    // Validate required fields based on override mode
+    if (!configName.trim()) {
+      alert("Configuration name is required");
+      return;
+    }
+
+    if (overrideEnabled) {
+      // For override mode, validate custom commands
+      if (!customConfigureCommand.trim() || !customBuildCommand.trim()) {
+        alert("Both configure and build commands are required when override is enabled");
+        return;
+      }
+    } else {
+      // For standard mode, validate board and target
+      if (!board || !target) {
+        alert("Board and target are required");
+        return;
+      }
+    }
+
     // Combine feature config and extra config
     const combinedConfig = [featureConfig, extraConfig]
       .filter(config => config.trim())
       .join(' ');
     
-    console.log(board, target, configName, combinedConfig);
+    console.log("Build request data:", {
+      board, 
+      target, 
+      configName, 
+      combinedConfig,
+      overrideEnabled,
+      customConfigureCommand,
+      customBuildCommand
+    });
+    
     vscodeHooks.postMessage("build", {
       board: board,
       target: target,
       configName: configName,
       extraConfig: combinedConfig,
       simVehicleCommand: simVehicleCommand,
+      overrideEnabled: overrideEnabled,
+      customConfigureCommand: customConfigureCommand,
+      customBuildCommand: customBuildCommand,
     });
   }
 
@@ -86,6 +125,9 @@
     featureConfig = "";
     extraConfig = "";
     simVehicleCommand = "";
+    overrideEnabled = false;
+    customConfigureCommand = "";
+    customBuildCommand = "";
     isEditMode = false;
 
     // Notify the backend that we want to switch to add mode
@@ -130,7 +172,7 @@
 
 
   function isSitlBoard(): boolean {
-    return board.toLowerCase() === "sitl";
+    return board && board.toLowerCase() === "sitl";
   }
 
   function parseConfigOptions(options: string): { featureConfig: string, extraConfig: string } {
@@ -187,45 +229,56 @@
           ? "Edit Build Configuration"
           : "Create a new build configuration"}
       </h1>
-      <BoardsList
-        bind:value={board}
-        boards={tasksList.getBoards()}
-        label="Select Board:"
-        id="board"
-        {vscodeHooks}
-      />
-      <TargetsList
-        bind:value={target}
-        targets={tasksList.getTargets(board)}
-        label="Select Target:"
-        id="target"
-      />
+      <div class="config-form" class:disabled={overrideEnabled}>
+        <BoardsList
+          bind:value={board}
+          boards={tasksList.getBoards()}
+          label="Select Board:"
+          id="board"
+          {vscodeHooks}
+        />
+        <TargetsList
+          bind:value={target}
+          targets={tasksList.getTargets(board)}
+          label="Select Target:"
+          id="target"
+        />
+        <ExtraConfig
+          bind:value={extraConfig}
+          id="extraConfig"
+          label="Additional Configure Options:"
+          {vscodeHooks}
+        />
+        <FeatureConfig
+          bind:value={featureConfig}
+          id="featureConfig"
+          label="Feature Configuration:"
+        />
+        {#if isSitlBoard()}
+          <SITLConfig
+            bind:value={simVehicleCommand}
+            id="sitlConfig"
+            label="SITL Command:"
+            {vscodeHooks}
+          />
+        {/if}
+      </div>
       <ConfigName
         bind:value={configName}
         label="Configuration Name:"
         id="configName"
       />
-      {#if isSitlBoard()}
-        <SITLConfig
-          bind:value={simVehicleCommand}
-          id="sitlConfig"
-          label="SITL Command:"
-          {vscodeHooks}
-        />
-      {/if}
-      <FeatureConfig
-        bind:value={featureConfig}
-        id="featureConfig"
-        label="Feature Configuration:"
-      />
-      <ExtraConfig
-        bind:value={extraConfig}
-        id="extraConfig"
-        label="Additional Configure Options:"
-        {vscodeHooks}
-      />
 
-      <CommandDisplay {vscodeHooks} {board} {target} {featureConfig} {extraConfig} />
+      <CommandDisplay 
+        {vscodeHooks} 
+        {board} 
+        {target} 
+        {featureConfig} 
+        {extraConfig}
+        bind:overrideEnabled={overrideEnabled}
+        bind:customConfigureCommand={customConfigureCommand}
+        bind:customBuildCommand={customBuildCommand}
+      />
       
       <vscode-divider style="visibility: hidden;"></vscode-divider>
       <vscode-button bind:this={buildButton} class="build-button">
@@ -246,5 +299,22 @@
   
   .build-button {
     margin-bottom: 30px;
+  }
+
+  .config-form.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    position: relative;
+  }
+
+  .config-form.disabled::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(128, 128, 128, 0.1);
+    z-index: 1;
   }
 </style>
