@@ -111,31 +111,40 @@ export class apBuildConfigPanel {
 			// create a new build configuration
 			apBuildConfigPanel.log('Received message from webview: build');
 			console.log(message);
-			// Create a TaskDefinition with all required properties
-			const taskDefinition = {
-				type: 'ardupilot',
-				configure: message.board as string,
-				target: message.target as string,
-				configureOptions: message.extraConfig as string || '',
-				buildOptions: ''
-			};
 
-			const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
-				taskDefinition.configure,
-				taskDefinition.target,
-				message?.configName as string,
-				taskDefinition.configureOptions,
-				message?.simVehicleCommand as string || ''
-			);
+			// Step 1: Create and save configuration first
+			try {
+				// Create a TaskDefinition with all required properties
+				const taskDefinition = {
+					type: 'ardupilot',
+					configure: message.board as string,
+					target: message.target as string,
+					configureOptions: message.extraConfig as string || '',
+					buildOptions: ''
+				};
 
-			if (currentTaskDef?.definition.simVehicleCommand) {
-				currentTaskDef.definition.simVehicleCommand = message.simVehicleCommand as string || '';
-			}
+				const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
+					taskDefinition.configure,
+					taskDefinition.target,
+					message?.configName as string,
+					taskDefinition.configureOptions,
+					message?.simVehicleCommand as string || ''
+				);
 
-			// execute the task
-			if (currentTaskDef) {
-			// set active configuration
+				if (currentTaskDef?.definition.simVehicleCommand) {
+					currentTaskDef.definition.simVehicleCommand = message.simVehicleCommand as string || '';
+				}
+
+				if (!currentTaskDef) {
+					vscode.window.showErrorMessage('Failed to create build configuration');
+					return;
+				}
+
+				apBuildConfigPanel.log('Configuration saved successfully');
+
+				// Step 2: Set active configuration and execute build task
 				setActiveConfiguration(currentTaskDef);
+
 				vscode.tasks.executeTask(currentTaskDef).then((execution) => {
 					vscode.tasks.onDidEndTaskProcess((e) => {
 						if (e.execution == execution) {
@@ -143,9 +152,15 @@ export class apBuildConfigPanel {
 							vscode.commands.executeCommand('apBuildConfig.refreshEntry');
 						}
 					});
+				}, (error) => {
+					vscode.window.showErrorMessage(`Failed to execute build task: ${error.message || error}`);
 				});
+
+			} catch (error) {
+				apBuildConfigPanel.log(`Error in build configuration process: ${error}`);
+				vscode.window.showErrorMessage(`Failed to save configuration: ${error instanceof Error ? error.message : 'Unknown error'}`);
+				return;
 			}
-			return;
 		});
 
 		this._uiHooks.on('getCurrentTask', () => {
