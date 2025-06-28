@@ -225,11 +225,11 @@ export class UIHooks {
 
 			// Get feature list to filter out feature-specific options
 			const featuresData = getFeaturesList(this._extensionUri);
-			const features = Array.isArray(featuresData) ? featuresData : [];
+			const featuresObject = (featuresData as any)?.features || {};
 			const featureOptions = new Set<string>();
 
 			// Convert feature labels to option format
-			features.forEach((feature: any) => {
+			Object.values(featuresObject).forEach((feature: any) => {
 				if (feature.label) {
 					const optionName = feature.label.replace(/\s+/g, '-');
 					featureOptions.add(`--enable-${optionName}`);
@@ -328,13 +328,13 @@ export class UIHooks {
 			// "  -h, --help            show this help message and exit" (short + long)
 			// "  --version             show program's version number and exit" (long only)
 			// "    -N, --no-rebuild    don't rebuild before starting ardupilot" (indented)
-			
+
 			// Try to match lines with short options first (may have long options too)
 			let optionMatch = line.match(/^\s*(-[A-Za-z](?:\s+\w+)?),?\s*(--[\w-]+(?:=[\w-]+)?)?(?:\s+(.*))?$/);
 			let shortOption = '';
 			let longOption = '';
 			let description = '';
-			
+
 			if (optionMatch) {
 				shortOption = optionMatch[1] || '';
 				longOption = optionMatch[2] || '';
@@ -395,13 +395,13 @@ export class UIHooks {
 			// "  -g, --debug-symbols" (short + long)
 			// "  --version             show program's version number and exit" (long only)
 			// "    -o OUT, --out=OUT   build dir for the project" (indented)
-			
+
 			// Try to match lines with short options first (may have long options too)
 			let optionMatch = line.match(/^\s*(-[A-Za-z](?:\s+\w+)?),?\s*(--[\w-]+(?:=[\w-]+)?)?(?:\s+(.*))?$/);
 			let shortOption = '';
 			let longOption = '';
 			let description = '';
-			
+
 			if (optionMatch) {
 				shortOption = optionMatch[1] || '';
 				longOption = optionMatch[2] || '';

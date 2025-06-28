@@ -9,6 +9,7 @@ import * as cp from 'child_process';
 import { UIHooks } from '../../apUIHooks';
 import { APExtensionContext } from '../../extension';
 import { getApExtApi } from './common';
+import * as taskProvider from '../../taskProvider';
 
 suite('apUIHooks Test Suite', () => {
 	let workspaceFolder: vscode.WorkspaceFolder | undefined;
@@ -211,10 +212,8 @@ suite('apUIHooks Test Suite', () => {
 	suite('getFeaturesList Method', () => {
 		test('should call getFeaturesList from taskProvider and post message', () => {
 			// Mock the getFeaturesList function from taskProvider
-			const mockFeatures = ['feature1', 'feature2'];
-			const getFeaturesListStub = sandbox.stub().returns(mockFeatures);
-			// eslint-disable-next-line @typescript-eslint/no-require-imports
-			sandbox.replace(require('../../taskProvider'), 'getFeaturesList', getFeaturesListStub);
+			const mockFeatures = { features: { 'feature1': {}, 'feature2': {} } };
+			const getFeaturesListStub = sandbox.stub(taskProvider, 'getFeaturesList').returns(mockFeatures);
 
 			uiHooks.getFeaturesList();
 
@@ -422,6 +421,475 @@ suite('apUIHooks Test Suite', () => {
 		});
 	});
 
+	suite('parseConfigureOptions Method', () => {
+		test('should parse short and long options combined', () => {
+			const helpText = `Options:
+  -c COLORS, --color=COLORS
+                        whether to use colors (yes/no/auto) [default: auto]
+  -j JOBS, --jobs=JOBS  amount of parallel jobs (16)
+  -k, --keep            continue despite errors (-kk to try harder)`;
+
+			const result = (uiHooks as any).parseConfigureOptions(helpText);
+
+			assert.strictEqual(result.length, 3);
+			assert.deepStrictEqual(result[0], {
+				name: '-c, --color',
+				description: 'whether to use colors (yes/no/auto) [default: auto]'
+			});
+			assert.deepStrictEqual(result[1], {
+				name: '-j, --jobs',
+				description: 'amount of parallel jobs (16)'
+			});
+			assert.deepStrictEqual(result[2], {
+				name: '-k, --keep',
+				description: 'continue despite errors (-kk to try harder)'
+			});
+		});
+
+		test('should parse long-only options', () => {
+			const helpText = `Options:
+  --version             show program's version number and exit
+  --prefix=PREFIX       installation prefix [default: '/usr/local/']
+  --zones=ZONES         debugging zones (task_gen, deps, tasks, etc)`;
+
+			const result = (uiHooks as any).parseConfigureOptions(helpText);
+
+			assert.strictEqual(result.length, 3);
+			assert.deepStrictEqual(result[0], {
+				name: '--version',
+				description: 'show program\'s version number and exit'
+			});
+			assert.deepStrictEqual(result[1], {
+				name: '--prefix',
+				description: 'installation prefix [default: \'/usr/local/\']'
+			});
+			assert.deepStrictEqual(result[2], {
+				name: '--zones',
+				description: 'debugging zones (task_gen, deps, tasks, etc)'
+			});
+		});
+
+		test('should handle multi-line descriptions', () => {
+			const helpText = `Options:
+  -v, --verbose         verbosity level -v -vv or -vvv [default: 0]
+                        additional line of description
+                        yet another line`;
+
+			const result = (uiHooks as any).parseConfigureOptions(helpText);
+
+			assert.strictEqual(result.length, 1);
+			assert.deepStrictEqual(result[0], {
+				name: '-v, --verbose',
+				description: 'verbosity level -v -vv or -vvv [default: 0] additional line of description yet another line'
+			});
+		});
+
+		test('should handle indented options', () => {
+			const helpText = `  Configuration options:
+    -o OUT, --out=OUT   build dir for the project
+    -t TOP, --top=TOP   src dir for the project
+    --bindir=BINDIR     bindir`;
+
+			const result = (uiHooks as any).parseConfigureOptions(helpText);
+
+			assert.strictEqual(result.length, 3);
+			assert.deepStrictEqual(result[0], {
+				name: '-o, --out',
+				description: 'build dir for the project'
+			});
+			assert.deepStrictEqual(result[1], {
+				name: '-t, --top',
+				description: 'src dir for the project'
+			});
+			assert.deepStrictEqual(result[2], {
+				name: '--bindir',
+				description: 'bindir'
+			});
+		});
+
+		test('should handle actual waf configure help output', () => {
+			const helpText = `waf [commands] [options]
+
+Options:
+  --version             show program's version number and exit
+  -c COLORS, --color=COLORS
+                        whether to use colors (yes/no/auto) [default: auto]
+  -j JOBS, --jobs=JOBS  amount of parallel jobs (16)
+  -k, --keep            continue despite errors (-kk to try harder)
+  -v, --verbose         verbosity level -v -vv or -vvv [default: 0]
+  --zones=ZONES         debugging zones (task_gen, deps, tasks, etc)
+  -h, --help            show this help message and exit
+
+  Configuration options:
+    -o OUT, --out=OUT   build dir for the project
+    -t TOP, --top=TOP   src dir for the project
+    --prefix=PREFIX     installation prefix [default: '/usr/local/']
+    --bindir=BINDIR     bindir
+    --libdir=LIBDIR     libdir`;
+
+			const result = (uiHooks as any).parseConfigureOptions(helpText);
+
+			assert(result.length >= 10);
+
+			// Check specific options
+			const versionOption = result.find((opt: any) => opt.name === '--version');
+			assert(versionOption);
+			assert.strictEqual(versionOption.description, 'show program\'s version number and exit');
+
+			const colorOption = result.find((opt: any) => opt.name === '-c, --color');
+			assert(colorOption);
+			assert.strictEqual(colorOption.description, 'whether to use colors (yes/no/auto) [default: auto]');
+
+			const prefixOption = result.find((opt: any) => opt.name === '--prefix');
+			assert(prefixOption);
+			assert.strictEqual(prefixOption.description, 'installation prefix [default: \'/usr/local/\']');
+		});
+
+		test('should handle empty or invalid help text', () => {
+			assert.strictEqual((uiHooks as any).parseConfigureOptions('').length, 0);
+			assert.strictEqual((uiHooks as any).parseConfigureOptions('No options here').length, 0);
+		});
+	});
+
+	suite('parseSITLOptions Method', () => {
+		test('should parse short and long options combined', () => {
+			const helpText = `Options:
+  -h, --help            show this help message and exit
+  -v VEHICLE, --vehicle=VEHICLE
+                        vehicle type (ArduCopter|Helicopter|Blimp|ArduPlane)
+  -A SITL_INSTANCE_ARGS, --sitl-instance-args=SITL_INSTANCE_ARGS
+                        pass arguments to SITL instance`;
+
+			const result = (uiHooks as any).parseSITLOptions(helpText);
+
+			assert.strictEqual(result.length, 3);
+			assert.deepStrictEqual(result[0], {
+				name: '-h, --help',
+				description: 'show this help message and exit'
+			});
+			assert.deepStrictEqual(result[1], {
+				name: '-v, --vehicle',
+				description: 'vehicle type (ArduCopter|Helicopter|Blimp|ArduPlane)'
+			});
+			assert.deepStrictEqual(result[2], {
+				name: '-A, --sitl-instance-args',
+				description: 'pass arguments to SITL instance'
+			});
+		});
+
+		test('should parse long-only options', () => {
+			const helpText = `Options:
+  --vehicle-binary=VEHICLE_BINARY
+                        vehicle binary path
+  --enable-onvif      enable onvif camera control sim using AntennaTracker
+  --can-peripherals   start a DroneCAN peripheral instance`;
+
+			const result = (uiHooks as any).parseSITLOptions(helpText);
+
+			assert.strictEqual(result.length, 3);
+			assert.deepStrictEqual(result[0], {
+				name: '--vehicle-binary',
+				description: 'vehicle binary path'
+			});
+			assert.deepStrictEqual(result[1], {
+				name: '--enable-onvif',
+				description: 'enable onvif camera control sim using AntennaTracker'
+			});
+			assert.deepStrictEqual(result[2], {
+				name: '--can-peripherals',
+				description: 'start a DroneCAN peripheral instance'
+			});
+		});
+
+		test('should handle indented options with multi-line descriptions', () => {
+			const helpText = `  Build options:
+    -N, --no-rebuild    don't rebuild before starting ardupilot
+    -D, --debug         build with debugging
+    -c, --clean         do a make clean before building
+    -j JOBS, --jobs=JOBS
+                        number of processors to use during build (default for
+                        make is 1)`;
+
+			const result = (uiHooks as any).parseSITLOptions(helpText);
+
+			assert.strictEqual(result.length, 4);
+			assert.deepStrictEqual(result[0], {
+				name: '-N, --no-rebuild',
+				description: 'don\'t rebuild before starting ardupilot'
+			});
+			assert.deepStrictEqual(result[1], {
+				name: '-D, --debug',
+				description: 'build with debugging'
+			});
+			assert.deepStrictEqual(result[2], {
+				name: '-c, --clean',
+				description: 'do a make clean before building'
+			});
+			assert.deepStrictEqual(result[3], {
+				name: '-j, --jobs',
+				description: 'number of processors to use during build (default for make is 1)'
+			});
+		});
+
+		test('should handle actual sim_vehicle.py help output', () => {
+			const helpText = `Usage: sim_vehicle.py
+
+Options:
+  -h, --help            show this help message and exit
+  -v VEHICLE, --vehicle=VEHICLE
+                        vehicle type (ArduCopter|Helicopter|Blimp|ArduPlane|Ro
+                        ver|ArduSub|AntennaTracker|sitl_periph_universal)
+  --vehicle-binary=VEHICLE_BINARY
+                        vehicle binary path
+  -C, --sim_vehicle_sh_compatible
+                        be compatible with the way sim_vehicle.sh works; make
+                        this the first option
+  -A SITL_INSTANCE_ARGS, --sitl-instance-args=SITL_INSTANCE_ARGS
+                        pass arguments to SITL instance
+  -G, --gdb             use gdb for debugging ardupilot
+  -g, --gdb-stopped     use gdb for debugging ardupilot (no auto-start)
+    -V, --valgrind      enable valgrind for memory access checking (slow!)
+    --callgrind         enable valgrind for performance analysis (slow!!)
+    -T, --tracker       start an antenna tracker instance
+    --enable-onvif      enable onvif camera control sim using AntennaTracker
+    --can-peripherals   start a DroneCAN peripheral instance`;
+
+			const result = (uiHooks as any).parseSITLOptions(helpText);
+
+			assert(result.length >= 11);
+
+			// Check specific options
+			const helpOption = result.find((opt: any) => opt.name === '-h, --help');
+			assert(helpOption);
+			assert.strictEqual(helpOption.description, 'show this help message and exit');
+
+			const sitlArgsOption = result.find((opt: any) => opt.name === '-A, --sitl-instance-args');
+			assert(sitlArgsOption);
+			assert.strictEqual(sitlArgsOption.description, 'pass arguments to SITL instance');
+
+			const vehicleBinaryOption = result.find((opt: any) => opt.name === '--vehicle-binary');
+			assert(vehicleBinaryOption);
+			assert.strictEqual(vehicleBinaryOption.description, 'vehicle binary path');
+
+			const valgrindOption = result.find((opt: any) => opt.name === '-V, --valgrind');
+			assert(valgrindOption);
+			assert.strictEqual(valgrindOption.description, 'enable valgrind for memory access checking (slow!)');
+		});
+
+		test('should handle empty or invalid help text', () => {
+			assert.strictEqual((uiHooks as any).parseSITLOptions('').length, 0);
+			assert.strictEqual((uiHooks as any).parseSITLOptions('No options here').length, 0);
+		});
+	});
+
+	suite('getConfigureOptions Method', () => {
+		test('should handle getConfigureOptions command', () => {
+			const message = { command: 'getConfigureOptions' };
+			const getConfigureOptionsSpy = sandbox.spy(uiHooks, 'getConfigureOptions');
+
+			(uiHooks as any)._onMessage(message);
+
+			assert(getConfigureOptionsSpy.calledOnce);
+		});
+
+		test('should return error when no workspace folder', () => {
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
+
+			uiHooks.getConfigureOptions();
+
+			assert(mockWebview.postMessage.calledWith({
+				command: 'getConfigureOptions',
+				options: [],
+				error: 'No workspace folder found'
+			}));
+		});
+
+		test('should successfully get configure options when waf command succeeds', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+			const mockHelpOutput = `Options:
+  --version             show program's version number and exit
+  -g, --debug-symbols   build with debug symbols`;
+
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+			sandbox.stub(cp, 'spawnSync').returns({
+				status: 0,
+				stdout: mockHelpOutput,
+				stderr: ''
+			} as any);
+
+			// Mock getFeaturesList to return empty object to avoid filtering
+			sandbox.stub(taskProvider, 'getFeaturesList').returns({});
+
+			uiHooks.getConfigureOptions();
+
+			assert(mockWebview.postMessage.calledWith(sinon.match({
+				command: 'getConfigureOptions',
+				options: sinon.match.array
+			})));
+
+			const call = mockWebview.postMessage.getCall(0);
+			const message = call.args[0];
+			assert(message.options.length >= 1);
+			assert(message.options.some((opt: any) => opt.name === '--version'));
+		});
+
+		test('should handle waf command failure', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+			sandbox.stub(cp, 'spawnSync').returns({
+				status: 1,
+				stdout: '',
+				stderr: 'Command failed'
+			} as any);
+
+			uiHooks.getConfigureOptions();
+
+			assert(mockWebview.postMessage.calledWith({
+				command: 'getConfigureOptions',
+				options: [],
+				error: 'Failed to get configure options: Command failed'
+			}));
+		});
+
+		test('should filter out feature-specific options', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+			const mockHelpOutput = `Options:
+  --version             show program's version number and exit
+  -g, --debug-symbols   build with debug symbols
+  --enable-GPS          enable GPS feature
+  --disable-COMPASS     disable compass feature`;
+
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+			sandbox.stub(cp, 'spawnSync').returns({
+				status: 0,
+				stdout: mockHelpOutput,
+				stderr: ''
+			} as any);
+
+			// Mock getFeaturesList to return GPS and COMPASS features
+			sandbox.stub(taskProvider, 'getFeaturesList').returns({
+				features: {
+					'GPS': { label: 'GPS' },
+					'COMPASS': { label: 'COMPASS' }
+				}
+			});
+
+			uiHooks.getConfigureOptions();
+
+			const call = mockWebview.postMessage.getCall(0);
+			const message = call.args[0];
+
+			// Should include version and debug-symbols but not GPS/COMPASS features
+			assert(message.options.some((opt: any) => opt.name === '--version'));
+			assert(message.options.some((opt: any) => opt.name === '-g, --debug-symbols'));
+			assert(!message.options.some((opt: any) => opt.name.includes('GPS')));
+			assert(!message.options.some((opt: any) => opt.name.includes('COMPASS')));
+		});
+
+		test('should handle exceptions during option parsing', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+			sandbox.stub(cp, 'spawnSync').throws(new Error('Spawn error'));
+
+			uiHooks.getConfigureOptions();
+
+			assert(mockWebview.postMessage.calledWith({
+				command: 'getConfigureOptions',
+				options: [],
+				error: 'Error getting configure options: Error: Spawn error'
+			}));
+		});
+	});
+
+	suite('getSITLOptions Method', () => {
+		test('should handle getSITLOptions command', () => {
+			const message = { command: 'getSITLOptions' };
+			const getSITLOptionsSpy = sandbox.spy(uiHooks, 'getSITLOptions');
+
+			(uiHooks as any)._onMessage(message);
+
+			assert(getSITLOptionsSpy.calledOnce);
+		});
+
+		test('should return error when no workspace folder', () => {
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
+
+			uiHooks.getSITLOptions();
+
+			assert(mockWebview.postMessage.calledWith({
+				command: 'getSITLOptions',
+				options: [],
+				error: 'No workspace folder found'
+			}));
+		});
+
+		test('should successfully get SITL options when sim_vehicle.py command succeeds', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+			const mockHelpOutput = `Options:
+  -h, --help            show this help message and exit
+  -A SITL_INSTANCE_ARGS, --sitl-instance-args=SITL_INSTANCE_ARGS
+                        pass arguments to SITL instance
+  -G, --gdb             use gdb for debugging ardupilot`;
+
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+			sandbox.stub(cp, 'spawnSync').returns({
+				status: 0,
+				stdout: mockHelpOutput,
+				stderr: ''
+			} as any);
+
+			uiHooks.getSITLOptions();
+
+			assert(mockWebview.postMessage.calledWith(sinon.match({
+				command: 'getSITLOptions',
+				options: sinon.match.array
+			})));
+
+			const call = mockWebview.postMessage.getCall(0);
+			const message = call.args[0];
+			assert(message.options.length >= 3);
+			assert(message.options.some((opt: any) => opt.name === '-h, --help'));
+			assert(message.options.some((opt: any) => opt.name === '-A, --sitl-instance-args'));
+			assert(message.options.some((opt: any) => opt.name === '-G, --gdb'));
+		});
+
+		test('should handle sim_vehicle.py command failure', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+			sandbox.stub(cp, 'spawnSync').returns({
+				status: 1,
+				stdout: '',
+				stderr: 'Script not found'
+			} as any);
+
+			uiHooks.getSITLOptions();
+
+			assert(mockWebview.postMessage.calledWith({
+				command: 'getSITLOptions',
+				options: [],
+				error: 'Failed to get SITL options: Script not found'
+			}));
+		});
+
+		test('should handle exceptions during SITL option parsing', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+			sandbox.stub(cp, 'spawnSync').throws(new Error('Python not found'));
+
+			uiHooks.getSITLOptions();
+
+			assert(mockWebview.postMessage.calledWith({
+				command: 'getSITLOptions',
+				options: [],
+				error: 'Error getting SITL options: Error: Python not found'
+			}));
+		});
+	});
+
 	suite('Integration Tests', () => {
 		test('should handle complete workflow for getting tasks list', () => {
 			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
@@ -464,6 +932,53 @@ suite('apUIHooks Test Suite', () => {
 				command: 'extractFeatures',
 				features: mockFeatures
 			}));
+		});
+
+		test('should handle complete workflow for getting configure options', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+			const mockHelpOutput = `Options:
+  --version             show program's version number and exit
+  -g, --debug-symbols   build with debug symbols`;
+
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+			sandbox.stub(cp, 'spawnSync').returns({
+				status: 0,
+				stdout: mockHelpOutput,
+				stderr: ''
+			} as any);
+
+			sandbox.stub(taskProvider, 'getFeaturesList').returns({});
+
+			// Simulate message from webview
+			(uiHooks as any)._onMessage({ command: 'getConfigureOptions' });
+
+			assert(mockWebview.postMessage.calledWith(sinon.match({
+				command: 'getConfigureOptions',
+				options: sinon.match.array
+			})));
+		});
+
+		test('should handle complete workflow for getting SITL options', () => {
+			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
+			const mockHelpOutput = `Options:
+  -h, --help            show this help message and exit
+  -A SITL_INSTANCE_ARGS, --sitl-instance-args=SITL_INSTANCE_ARGS
+                        pass arguments to SITL instance`;
+
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
+			sandbox.stub(cp, 'spawnSync').returns({
+				status: 0,
+				stdout: mockHelpOutput,
+				stderr: ''
+			} as any);
+
+			// Simulate message from webview
+			(uiHooks as any)._onMessage({ command: 'getSITLOptions' });
+
+			assert(mockWebview.postMessage.calledWith(sinon.match({
+				command: 'getSITLOptions',
+				options: sinon.match.array
+			})));
 		});
 
 		test('should handle event listeners during message processing', () => {

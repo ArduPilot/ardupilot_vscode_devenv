@@ -701,18 +701,18 @@ export class ProgramUtils {
 
 		try {
 			const config = vscode.workspace.getConfiguration('python', workspaceFolder.uri);
-			
+
 			// Get current venvFolders setting
 			const currentVenvFolders = config.get<string[]>('venvFolders') || [];
-			
+
 			// Check if venv-ardupilot directory is already in the list
 			if (!currentVenvFolders.includes(venvDir)) {
 				// Add venv-ardupilot directory to venvFolders so VS Code can discover it
 				const updatedVenvFolders = [...currentVenvFolders, venvDir];
 				await config.update('venvFolders', updatedVenvFolders, vscode.ConfigurationTarget.Global);
-				
+
 				this.log.log(`Added ${venvDir} to Python venvFolders list`);
-				
+
 				return true;
 			} else {
 				this.log.log(`${venvDir} already in venvFolders list`);
