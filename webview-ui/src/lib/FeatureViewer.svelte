@@ -375,9 +375,9 @@
 
 <style>
   .feature-viewer {
-    --feature-enabled-color: #4CAF50;
-    --feature-disabled-color: #757575;
-    --feature-error-color: #f44336;
+    --feature-enabled-color: var(--vscode-terminal-ansiGreen);
+    --feature-disabled-color: var(--vscode-disabledForeground);
+    --feature-error-color: var(--vscode-errorForeground);
     
     margin: 20px 0;
     padding: 10px;

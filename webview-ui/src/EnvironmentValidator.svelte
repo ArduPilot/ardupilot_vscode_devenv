@@ -387,23 +387,23 @@
 	}
 	
 	.status-checking {
-		background-color: #5c5c5c;
-		color: white;
+		background-color: var(--vscode-progressBar-background);
+		color: var(--vscode-button-foreground);
 	}
 	
 	.status-available {
-		background-color: #388a34;
-		color: white;
+		background-color: var(--vscode-terminal-ansiGreen);
+		color: var(--vscode-button-foreground);
 	}
 	
 	.status-missing {
-		background-color: #cc2222;
-		color: white;
+		background-color: var(--vscode-errorForeground);
+		color: var(--vscode-button-foreground);
 	}
 	
 	.install-button {
-		background-color: #007acc;
-		color: white;
+		background-color: var(--vscode-button-background);
+		color: var(--vscode-button-foreground);
 		border: none;
 		padding: 4px 8px;
 		border-radius: 2px;
@@ -414,7 +414,7 @@
 	}
 	
 	.install-button:hover {
-		background-color: #005a9e;
+		background-color: var(--vscode-button-hoverBackground);
 	}
 	
 	.tool-version {
@@ -473,18 +473,18 @@
 	}
 	
 	.summary-ok {
-		background-color: rgba(56, 138, 52, 0.1);
-		border: 1px solid #388a34;
+		background-color: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 10%, var(--vscode-editor-background));
+		border: 1px solid var(--vscode-terminal-ansiGreen);
 	}
 	
 	.summary-warning {
-		background-color: rgba(204, 129, 0, 0.1);
-		border: 1px solid #cc8100;
+		background-color: color-mix(in srgb, var(--vscode-terminal-ansiYellow) 10%, var(--vscode-editor-background));
+		border: 1px solid var(--vscode-terminal-ansiYellow);
 	}
 	
 	.summary-error {
-		background-color: rgba(204, 34, 34, 0.1);
-		border: 1px solid #cc2222;
+		background-color: color-mix(in srgb, var(--vscode-errorForeground) 10%, var(--vscode-editor-background));
+		border: 1px solid var(--vscode-errorForeground);
 	}
 	
 	.tool-info {
@@ -535,8 +535,8 @@
 	}
 	
 	.install-packages-button {
-		background-color: #007acc;
-		color: white;
+		background-color: var(--vscode-button-background);
+		color: var(--vscode-button-foreground);
 		border: none;
 		padding: 6px 12px;
 		border-radius: 3px;
@@ -546,14 +546,14 @@
 	}
 	
 	.install-packages-button:hover {
-		background-color: #005a9e;
+		background-color: var(--vscode-button-hoverBackground);
 	}
 	
 	.platform-warning {
 		margin-bottom: 20px;
 		padding: 15px;
-		background-color: rgba(204, 34, 34, 0.1);
-		border: 1px solid #cc2222;
+		background-color: color-mix(in srgb, var(--vscode-errorForeground) 10%, var(--vscode-editor-background));
+		border: 1px solid var(--vscode-errorForeground);
 		border-radius: 5px;
 		display: flex;
 		flex-direction: column;
@@ -562,7 +562,7 @@
 	
 	.platform-warning h2 {
 		margin-top: 0;
-		color: #cc2222;
+		color: var(--vscode-errorForeground);
 	}
 	
 	.loading-spinner {

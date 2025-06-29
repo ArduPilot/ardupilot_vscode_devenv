@@ -314,7 +314,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(128, 128, 128, 0.1);
+    background: color-mix(in srgb, var(--vscode-disabledForeground) 10%, transparent);
     z-index: 1;
   }
 </style>
