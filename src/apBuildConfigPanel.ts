@@ -270,11 +270,11 @@ export class apBuildConfigPanel {
 
 	private _getWebviewContent(webview: Webview): string {
 		// The CSS file from the Svelte build output
-		const stylesUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'index.css']);
+		const stylesUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'build-config.css']);
 		// The JS file from the Svelte build output
-		const scriptUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'index.js']);
+		const scriptUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'build-config.js']);
 		// The source map file
-		const sourceMapUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'index.js.map']);
+		const sourceMapUri = getUri(webview, this._extensionUri, ['webview-ui', 'dist', 'build-config.js.map']);
 
 		return /*html*/ `
 			<!DOCTYPE html>
@@ -292,7 +292,7 @@ export class apBuildConfigPanel {
 						// Make source map URL available to our error handler
 						window.SOURCE_MAP_URL = "${sourceMapUri}";
 					</script>
-					<script src="${scriptUri}" async></script>
+					<script type="module" src="${scriptUri}"></script>
 				</head>
 				<body>
 					<div id="buildConfig"></div>
