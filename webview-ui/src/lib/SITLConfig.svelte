@@ -279,9 +279,18 @@
 		border-bottom: none;
 	}
 
-	.suggestion-item:hover,
-	.suggestion-item.selected {
+	.suggestion-item:hover {
 		background-color: var(--vscode-list-hoverBackground);
+	}
+
+	.suggestion-item.selected {
+		background-color: var(--vscode-list-activeSelectionBackground);
+		color: var(--vscode-list-activeSelectionForeground);
+	}
+
+	.suggestion-item.selected .option-description {
+		color: var(--vscode-list-activeSelectionForeground);
+		opacity: 0.8;
 	}
 
 	.option-name {
