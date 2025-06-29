@@ -31,6 +31,21 @@ import * as os from 'os';
 export class ValidateEnvironment extends apWelcomeItem {
 	static log = new apLog('validateEnvironment');
 
+	// List of commands that should be handled by ValidateEnvironmentPanel
+	static readonly ENVIRONMENT_COMMANDS = [
+		'validateEnvironment',
+		'checkEnvironment',
+		'configureToolPath',
+		'installTool',
+		'selectPythonInterpreter',
+		'installPythonPackages',
+		'launchWSL',
+		'openVSCodeWSL',
+		'resetAllPaths',
+		'getPythonPackagesList',
+		'getToolsList'
+	];
+
 	constructor(
 		public readonly label: string,
 		public readonly collapsibleState: vscode.TreeItemCollapsibleState
@@ -99,7 +114,7 @@ export class ValidateEnvironmentPanel {
 		this._panel = panel;
 
 		// Set the webview's initial html content
-		this._panel.webview.html = this._getInitialHtml();
+		this._panel.webview.html = this._getInitialHtml(panel.webview);
 
 		// Listen for when the panel is disposed
 		// This happens when the user closes the panel or when the panel is closed programmatically
@@ -116,6 +131,8 @@ export class ValidateEnvironmentPanel {
 
 		// Start validation automatically
 		setTimeout(() => {
+			this._sendToolsList();
+			this._sendPythonPackagesList();
 			this._validateEnvironment();
 		}, 500);
 	}
@@ -146,618 +163,54 @@ export class ValidateEnvironmentPanel {
 		case 'installPythonPackages':
 			this._installPythonPackages();
 			break;
+		case 'getPythonPackagesList':
+			this._sendPythonPackagesList();
+			break;
+		case 'getToolsList':
+			this._sendToolsList();
+			break;
 		}
 	}
 
-	private _getInitialHtml(): string {
-		return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ArduPilot Environment Validation</title>
-    <style>
-        body {
-            font-family: var(--vscode-font-family);
-            padding: 20px;
-            color: var(--vscode-foreground);
-            background-color: var(--vscode-editor-background);
-        }
-        h1 {
-            color: var(--vscode-editor-foreground);
-            font-size: 24px;
-            margin-bottom: 20px;
-        }
-        .tool-container {
-            margin-bottom: 20px;
-            padding: 10px;
-            border: 1px solid var(--vscode-panel-border);
-            border-radius: 5px;
-        }
-        .tool-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .tool-name {
-            font-weight: bold;
-            font-size: 16px;
-        }
-        .tool-status {
-            font-size: 14px;
-            padding: 3px 8px;
-            border-radius: 3px;
-        }
-        .status-checking {
-            background-color: #5c5c5c;
-            color: white;
-        }
-        .status-available {
-            background-color: #388a34;
-            color: white;
-        }
-        .status-missing {
-            background-color: #cc2222;
-            color: white;
-        }
-        .install-button {
-            background-color: #007acc;
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 2px;
-            cursor: pointer;
-            font-size: 12px;
-            margin-left: 5px;
-            margin-top: 0;
-            display: none;
-        }
-        .install-button:hover {
-            background-color: #005a9e;
-        }
-        .tool-container .install-button {
-            display: none;
-        }
-        .tool-version {
-            margin-top: 5px;
-            font-size: 14px;
-            color: var(--vscode-descriptionForeground);
-        }
-        .tool-path {
-            margin-top: 5px;
-            font-size: 14px;
-            color: var(--vscode-descriptionForeground);
-            word-break: break-all;
-            display: flex;
-            align-items: center;
-        }
-        .tool-path-text {
-            flex-grow: 1;
-            margin-right: 10px;
-        }
-        button {
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            padding: 8px 12px;
-            border-radius: 2px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-top: 5px;
-            margin-right: 5px;
-        }
-        button:hover {
-            background-color: var(--vscode-button-hoverBackground);
-        }
-        .config-button {
-            padding: 4px 8px;
-            font-size: 12px;
-            margin-top: 0;
-        }
-        .action-buttons {
-            margin-top: 20px;
-            display: flex;
-            gap: 10px;
-        }
-        #summary {
-            margin-top: 20px;
-            padding: 10px;
-            border-radius: 5px;
-            font-weight: bold;
-        }
-        .summary-ok {
-            background-color: rgba(56, 138, 52, 0.1);
-            border: 1px solid #388a34;
-        }
-        .summary-warning {
-            background-color: rgba(204, 129, 0, 0.1);
-            border: 1px solid #cc8100;
-        }
-        .summary-error {
-            background-color: rgba(204, 34, 34, 0.1);
-            border: 1px solid #cc2222;
-        }
-        .tool-info {
-            margin-top: 5px;
-            font-size: 14px;
-            color: var(--vscode-descriptionForeground);
-        }
-        .custom-path-notification {
-            font-style: italic;
-            color: var(--vscode-notificationsInfoIcon-foreground);
-            margin-top: 5px;
-            font-size: 12px;
-        }
-        .python-packages {
-            margin-top: 10px;
-            margin-left: 20px;
-            border-left: 2px solid var(--vscode-panel-border);
-            padding-left: 15px;
-        }
-        .package-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-            padding: 5px 8px;
-            border-radius: 3px;
-            background-color: var(--vscode-editor-background);
-        }
-        .package-name {
-            font-size: 14px;
-            font-weight: 500;
-        }
-        .package-status {
-            font-size: 12px;
-            padding: 2px 6px;
-            border-radius: 2px;
-        }
-        .package-version {
-            font-size: 12px;
-            color: var(--vscode-descriptionForeground);
-            margin-top: 2px;
-        }
-        .install-packages-button {
-            background-color: #007acc;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 12px;
-            margin-top: 8px;
-        }
-        .install-packages-button:hover {
-            background-color: #005a9e;
-        }
-        .platform-warning {
-            margin-bottom: 20px;
-            padding: 15px;
-            background-color: rgba(204, 34, 34, 0.1);
-            border: 1px solid #cc2222;
-            border-radius: 5px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .platform-warning h2 {
-            margin-top: 0;
-            color: #cc2222;
-        }
-    </style>
-</head>
-<body>
-    <h1>ArduPilot Environment Validation</h1>
-    
-    <div id="platform-warning" style="display:none;" class="platform-warning">
-        <h2>Unsupported Platform Detected</h2>
-        <p>ArduPilot development is only supported on macOS and Linux.</p>
-        <p>You appear to be using Windows. Please install Windows Subsystem for Linux (WSL) to continue.</p>
-        <div class="action-buttons">
-            <button id="launch-wsl-btn">Launch WSL Installation Guide</button>
-            <button id="open-vscode-wsl-btn">Open VSCode with WSL</button>
-        </div>
-    </div>
-    
-    <div id="validation-results">
-        <div class="tool-container" id="python" data-tool-id="${ProgramUtils.TOOL_PYTHON}">
-            <div class="tool-header">
-                <div class="tool-name">Python</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button select-interpreter-btn" style="margin-left: 5px;">Select Interpreter</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_PYTHON}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-            <div class="python-packages" id="python-packages">
-                <!-- Python packages will be dynamically populated -->
-                <button class="install-packages-button" id="install-python-packages" style="display: none;">Install Missing Packages in Terminal</button>
-            </div>
-        </div>
+	private _getInitialHtml(webview: vscode.Webview): string {
+		// Get the extension context (we'll need to pass this from the calling code)
+		const extensionUri = vscode.extensions.getExtension('ardupilot-org.ardupilot-devenv')?.extensionUri;
+		if (!extensionUri) {
+			vscode.window.showErrorMessage('Failed to get extension URI');
+			return '';
+		}
 
-        <div class="tool-container" id="python-win" data-tool-id="${ProgramUtils.TOOL_PYTHON_WIN}" style="display:none;">
-            <div class="tool-header">
-                <div class="tool-name">Python (Windows via WSL)</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_PYTHON_WIN}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-            <div class="tool-info">This Python is expected to be a Windows installation accessible from WSL (ensure python.exe is in your Windows PATH, if not Modify your installation and check the box to Add Python to  environment path). If the error is still present, try restarting WSL Instance, and chacking if python.exe is accessible in your WSL terminal</div>
-        </div>
-        
-        <div class="tool-container" id="mavproxy" data-tool-id="${ProgramUtils.TOOL_MAVPROXY}">
-            <div class="tool-header">
-                <div class="tool-name">MAVProxy</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_MAVPROXY}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-        </div>
-        
-        <div class="tool-container" id="arm-gcc" data-tool-id="${ProgramUtils.TOOL_ARM_GCC}">
-            <div class="tool-header">
-                <div class="tool-name">arm-none-eabi-gcc</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_ARM_GCC}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-        </div>
-        
-        <div class="tool-container" id="gcc" data-tool-id="${ProgramUtils.TOOL_GCC}">
-            <div class="tool-header">
-                <div class="tool-name">gcc</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_GCC}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-        </div>
-        
-        <div class="tool-container" id="gpp" data-tool-id="${ProgramUtils.TOOL_GPP}">
-            <div class="tool-header">
-                <div class="tool-name">g++</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_GPP}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-        </div>
-        
-        <div class="tool-container" id="gdb" data-tool-id="${ProgramUtils.TOOL_ARM_GDB}">
-            <div class="tool-header">
-                <div class="tool-name">arm-none-eabi-gdb / gdb-multiarch</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_ARM_GDB}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-        </div>
-        
-        <div class="tool-container" id="ccache" data-tool-id="${ProgramUtils.TOOL_CCACHE}">
-            <div class="tool-header">
-                <div class="tool-name">ccache</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_CCACHE}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-            <div class="tool-info"></div>
-        </div>
-        
-        <div class="tool-container" id="jlink" data-tool-id="${ProgramUtils.TOOL_JLINK}">
-            <div class="tool-header">
-                <div class="tool-name">JLinkGDBServerCLExe (Optional)</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_JLINK}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-        </div>
-        
-        <div class="tool-container" id="openocd" data-tool-id="${ProgramUtils.TOOL_OPENOCD}">
-            <div class="tool-header">
-                <div class="tool-name">OpenOCD (Optional)</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_OPENOCD}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-        </div>
-        
-        <div class="tool-container" id="gdbserver" data-tool-id="${ProgramUtils.TOOL_GDBSERVER}">
-            <div class="tool-header">
-                <div class="tool-name">GDB Server</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_GDBSERVER}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-        </div>
-        
-        <div class="tool-container" id="pyserial" data-tool-id="${ProgramUtils.TOOL_PYSERIAL}">
-            <div class="tool-header">
-                <div class="tool-name">PySerial</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_PYSERIAL}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-            <div class="tool-info"></div>
-        </div>
-        
-        <div class="tool-container" id="tmux" data-tool-id="${ProgramUtils.TOOL_TMUX}">
-            <div class="tool-header">
-                <div class="tool-name">tmux</div>
-                <div class="tool-status status-checking">Checking...</div>
-            </div>
-            <div class="tool-version"></div>
-            <div class="tool-path">
-                <div class="tool-path-text"></div>
-                <button class="config-button config-path-btn">Configure Path</button>
-                <button class="install-button" data-tool-id="${ProgramUtils.TOOL_TMUX}">Install</button>
-            </div>
-            <div class="custom-path-notification"></div>
-        </div>
-        
-        <div id="summary"></div>
-        
-        <div class="action-buttons">
-            <button id="refresh-btn">Refresh Validation</button>
-            <button id="reset-all-paths-btn">Reset All Paths</button>
-        </div>
-    </div>
+		const stylesUri = this.getUri(webview, extensionUri, ['webview-ui', 'dist', 'environment-validator.css']);
+		const scriptUri = this.getUri(webview, extensionUri, ['webview-ui', 'dist', 'environment-validator.js']);
+		const sourceMapUri = this.getUri(webview, extensionUri, ['webview-ui', 'dist', 'environment-validator.js.map']);
 
-    <script>
-        (function() {
-            const vscode = acquireVsCodeApi();
-            
-            // Platform detection - will be updated by the extension
-            let currentPlatform = null;
-            
-            // Setup tool path configuration buttons
-            document.querySelectorAll('.config-path-btn').forEach(btn => {
-                btn.addEventListener('click', (event) => {
-                    const toolContainer = event.target.closest('.tool-container');
-                    const toolId = toolContainer.getAttribute('data-tool-id');
-                    const toolName = toolContainer.querySelector('.tool-name').textContent;
-                    
-                    vscode.postMessage({
-                        command: 'configureToolPath',
-                        toolId: toolId,
-                        toolName: toolName
-                    });
-                });
-            });
-            
-            // Setup install tool buttons
-            document.querySelectorAll('.install-button').forEach(btn => {
-                btn.addEventListener('click', (event) => {
-                    const toolContainer = event.target.closest('.tool-container');
-                    const toolId = toolContainer.getAttribute('data-tool-id');
-                    const toolName = toolContainer.querySelector('.tool-name').textContent;
-                    
-                    vscode.postMessage({
-                        command: 'installTool',
-                        toolId: toolId,
-                        toolName: toolName
-                    });
-                });
-            });
-            
-            // Setup Python interpreter selection button
-            document.querySelectorAll('.select-interpreter-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    vscode.postMessage({
-                        command: 'selectPythonInterpreter'
-                    });
-                });
-            });
-            
-            // Setup Python packages install button
-            document.getElementById('install-python-packages').addEventListener('click', () => {
-                vscode.postMessage({
-                    command: 'installPythonPackages'
-                });
-            });
-            
-            // Setup WSL launch button
-            document.getElementById('launch-wsl-btn').addEventListener('click', () => {
-                vscode.postMessage({
-                    command: 'launchWSL'
-                });
-            });
-            
-            // Setup Open VSCode with WSL button
-            document.getElementById('open-vscode-wsl-btn').addEventListener('click', () => {
-                vscode.postMessage({
-                    command: 'openVSCodeWSL'
-                });
-            });
-            
-            // Setup refresh button
-            document.getElementById('refresh-btn').addEventListener('click', () => {
-                // Reset all status indicators to "Checking..."
-                document.querySelectorAll('.tool-status').forEach(el => {
-                    el.className = 'tool-status status-checking';
-                    el.textContent = 'Checking...';
-                });
-                
-                // Clear all version and path info
-                document.querySelectorAll('.tool-version, .tool-path-text, .custom-path-notification').forEach(el => {
-                    el.textContent = '';
-                });
-                
-                // Remove the summary
-                document.getElementById('summary').textContent = '';
-                document.getElementById('summary').className = '';
-                
-                // Send message to request validation
-                vscode.postMessage({ command: 'checkEnvironment' });
-            });
-            
-            // Setup reset all paths button
-            document.getElementById('reset-all-paths-btn').addEventListener('click', () => {
-                vscode.postMessage({ command: 'resetAllPaths' });
-            });
-            
-            // Request initial validation when the page loads
-            vscode.postMessage({ command: 'checkEnvironment' });
-            
-            // Handle messages from the extension
-            window.addEventListener('message', event => {
-                const message = event.data;
-                
-                if (message.command === 'validationResult') {
-                    const { tool, available, version, path, info, isCustomPath } = message;
-                    const toolElement = document.getElementById(tool);
-                    
-                    if (toolElement) {
-                        const statusElement = toolElement.querySelector('.tool-status');
-                        const versionElement = toolElement.querySelector('.tool-version');
-                        const pathElement = toolElement.querySelector('.tool-path-text');
-                        const infoElement = toolElement.querySelector('.tool-info');
-                        const notificationElement = toolElement.querySelector('.custom-path-notification');
-                        const installButton = toolElement.querySelector('.install-button');
-                        
-                        statusElement.className = 'tool-status ' + (available ? 'status-available' : 'status-missing');
-                        statusElement.textContent = available ? 'Available' : 'Missing';
-                        
-                        // Show/hide install button based on availability
-                        if (installButton) {
-                            installButton.style.display = available ? 'none' : 'inline-block';
-                        }
-                        
-                        if (version) {
-                            versionElement.textContent = 'Version: ' + version;
-                        } else {
-                            versionElement.textContent = '';
-                        }
-                        
-                        if (path) {
-                            pathElement.textContent = 'Path: ' + path;
-                        } else {
-                            pathElement.textContent = '';
-                        }
-                        
-                        if (isCustomPath) {
-                            notificationElement.textContent = 'Using custom configured path';
-                        } else {
-                            notificationElement.textContent = '';
-                        }
-                    }
-                } else if (message.command === 'validationSummary') {
-                    const summaryElement = document.getElementById('summary');
-                    summaryElement.textContent = message.message;
-                    summaryElement.className = 'summary-' + message.status;
-                } else if (message.command === 'configurationSaved') {
-                    // Refresh validation after configuration is saved
-                    vscode.postMessage({ command: 'checkEnvironment' });
-                } else if (message.command === 'createPythonPackages') {
-                    const pythonPackagesContainer = document.getElementById('python-packages');
-                    const installButton = document.getElementById('install-python-packages');
-                    pythonPackagesContainer.innerHTML = message.html + installButton.outerHTML;
-                    
-                    // Re-attach event listener to the new install button
-                    document.getElementById('install-python-packages').addEventListener('click', () => {
-                        vscode.postMessage({
-                            command: 'installPythonPackages'
-                        });
-                    });
-                } else if (message.command === 'packageResult') {
-                    const packageElement = document.querySelector('[data-package="' + message.package + '"]');
-                    if (packageElement) {
-                        const statusElement = packageElement.querySelector('.package-status');
-                        const versionElement = packageElement.querySelector('.package-version');
-                        
-                        statusElement.className = 'package-status ' + (message.available ? 'status-available' : 'status-missing');
-                        statusElement.textContent = message.available ? 'Available' : 'Missing';
-                        
-                        if (message.version && message.available) {
-                            versionElement.textContent = 'v' + message.version;
-                        } else {
-                            versionElement.textContent = '';
-                        }
-                    }
-                } else if (message.command === 'updateInstallButton') {
-                    const installButton = document.getElementById('install-python-packages');
-                    installButton.style.display = message.show ? 'block' : 'none';
-                } else if (message.command === 'platformCheck') {
-                    currentPlatform = message.platform;
-                    const platformWarningElement = document.getElementById('platform-warning');
-                    const pythonWinElement = document.getElementById('python-win');
-                    
-                    if (message.platform === 'win32') {
-                        platformWarningElement.style.display = 'block';
-                        document.getElementById('validation-results').style.display = 'none';
-                        if (pythonWinElement) pythonWinElement.style.display = 'none';
-                    } else {
-                        platformWarningElement.style.display = 'none';
-                        document.getElementById('validation-results').style.display = 'block';
-                        if (pythonWinElement) {
-                            if (message.isWSL) {
-                                pythonWinElement.style.display = 'block';
-                            } else {
-                                pythonWinElement.style.display = 'none';
-                            }
-                        }
-                    }
-                }
-            });
-        })();
-    </script>
-</body>
-</html>`;
+		return /*html*/ `
+			<!DOCTYPE html>
+			<html lang="en">
+				<head>
+					<title>Environment Validator - ArduPilot DevEnv</title>
+					<meta charset="UTF-8" />
+					<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+					<meta http-equiv="Content-Security-Policy" content="default-src 'none';
+																		style-src ${webview.cspSource};
+																		script-src ${webview.cspSource} 'unsafe-eval' 'unsafe-inline';
+																		connect-src ${webview.cspSource} vscode-resource: vscode-webview-resource: https:;">
+					<link href="${stylesUri}" rel="stylesheet">
+					<script>
+						// Make source map URL available to our error handler
+						window.SOURCE_MAP_URL = "${sourceMapUri}";
+					</script>
+					<script type="module" src="${scriptUri}"></script>
+				</head>
+				<body>
+					<div id="environmentValidator"></div>
+				</body>
+			</html>
+		`;
+	}
+
+	private getUri(webview: vscode.Webview, extensionUri: vscode.Uri, pathList: string[]): vscode.Uri {
+		return webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, ...pathList));
 	}
 
 	private async _validateEnvironment(): Promise<void> {
@@ -825,13 +278,12 @@ export class ValidateEnvironmentPanel {
 		]);
 
 		// Report results to webview
-		this._reportToolStatus('python', pythonResult);
+		this._reportToolStatus(ProgramUtils.TOOL_PYTHON, pythonResult);
 		if (isWSL) {
-			this._reportToolStatus('python-win', pythonWinResult);
+			this._reportToolStatus(ProgramUtils.TOOL_PYTHON_WIN, pythonWinResult);
 		}
 
-		// Create Python packages HTML and report results
-		this._createPythonPackagesHTML();
+		// Report Python packages results
 		for (const {packageName, result} of pythonPackagesResult) {
 			this._reportPackageStatus(packageName, result);
 		}
@@ -840,17 +292,17 @@ export class ValidateEnvironmentPanel {
 		const hasMissingPackages = pythonPackagesResult.some(({result}) => !result.available);
 		this._updateInstallPackagesButton(hasMissingPackages);
 
-		this._reportToolStatus('mavproxy', mavproxyResult);
-		this._reportToolStatus('arm-gcc', armGccResult);
-		this._reportToolStatus('gcc', gccResult);
-		this._reportToolStatus('gpp', gppResult);
-		this._reportToolStatus('gdb', gdbResult);
-		this._reportToolStatus('ccache', ccacheResult);
-		this._reportToolStatus('jlink', jlinkResult);
-		this._reportToolStatus('openocd', openocdResult);
-		this._reportToolStatus('gdbserver', gdbserverResult);
-		this._reportToolStatus('pyserial', pyserialResult);
-		this._reportToolStatus('tmux', tmuxResult);
+		this._reportToolStatus(ProgramUtils.TOOL_MAVPROXY, mavproxyResult);
+		this._reportToolStatus(ProgramUtils.TOOL_ARM_GCC, armGccResult);
+		this._reportToolStatus(ProgramUtils.TOOL_GCC, gccResult);
+		this._reportToolStatus(ProgramUtils.TOOL_GPP, gppResult);
+		this._reportToolStatus(ProgramUtils.TOOL_ARM_GDB, gdbResult);
+		this._reportToolStatus(ProgramUtils.TOOL_CCACHE, ccacheResult);
+		this._reportToolStatus(ProgramUtils.TOOL_JLINK, jlinkResult);
+		this._reportToolStatus(ProgramUtils.TOOL_OPENOCD, openocdResult);
+		this._reportToolStatus(ProgramUtils.TOOL_GDBSERVER, gdbserverResult);
+		this._reportToolStatus(ProgramUtils.TOOL_PYSERIAL, pyserialResult);
+		this._reportToolStatus(ProgramUtils.TOOL_TMUX, tmuxResult);
 
 		// Generate summary - only include required tools in the summary
 		const summaryTools = [pythonResult, mavproxyResult, armGccResult, gccResult, gppResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult, tmuxResult];
@@ -1370,22 +822,53 @@ export class ValidateEnvironmentPanel {
 	}
 
 	/**
-	 * Creates the HTML structure for Python packages dynamically
+	 * Sends the tools list to the webview
 	 */
-	private _createPythonPackagesHTML(): void {
-		const packagesHTML = ProgramUtils.REQUIRED_PYTHON_PACKAGES.map(pkg => `
-			<div class="package-item" data-package="${pkg.name}">
-				<div>
-					<div class="package-name">${pkg.name}</div>
-					<div class="package-version"></div>
-				</div>
-				<div class="package-status status-checking">Checking...</div>
-			</div>
-		`).join('');
+	private _sendToolsList(): void {
+		const isWSL = ProgramUtils.isWSL();
+
+		const allTools = [
+			{ id: ProgramUtils.TOOL_PYTHON, name: 'Python' },
+			{ id: ProgramUtils.TOOL_PYTHON_WIN, name: 'Python (Windows via WSL)', wslOnly: true },
+			{ id: ProgramUtils.TOOL_MAVPROXY, name: 'MAVProxy' },
+			{ id: ProgramUtils.TOOL_ARM_GCC, name: 'arm-none-eabi-gcc' },
+			{ id: ProgramUtils.TOOL_GCC, name: 'gcc' },
+			{ id: ProgramUtils.TOOL_GPP, name: 'g++' },
+			{ id: ProgramUtils.TOOL_ARM_GDB, name: 'arm-none-eabi-gdb / gdb-multiarch' },
+			{ id: ProgramUtils.TOOL_CCACHE, name: 'ccache' },
+			{ id: ProgramUtils.TOOL_JLINK, name: 'JLinkGDBServerCLExe (Optional)' },
+			{ id: ProgramUtils.TOOL_OPENOCD, name: 'OpenOCD (Optional)' },
+			{ id: ProgramUtils.TOOL_GDBSERVER, name: 'GDB Server' },
+			{ id: ProgramUtils.TOOL_PYSERIAL, name: 'PySerial' },
+			{ id: ProgramUtils.TOOL_TMUX, name: 'tmux' }
+		];
+
+		// Filter tools based on current platform
+		const tools = allTools.filter(tool => {
+			if (tool.wslOnly) {
+				return isWSL;
+			}
+			return true;
+		});
 
 		this._panel.webview.postMessage({
-			command: 'createPythonPackages',
-			html: packagesHTML
+			command: 'toolsList',
+			tools: tools
+		});
+	}
+
+	/**
+	 * Sends the Python packages list to the webview
+	 */
+	private _sendPythonPackagesList(): void {
+		const packages = ProgramUtils.REQUIRED_PYTHON_PACKAGES.map((pkg: {name: string; description: string}) => ({
+			name: pkg.name,
+			description: pkg.description || pkg.name
+		}));
+
+		this._panel.webview.postMessage({
+			command: 'pythonPackagesList',
+			packages: packages
 		});
 	}
 

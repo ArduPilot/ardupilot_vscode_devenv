@@ -21,6 +21,7 @@ import { apLog } from './apLog';
 import { getFeaturesList, APTaskProvider } from './taskProvider';
 import * as cp from 'child_process';
 import { targetToBin } from './apBuildConfig';
+import { ValidateEnvironmentPanel, ValidateEnvironment } from './apEnvironmentValidator';
 
 export class UIHooks {
 	_panel: vscode.WebviewPanel;
@@ -51,6 +52,15 @@ export class UIHooks {
 				listener(message);
 			});
 		}
+
+		// Environment validation commands - redirect to ValidateEnvironmentPanel
+		if (ValidateEnvironment.ENVIRONMENT_COMMANDS.includes(command)) {
+			if (ValidateEnvironmentPanel.currentPanel) {
+				ValidateEnvironmentPanel.currentPanel['_onReceiveMessage'](message as {command: string, toolId: string, toolName: string});
+			}
+			return;
+		}
+
 		switch (command) {
 		case 'getTasksList':
 			this.getTasksList();
@@ -72,6 +82,9 @@ export class UIHooks {
 			break;
 		case 'getBuildCommands':
 			this.getBuildCommands(message);
+			break;
+		case 'close':
+			this._panel.dispose();
 			break;
 		case 'error':
 			UIHooks.log(`Error from webview: ${message.message} at ${message.location}`);
