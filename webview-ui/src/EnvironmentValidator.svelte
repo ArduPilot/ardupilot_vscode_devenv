@@ -17,12 +17,13 @@
 <script lang="ts">
 	import { VSCodeHooks } from './vscodeHooks';
 	import { onMount } from 'svelte';
+	import "@vscode-elements/elements/dist/vscode-progress-ring/index.js";
 
 	export let vscodeHooks: VSCodeHooks;
 
 	// Platform detection
-	let isWSL = false;
 	let showPlatformWarning = false;
+	let isLoading = false;
 
 	// Tool status
 	interface ToolStatus {
@@ -54,6 +55,9 @@
 	let pythonPackages: Array<{ name: string; description?: string }> = [];
 
 	onMount(() => {
+		// Start loading state
+		isLoading = true;
+		
 		// Initialize all tools as checking
 		tools.forEach(tool => {
 			toolStatuses[tool.id] = { available: false, status: 'checking' };
@@ -63,6 +67,10 @@
 		window.addEventListener('message', (event: MessageEvent) => {
 			handleMessage(event.data);
 		});
+
+		// Request tools and packages lists first
+		vscodeHooks.postMessage('getToolsList', {});
+		vscodeHooks.postMessage('getPythonPackagesList', {});
 
 		// Request initial validation
 		vscodeHooks.postMessage('checkEnvironment', {});
@@ -124,7 +132,6 @@
 	}
 
 	function updatePlatformInfo(message: Record<string, any>) {
-		isWSL = message.isWSL || false;
 		showPlatformWarning = message.platform === 'win32';
 	}
 
@@ -135,6 +142,7 @@
 			toolStatuses[tool.id] = { available: false, status: 'checking' };
 		});
 		toolStatuses = { ...toolStatuses }; // Trigger reactivity
+		isLoading = false; // Hide global loading spinner once tools are loaded
 	}
 
 	function updatePythonPackagesList(message: Record<string, any>) {
@@ -172,6 +180,10 @@
 
 	function refreshValidation() {
 		// Reset all status indicators to "Checking..."
+		// Only show global spinner if tools list is empty
+		if (tools.length === 0) {
+			isLoading = true;
+		}
 		tools.forEach(tool => {
 			toolStatuses[tool.id] = { available: false, status: 'checking' };
 		});
@@ -185,6 +197,13 @@
 
 		// Request validation
 		vscodeHooks.postMessage('checkEnvironment', {});
+		
+		// Clear loading state after a reasonable timeout (only if it was set)
+		if (tools.length === 0) {
+			setTimeout(() => {
+				isLoading = false;
+			}, 10000); // 10 seconds max
+		}
 	}
 
 	function resetAllPaths() {
@@ -218,6 +237,12 @@
 <main>
 	<h1>ArduPilot Environment Validation</h1>
 	
+	{#if isLoading}
+		<div class="loading-spinner">
+			<vscode-progress-ring>Validating development environment...</vscode-progress-ring>
+		</div>
+	{/if}
+	
 	{#if showPlatformWarning}
 		<div class="platform-warning">
 			<h2>Unsupported Platform Detected</h2>
@@ -234,9 +259,13 @@
 				<div class="tool-container" data-tool-id={tool.id}>
 						<div class="tool-header">
 							<div class="tool-name">{tool.name}</div>
-							<div class="tool-status {getStatusClass(toolStatuses[tool.id]?.status)}">
-								{getStatusText(toolStatuses[tool.id]?.status)}
-							</div>
+							{#if toolStatuses[tool.id]?.status === 'checking'}
+								<vscode-progress-ring class="tool-progress-ring"></vscode-progress-ring>
+							{:else}
+								<div class="tool-status {getStatusClass(toolStatuses[tool.id]?.status)}">
+									{getStatusText(toolStatuses[tool.id]?.status)}
+								</div>
+							{/if}
 						</div>
 						
 						{#if toolStatuses[tool.id]?.version}
@@ -279,9 +308,13 @@
 												<div class="package-version">v{packageStatuses[pkg.name].version}</div>
 											{/if}
 										</div>
-										<div class="package-status {getStatusClass(packageStatuses[pkg.name]?.status)}">
-											{getStatusText(packageStatuses[pkg.name]?.status)}
-										</div>
+										{#if packageStatuses[pkg.name]?.status === 'checking'}
+											<vscode-progress-ring class="package-progress-ring"></vscode-progress-ring>
+										{:else}
+											<div class="package-status {getStatusClass(packageStatuses[pkg.name]?.status)}">
+												{getStatusText(packageStatuses[pkg.name]?.status)}
+											</div>
+										{/if}
 									</div>
 								{/each}
 								
@@ -530,5 +563,19 @@
 	.platform-warning h2 {
 		margin-top: 0;
 		color: #cc2222;
+	}
+	
+	.loading-spinner {
+		display: flex;
+		justify-content: center;
+		margin: 40px 0;
+	}
+	
+	.tool-progress-ring {
+		--vscode-progress-ring-size: 16px;
+	}
+	
+	.package-progress-ring {
+		--vscode-progress-ring-size: 12px;
 	}
 </style>

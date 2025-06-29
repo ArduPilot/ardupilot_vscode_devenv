@@ -129,6 +129,19 @@ export class ValidateEnvironmentPanel {
 			this._disposables
 		);
 
+		// Handle when webview becomes visible
+		this._panel.onDidChangeViewState(
+			e => {
+				if (e.webviewPanel.visible) {
+					// Resend data when webview becomes visible
+					this._sendToolsList();
+					this._sendPythonPackagesList();
+				}
+			},
+			null,
+			this._disposables
+		);
+
 		// Start validation automatically
 		setTimeout(() => {
 			this._sendToolsList();
