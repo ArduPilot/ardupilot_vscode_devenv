@@ -9,9 +9,14 @@ export default defineConfig({
     sourcemap: true, // Use inline source maps for better error traces
     minify: false,   // Disable minification for better debugging
     rollupOptions: {
+      input: {
+        'build-config': path.resolve(__dirname, 'src/main-build-config.ts'),
+        'report-issue': path.resolve(__dirname, 'src/main-report-issue.ts'),
+        'environment-validator': path.resolve(__dirname, 'src/main-environment-validator.ts'),
+      },
       output: {
-        entryFileNames: 'index.js',
-        assetFileNames: 'index.[ext]',
+        entryFileNames: '[name].js',
+        assetFileNames: '[name].[ext]',
         // Ensure source map contents are included
         sourcemapExcludeSources: false
       },
