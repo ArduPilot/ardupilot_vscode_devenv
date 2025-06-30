@@ -147,7 +147,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
 
 			// Verify validationResult messages for all expected tools
-			const expectedTools = ['python', 'mavproxy', 'arm-gcc', 'gcc', 'gpp', 'gdb', 'ccache', 'jlink', 'openocd', 'gdbserver', 'pyserial', 'tmux'];
+			const expectedTools = ['python', 'mavproxy', 'arm-gcc', 'gcc', 'g++', 'arm-gdb', 'ccache', 'JLinkGDBServerCL', 'openocd', 'gdbserver', 'pyserial', 'tmux'];
 			for (const toolName of expectedTools) {
 				const toolValidationCall = validationResultCalls.find(call =>
 					call.args[0].tool === toolName
