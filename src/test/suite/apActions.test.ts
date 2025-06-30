@@ -429,7 +429,7 @@ suite('apActions Test Suite', () => {
 			sandbox.stub(vscode.tasks, 'fetchTasks').resolves(mockTasks);
 
 			// Create a new provider to test loadDefaultActiveConfiguration
-			new apActionsProvider(ardupilotDir, mockContext);
+			new apActionsProvider(mockContext);
 
 			// Wait a bit for the async loadDefaultActiveConfiguration to complete
 			await new Promise(resolve => setTimeout(resolve, 100));
@@ -484,7 +484,7 @@ suite('apActions Test Suite', () => {
 			(global as any).activeConfiguration = undefined;
 
 			// Create a new provider to test loadDefaultActiveConfiguration
-			new apActionsProvider(ardupilotDir, mockContext);
+			new apActionsProvider(mockContext);
 
 			// Wait a bit for the async loadDefaultActiveConfiguration to complete
 			await new Promise(resolve => setTimeout(resolve, 100));
@@ -547,7 +547,7 @@ suite('apActions Test Suite', () => {
 			(global as any).activeConfiguration = undefined;
 
 			// Create a new provider to test loadDefaultActiveConfiguration
-			new apActionsProvider(ardupilotDir, mockContext);
+			new apActionsProvider(mockContext);
 
 			// Wait a bit for the async loadDefaultActiveConfiguration to complete
 			await new Promise(resolve => setTimeout(resolve, 100));
@@ -1010,7 +1010,7 @@ suite('apActions Test Suite', () => {
 		let mockProvider: apActionsProvider;
 
 		setup(() => {
-			mockProvider = new apActionsProvider(ardupilotDir, mockContext);
+			mockProvider = new apActionsProvider(mockContext);
 		});
 
 		// No teardown needed since sandbox handles cleanup
@@ -1186,7 +1186,7 @@ suite('apActions Test Suite', () => {
 		let mockProvider: apActionsProvider;
 
 		setup(() => {
-			mockProvider = new apActionsProvider(ardupilotDir, mockContext);
+			mockProvider = new apActionsProvider(mockContext);
 		});
 
 		// No teardown needed since sandbox handles cleanup

@@ -20,7 +20,6 @@ import * as fs from 'fs';
 import { apLog } from './apLog';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { ProgramUtils } from './apProgramUtils';
-import { ToolsConfig } from './apToolsConfig';
 import { targetToVehicleType } from './apLaunch';
 
 // Interface for launch configuration
@@ -488,29 +487,9 @@ export class apActionItem extends vscode.TreeItem {
 			return;
 		}
 
-		// Prepare environment variables with configured CC and CXX paths
-		const terminalEnv: { [key: string]: string } = {};
-
-		// Copy process.env but filter out undefined values
-		for (const [key, value] of Object.entries(process.env)) {
-			if (value !== undefined) {
-				terminalEnv[key] = value;
-			}
-		}
-
-		// Get configured GCC and G++ paths for SITL builds
-		const gccPath = ToolsConfig.getToolPath(ProgramUtils.TOOL_GCC);
-		const gppPath = ToolsConfig.getToolPath(ProgramUtils.TOOL_GPP);
-
-		if (gccPath) {
-			terminalEnv.CC = gccPath;
-			apActionItem.log(`Setting CC environment variable to: ${gccPath}`);
-		}
-
-		if (gppPath) {
-			terminalEnv.CXX = gppPath;
-			apActionItem.log(`Setting CXX environment variable to: ${gppPath}`);
-		}
+		// Prepare environment variables using the shared method from APTaskProvider
+		// This will set CC/CXX appropriately based on SITL vs non-SITL builds
+		const terminalEnv = APTaskProvider.prepareEnvironmentVariables(config);
 
 		// Run the SITL simulation using sim_vehicle.py
 		const terminal = vscode.window.createTerminal({
@@ -534,11 +513,9 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 	private _onDidChangeTreeData: vscode.EventEmitter<apActionItem | undefined> = new vscode.EventEmitter<apActionItem | undefined>();
 	readonly onDidChangeTreeData: vscode.Event<apActionItem | undefined> = this._onDidChangeTreeData.event;
 	private log = new apLog('apActionsProvider');
-	private readonly workspaceRoot: string | undefined;
 	public context: vscode.ExtensionContext;
 
-	constructor(workspaceRoot: string | undefined, context: vscode.ExtensionContext) {
-		this.workspaceRoot = workspaceRoot;
+	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
 		this.log.log('apActionsProvider constructor');
 

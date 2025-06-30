@@ -100,7 +100,7 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	vscode.commands.registerCommand('apBuildConfig.activateOnSelect', (item: apBuildConfig) => item.activate());
 
 	// Register Actions Provider
-	apExtensionContext.actionsProvider = new apActionsProvider(rootPath, _context);
+	apExtensionContext.actionsProvider = new apActionsProvider(_context);
 	vscode.window.registerTreeDataProvider('apActions', apExtensionContext.actionsProvider);
 	// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 	vscode.commands.registerCommand('apActions.refresh', () => apExtensionContext.actionsProvider!.refresh());

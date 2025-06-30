@@ -365,11 +365,11 @@ suite('APTaskProvider Test Suite', () => {
 		});
 
 		test('should set CC and CXX environment variables for non-SITL builds with configured paths', async () => {
-			// Mock ProgramUtils.cachedToolPath to return custom paths
+			// Mock ProgramUtils.cachedToolPath to return custom ARM toolchain paths for non-SITL builds
 			const { ProgramUtils } = await import('../../apProgramUtils');
 			const cachedToolPathStub = sandbox.stub(ProgramUtils, 'cachedToolPath');
-			cachedToolPathStub.withArgs(ProgramUtils.TOOL_GCC).returns('/custom/path/to/gcc');
-			cachedToolPathStub.withArgs(ProgramUtils.TOOL_GPP).returns('/custom/path/to/g++');
+			cachedToolPathStub.withArgs(ProgramUtils.TOOL_ARM_GCC).returns('/custom/path/to/arm-gcc');
+			cachedToolPathStub.withArgs(ProgramUtils.TOOL_ARM_GPP).returns('/custom/path/to/arm-g++');
 
 			// Create a hardware task definition
 			const definition: ArdupilotTaskDefinition = {
@@ -393,9 +393,9 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(execution.options.env);
 
 			const env = execution.options.env as { [key: string]: string };
-			// For all builds, CC and CXX should be set to our custom paths when configured
-			assert.strictEqual(env.CC, '/custom/path/to/gcc');
-			assert.strictEqual(env.CXX, '/custom/path/to/g++');
+			// For non-SITL builds, CC and CXX should be set to ARM toolchain paths
+			assert.strictEqual(env.CC, '/custom/path/to/arm-gcc');
+			assert.strictEqual(env.CXX, '/custom/path/to/arm-g++');
 		});
 	});
 

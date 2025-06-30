@@ -258,9 +258,10 @@ export class APTaskProvider implements vscode.TaskProvider {
 	 * Prepares environment variables with optional CC and CXX paths
 	 * Uses cached tool paths for synchronous operation
 	 * @param includeToolPaths Whether to include CC and CXX environment variables
+	 * @param definition The task definition to determine SITL vs non-SITL builds
 	 * @returns Environment variables object
 	 */
-	private static prepareEnvironmentVariables(includeToolPaths: boolean = true): { [key: string]: string } {
+	public static prepareEnvironmentVariables(definition?: ArdupilotTaskDefinition): { [key: string]: string } {
 		const env: { [key: string]: string } = {};
 
 		// Copy process.env but filter out undefined values
@@ -270,26 +271,44 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 		}
 
-		if (includeToolPaths) {
-			// Get GCC and G++ tool paths using cached values
+		// Check if this is a SITL build from the task definition
+		const isSitlBuild = definition && definition.configure &&
+			definition.configure.toLowerCase().startsWith('sitl');
+
+		if (isSitlBuild) {
+			// For SITL builds, use regular GCC/G++
 			const gccPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_GCC);
 			const gppPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_GPP);
 
 			if (gccPath) {
 				env.CC = gccPath;
-				APTaskProvider.log.log(`Setting CC environment variable to: ${gccPath}`);
+				APTaskProvider.log.log(`Setting CC environment variable for SITL to: ${gccPath}`);
 			}
 
 			if (gppPath) {
 				env.CXX = gppPath;
-				APTaskProvider.log.log(`Setting CXX environment variable to: ${gppPath}`);
+				APTaskProvider.log.log(`Setting CXX environment variable for SITL to: ${gppPath}`);
+			}
+		} else {
+			// For non-SITL builds, use ARM toolchain
+			const armGccPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_ARM_GCC);
+			const armGppPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_ARM_GPP);
+
+			if (armGccPath) {
+				env.CC = armGccPath;
+				APTaskProvider.log.log(`Setting CC environment variable to ARM GCC: ${armGccPath}`);
+			}
+
+			if (armGppPath) {
+				env.CXX = armGppPath;
+				APTaskProvider.log.log(`Setting CXX environment variable to ARM G++: ${armGppPath}`);
 			}
 		}
 
 		return env;
 	}
 
-	static createTask(definition: ArdupilotTaskDefinition, useFullEnvironment: boolean = true): vscode.Task | undefined {
+	static createTask(definition: ArdupilotTaskDefinition): vscode.Task | undefined {
 		const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
 		if (!workspaceRoot) {
 			return undefined;
@@ -299,7 +318,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		const task_name = definition.configName;
 
 		// Prepare environment variables - with or without CC/CXX paths
-		const env = this.prepareEnvironmentVariables(useFullEnvironment);
+		const env = this.prepareEnvironmentVariables(definition);
 
 		// Generate commands using shared method or use custom commands
 		let taskCommand: string;
@@ -400,7 +419,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		if (taskDef) {
 			// Note: resolveTask cannot be async, so we return the task without CC/CXX environment variables
 			// Full environment variables will be set when the task is actually executed
-			return APTaskProvider.createTask(taskDef as ArdupilotTaskDefinition, false);
+			return APTaskProvider.createTask(taskDef as ArdupilotTaskDefinition);
 		}
 		return undefined;
 	}
