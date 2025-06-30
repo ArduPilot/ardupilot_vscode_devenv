@@ -11,7 +11,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         'build-config': path.resolve(__dirname, 'src/main-build-config.ts'),
-        'report-issue': path.resolve(__dirname, 'src/main-report-issue.ts'),
         'environment-validator': path.resolve(__dirname, 'src/main-environment-validator.ts'),
       },
       output: {
