@@ -800,6 +800,11 @@ export class ProgramUtils {
 	 * @returns Cached tool path or undefined if not cached or not available
 	 */
 	public static cachedToolPath(toolId: string): string | undefined {
+		// throw an error if toolPath does not exist in the cache
+		if (!this.toolPathCache.has(toolId)) {
+			ProgramUtils.log.log(`Tool path for ${toolId} not found in cache. Please run findTool first.`);
+			throw new Error(`Tool path for ${toolId} not found in cache. Please run findTool first.`);
+		}
 		return this.toolPathCache.get(toolId);
 	}
 
