@@ -488,6 +488,94 @@ Manufacturer : Generic Inc`;
 			assert(linuxDevice, 'Should have Linux device');
 			assert(windowsDevice, 'Should have Windows device');
 		});
+
+		test('should handle partial WSL detection failures - lsusb fails, PowerShell succeeds', async () => {
+			provider.setIsWSL(true);
+
+			// Mock Windows PowerShell devices to succeed
+			const mockPowerShellOutput = `DeviceID : USB\\VID_2DAE&PID_1011\\5&123456&0&2
+FriendlyName : CubeOrange (COM3)
+Manufacturer : CubePilot`;
+
+			// Mock lsusb to fail but PowerShell to succeed
+			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
+				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
+				if (callback) {
+					setTimeout(() => {
+						if (command === 'lsusb') {
+							// Simulate lsusb failure
+							callback(new Error('lsusb command failed'), '', 'lsusb: error');
+						} else if (command.includes('ls /dev/tty')) {
+							// Simulate no devices found in Linux
+							callback(new Error('No such file or directory'), '', '');
+						} else if (command.includes('powershell.exe')) {
+							// PowerShell succeeds
+							callback(null, mockPowerShellOutput, '');
+						} else {
+							callback(null, '', '');
+						}
+					}, 0);
+				}
+				return {} as cp.ChildProcess;
+			});
+
+			const children = await provider.getChildren();
+
+			// Should still find Windows devices even when Linux detection fails
+			assert(Array.isArray(children));
+			assert(children.length > 0, 'Should find Windows devices when Linux detection fails');
+
+			const windowsDevice = children.find(child => child.device.path === 'COM3');
+			assert(windowsDevice, 'Should find Windows device from PowerShell');
+		});
+
+		test('should handle partial WSL detection failures - PowerShell fails, lsusb succeeds', async () => {
+			provider.setIsWSL(true);
+
+			// Mock Linux devices to succeed
+			const mockLsusbOutput = 'Bus 001 Device 003: ID 2dae:1016 CubePilot CubeOrangePlus';
+			const mockDeviceList = '/dev/ttyACM0';
+
+			// Mock PowerShell to fail but lsusb to succeed
+			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
+				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
+				if (callback) {
+					setTimeout(() => {
+						if (command === 'lsusb') {
+							// lsusb succeeds
+							callback(null, mockLsusbOutput, '');
+						} else if (command.includes('ls /dev/tty')) {
+							// Linux device listing succeeds
+							callback(null, mockDeviceList, '');
+						} else if (command.includes('powershell.exe')) {
+							// Simulate PowerShell failure
+							callback(new Error('PowerShell access denied'), '', 'Access denied');
+						} else {
+							callback(null, '', '');
+						}
+					}, 0);
+				}
+				return {} as cp.ChildProcess;
+			});
+
+			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
+				pid: 12345,
+				output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'), Buffer.from('', 'utf8')],
+				stdout: Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'),
+				stderr: Buffer.from('', 'utf8'),
+				status: 0,
+				signal: null
+			}));
+
+			const children = await provider.getChildren();
+
+			// Should still find Linux devices even when PowerShell fails
+			assert(Array.isArray(children));
+			assert(children.length > 0, 'Should find Linux devices when PowerShell fails');
+
+			const linuxDevice = children.find(child => child.device.path === '/dev/ttyACM0');
+			assert(linuxDevice, 'Should find Linux device from lsusb');
+		});
 	});
 
 	suite('Refresh Functionality', () => {

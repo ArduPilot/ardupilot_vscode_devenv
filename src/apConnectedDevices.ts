@@ -460,18 +460,24 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		// 1. Check if WSL has access to serial devices
 		// 2. Use a combined approach of checking both Windows and Linux devices
 		const devices: DeviceInfo[] = [];
+
+		// Try to get Linux devices first, but don't fail if this doesn't work
 		try {
-			// First check if we can access serial devices directly in WSL
 			const linuxDevices = await this.getLinuxDevices();
 			devices.push(...linuxDevices);
-			// Otherwise, try to use PowerShell from WSL to access Windows devices
-			// this.log.log('No devices found directly in WSL, trying Windows approach...');
-			devices.push(...await this.getWindowsDevices());
-			return devices;
 		} catch (error) {
-			this.log.log(`Error in WSL device detection: ${error}`);
-			return [];
+			this.log.log(`Error getting Linux devices in WSL: ${error}`);
 		}
+
+		// Try to get Windows devices, but don't fail if this doesn't work
+		try {
+			const windowsDevices = await this.getWindowsDevices();
+			devices.push(...windowsDevices);
+		} catch (error) {
+			this.log.log(`Error getting Windows devices in WSL: ${error}`);
+		}
+
+		return devices;
 	}
 
 	private async getDarwinDevices(): Promise<DeviceInfo[]> {
