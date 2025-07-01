@@ -955,9 +955,14 @@ export class ValidateEnvironmentPanel {
 			// Add the disposable to our list for cleanup
 			this._disposables.push(disposable);
 
-			// Send installation command with conditional exit (only on success)
-			terminal.sendText(`${installCommand} && echo "\nInstallation completed successfully! Terminal will close in 3 seconds..." && sleep 3 && exit || echo "\nInstallation failed. Please check the errors above. Terminal will remain open."`);
+			// Show the terminal first
 			terminal.show();
+
+			// Wait 2 seconds for Python extension to activate the environment
+			setTimeout(() => {
+				// Send installation command with conditional exit (only on success)
+				terminal.sendText(`${installCommand} && echo "\nInstallation completed successfully! Terminal will close in 3 seconds..." && sleep 3 && exit || echo "\nInstallation failed. Please check the errors above. Terminal will remain open."`);
+			}, 2000);
 
 			vscode.window.showInformationMessage(
 				'Installing Python packages... Validation will refresh automatically when installation completes successfully.',
