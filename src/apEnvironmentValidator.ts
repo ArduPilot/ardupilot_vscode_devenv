@@ -915,7 +915,10 @@ export class ValidateEnvironmentPanel {
 	 * Opens a terminal to install missing Python packages
 	 */
 	private async _installPythonPackages(): Promise<void> {
-		const packages = ProgramUtils.REQUIRED_PYTHON_PACKAGES.map(pkg => pkg.name);
+		const packages = ProgramUtils.REQUIRED_PYTHON_PACKAGES.map(pkg => {
+			// Include version if specified
+			return pkg.version ? `${pkg.name}==${pkg.version}` : pkg.name;
+		});
 		const packageList = packages.join(' ');
 
 		// Get the same Python interpreter that was used for validation

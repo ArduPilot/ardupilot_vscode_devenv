@@ -91,13 +91,18 @@ export class ProgramUtils {
 	public static readonly TOOL_TMUX = ProgramUtils.ToolId.TMUX;
 
 	// Python packages for ArduPilot
-	public static readonly REQUIRED_PYTHON_PACKAGES = [
-		{ name: 'empy', description: 'Template engine for code generation' },
+	public static readonly REQUIRED_PYTHON_PACKAGES: readonly {
+		readonly name: string;
+		readonly version?: string;
+		readonly description: string;
+	}[] = [
+		{ name: 'empy', version: '3.3.4', description: 'Template engine for code generation' },
 		{ name: 'future', description: 'Python 2/3 compatibility' },
 		{ name: 'pymavlink', description: 'MAVLink protocol implementation' },
 		{ name: 'lxml', description: 'XML processing for MAVLink' },
 		{ name: 'pexpect', description: 'Process control and automation' },
-		{ name: 'dronecan', description: 'DroneCAN protocol implementation' }
+		{ name: 'dronecan', description: 'DroneCAN protocol implementation' },
+		{ name: 'pyserial', description: 'Serial communication library' }
 	] as const;
 
 	// usual list of paths for the tools per platform per tool id
