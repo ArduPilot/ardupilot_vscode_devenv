@@ -350,7 +350,8 @@
     "test:apWelcomeItem": "npm run compile && node ./out/test/runTest.js --test-suite=apWelcomeItem",
     "test:apWelcomeProvider": "npm run compile && node ./out/test/runTest.js --test-suite=apWelcomeProvider",
     "test:extension": "npm run compile && node ./out/test/runTest.js --test-suite=extension",
-    "test:taskProvider": "npm run compile && node ./out/test/runTest.js --test-suite=taskProvider"
+    "test:taskProvider": "npm run compile && node ./out/test/runTest.js --test-suite=taskProvider",
+    "test:e2e": "npm run compile && node ./out/test/runE2ETest.js"
   },
   "devDependencies": {
     "@types/assert": "^1.5.11",
