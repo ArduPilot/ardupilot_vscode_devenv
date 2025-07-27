@@ -801,11 +801,31 @@ export class ProgramUtils {
 	/**
 	 * Gets cached tool path from the last findTool call
 	 * This is synchronous and fast, but may not reflect the latest state
+	 * For Python, always fetches fresh from extension to ensure correct interpreter is used
 	 * @param toolId The ID of the tool
 	 * @returns Cached tool path or undefined if not cached or not available
 	 */
 	public static cachedToolPath(toolId: string): string | undefined {
-		// throw an error if toolPath does not exist in the cache
+		// Special handling for Python - always fetch fresh from extension
+		if (toolId === this.TOOL_PYTHON) {
+			try {
+				const pythonExtension = vscode.extensions.getExtension('ms-python.python');
+				if (pythonExtension && pythonExtension.isActive) {
+					const pythonApi = pythonExtension.exports;
+					const interpreterPath = pythonApi.settings.getExecutionDetails().execCommand[0];
+
+					if (interpreterPath && fs.existsSync(interpreterPath)) {
+						this.log.log(`Using fresh Python interpreter from MS Python extension: ${interpreterPath}`);
+						return interpreterPath;
+					}
+				}
+			} catch (error) {
+				this.log.log(`Error getting fresh Python interpreter from extension: ${error}`);
+				// Fall back to cache if extension query fails
+			}
+		}
+
+		// For all other tools (and Python fallback), use cache
 		if (!this.toolPathCache.has(toolId)) {
 			ProgramUtils.log.log(`Tool path for ${toolId} not found in cache. Please run findTool first.`);
 			throw new Error(`Tool path for ${toolId} not found in cache. Please run findTool first.`);
