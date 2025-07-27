@@ -530,7 +530,12 @@ suite('APTaskProvider Test Suite', () => {
 	});
 
 	suite('Build Command Generation', () => {
-		test('should generate correct build commands for SITL configuration', () => {
+		test('should generate correct build commands for SITL configuration', async () => {
+			// Mock ProgramUtils.cachedToolPath to return predictable python3 path
+			const { ProgramUtils } = await import('../../apProgramUtils');
+			const cachedToolPathStub = sandbox.stub(ProgramUtils, 'cachedToolPath');
+			cachedToolPathStub.withArgs(ProgramUtils.TOOL_PYTHON).returns('python3');
+
 			const commands = APTaskProvider.generateBuildCommands(
 				'sitl',
 				'copter',
@@ -545,7 +550,12 @@ suite('APTaskProvider Test Suite', () => {
 			assert.strictEqual(commands.taskCommand, 'cd ../../ && python3 /mock/workspace/waf configure --board=sitl --debug && python3 /mock/workspace/waf copter --verbose');
 		});
 
-		test('should generate correct build commands without options', () => {
+		test('should generate correct build commands without options', async () => {
+			// Mock ProgramUtils.cachedToolPath to return predictable python3 path
+			const { ProgramUtils } = await import('../../apProgramUtils');
+			const cachedToolPathStub = sandbox.stub(ProgramUtils, 'cachedToolPath');
+			cachedToolPathStub.withArgs(ProgramUtils.TOOL_PYTHON).returns('python3');
+
 			const commands = APTaskProvider.generateBuildCommands(
 				'CubeOrange',
 				'plane',
@@ -582,7 +592,12 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(commands.buildCommand.includes('python3 waf'));
 		});
 
-		test('should properly escape and format command strings', () => {
+		test('should properly escape and format command strings', async () => {
+			// Mock ProgramUtils.cachedToolPath to return predictable python3 path
+			const { ProgramUtils } = await import('../../apProgramUtils');
+			const cachedToolPathStub = sandbox.stub(ProgramUtils, 'cachedToolPath');
+			cachedToolPathStub.withArgs(ProgramUtils.TOOL_PYTHON).returns('python3');
+
 			const commands = APTaskProvider.generateBuildCommands(
 				'board-with-dash',
 				'target_with_underscore',
