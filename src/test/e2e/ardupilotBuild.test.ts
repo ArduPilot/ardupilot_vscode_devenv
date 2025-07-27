@@ -127,12 +127,12 @@ suite('E2E: ArduPilot Build', function() {
 						resolve(); // Don't fail the test for venv issues
 					});
 
-					// Timeout after 30 seconds
+					// Timeout after 60 seconds
 					setTimeout(() => {
 						venvProcess.kill();
 						console.log('DEBUG: Virtual environment creation timed out, but continuing...');
 						resolve();
-					}, 30000);
+					}, 60000);
 					console.log(`DEBUG: Spawned venv process with PID: ${venvProcess.pid}`);
 				});
 			} catch (error) {
@@ -140,6 +140,55 @@ suite('E2E: ArduPilot Build', function() {
 			}
 		} else {
 			console.log('DEBUG: Virtual environment already exists, skipping creation');
+		}
+
+		// Set Python interpreter by directly updating configuration (more reliable for E2E tests)
+		try {
+			if (fs.existsSync(venvPath)) {
+				console.log(`DEBUG: Virtual environment verified at ${venvPath}`);
+
+				const pythonPath = path.join(venvPath, 'bin', 'python');
+				console.log(`DEBUG: Setting Python interpreter to: ${pythonPath}`);
+
+				// Directly update the workspace configuration to set the Python interpreter
+				// This is more reliable for E2E tests than trying to mock the complex QuickPick UI
+				try {
+					const workspaceUri = vscode.Uri.file(ardupilotDir);
+					const config = vscode.workspace.getConfiguration('python', workspaceUri);
+					await config.update('defaultInterpreterPath', pythonPath, vscode.ConfigurationTarget.WorkspaceFolder);
+					console.log(`DEBUG: Successfully set Python interpreter to: ${pythonPath}`);
+
+					// Verify the interpreter was set
+					const currentPythonPath = config.get('defaultInterpreterPath');
+					console.log(`DEBUG: Current python interpreter after setting: ${currentPythonPath}`);
+
+					// Also try to activate the Python extension to ensure it picks up the new interpreter
+					const pythonExtension = vscode.extensions.getExtension('ms-python.python');
+					if (pythonExtension) {
+						await pythonExtension.activate();
+						console.log('DEBUG: Python extension activated successfully');
+
+						// Trigger a refresh of the Python environments if the API is available
+						try {
+							const pythonApi = pythonExtension.exports;
+							if (pythonApi && typeof pythonApi.environments?.refreshEnvironments === 'function') {
+								await pythonApi.environments.refreshEnvironments();
+								console.log('DEBUG: Triggered Python environments refresh');
+							}
+						} catch (refreshError) {
+							console.log(`DEBUG: Failed to refresh Python environments: ${refreshError}, but continuing...`);
+						}
+					}
+
+					console.log('DEBUG: Python interpreter configuration completed successfully');
+				} catch (configError) {
+					console.log(`DEBUG: Failed to set interpreter via workspace config: ${configError}`);
+				}
+			} else {
+				console.log('DEBUG: Virtual environment verification failed, but continuing...');
+			}
+		} catch (error) {
+			console.log(`DEBUG: Python interpreter setup failed: ${error}, but continuing...`);
 		}
 
 		// Install Python packages in the virtual environment
