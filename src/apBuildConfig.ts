@@ -88,6 +88,12 @@ export class apBuildConfig extends vscode.TreeItem {
 
 		const taskDef = this.task.definition as ArdupilotTaskDefinition;
 
+		// Check if workspace is available before trying to save settings
+		if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+			apBuildConfig.log('No workspace available to save active configuration');
+			return;
+		}
+
 		// Save the selection to workspace settings using configName
 		vscode.workspace.getConfiguration('ardupilot').update(
 			'activeConfiguration',
@@ -97,6 +103,8 @@ export class apBuildConfig extends vscode.TreeItem {
 			// Set as active configuration (this will trigger a refresh through the watcher)
 			vscode.commands.executeCommand('apActions.setActiveConfiguration', this.task);
 			vscode.window.showInformationMessage(`Activated ${taskDef.configName} configuration`);
+		}, (error) => {
+			apBuildConfig.log(`Error saving active configuration: ${error}`);
 		});
 
 		// Refresh the tree view to update UI

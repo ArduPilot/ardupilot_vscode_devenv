@@ -227,6 +227,11 @@ export class APTaskProvider implements vscode.TaskProvider {
 		}
 
 		// Get the tasks configuration using the VS Code API
+		if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+			APTaskProvider.log.log('No workspace folders available for tasks configuration');
+			vscode.window.showErrorMessage('No workspace folder is open for tasks configuration.');
+			return undefined;
+		}
 		const tasksConfig = vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri);
 
 		// Get current tasks array or initialize empty array if it doesn't exist

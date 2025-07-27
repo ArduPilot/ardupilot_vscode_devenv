@@ -616,12 +616,20 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 			setActiveConfiguration(selected.task);
 			this.log.log(`Set active configuration to: ${selected.label}`);
 
-			// Save the selection to workspace settings
-			await vscode.workspace.getConfiguration('ardupilot').update(
-				'activeConfiguration',
-				selected.label,
-				vscode.ConfigurationTarget.Workspace
-			);
+			// Save the selection to workspace settings if workspace is available
+			if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+				try {
+					await vscode.workspace.getConfiguration('ardupilot').update(
+						'activeConfiguration',
+						selected.label,
+						vscode.ConfigurationTarget.Workspace
+					);
+				} catch (error) {
+					this.log.log(`Error saving active configuration: ${error}`);
+				}
+			} else {
+				this.log.log('No workspace available to save active configuration');
+			}
 
 			this.refresh();
 		}
