@@ -54,10 +54,17 @@ jobs:
       - name: Compile TypeScript
         run: npm run compile
 
-      - name: Run E2E Test
+      - name: Run E2E Test (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           echo "Running E2E test suite..."
           xvfb-run -a npm run test:e2e
+
+      - name: Run E2E Test (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "Running E2E test suite..."
+          npm run test:e2e
 
       - name: Upload test results
         if: failure()
