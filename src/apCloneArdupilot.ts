@@ -126,11 +126,33 @@ export class CloneArdupilot extends apWelcomeItem {
 						};
 						const git = simpleGit({ baseDir: uri[0].fsPath, progress: progController, abort: abortController.signal });
 						git.clone('https://www.github.com/ardupilot/ardupilot.git', name || 'ardupilot', ['--progress'])
-							.then(() => {
+							.then(async () => {
+								this.log.log('Clone completed, initializing submodules...');
+								progressReference?.report({ message: 'Initializing submodules...', increment: 0 });
+
+								// Initialize and update submodules
+								const repoGit = simpleGit({ baseDir: finalUri.fsPath, abort: abortController.signal });
+								try {
+									this.log.log('Starting submodule initialization...');
+									await repoGit.submoduleInit();
+									this.log.log('Submodules initialized');
+									progressReference?.report({ message: 'Updating submodules...', increment: 0 });
+
+									this.log.log('Starting submodule update...');
+									await repoGit.submoduleUpdate(['--init', '--recursive']);
+									this.log.log('Submodules updated');
+									progressReference?.report({ message: 'Clone complete', increment: 0 });
+								} catch (submoduleError) {
+									this.log.log(`Submodule error: ${submoduleError}`);
+									// Don't fail the entire clone for submodule issues
+									vscode.window.showWarningMessage('Repository cloned successfully, but submodule initialization failed. You may need to run "git submodule update --init --recursive" manually.');
+								}
+
 								// close the progress bar
 								progressFinishPromiseResolve();
 								// add the cloned repository to the workspace
 								vscode.workspace.updateWorkspaceFolders(vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders.length : 0, null, { uri: finalUri });
+								vscode.window.showInformationMessage(`Cloned Ardupilot to ${finalUri.fsPath}`);
 							}, () => {
 								progressFinishPromiseResolve();
 								if (!abortController.signal.aborted) {
