@@ -6,7 +6,7 @@ import { APExtensionContext } from '../../extension';
 
 let apExtensionContext: APExtensionContext | undefined;
 
-export async function getApExtApi(): Promise<APExtensionContext> {
+export async function getApExtApi(wait_active: boolean = true): Promise<APExtensionContext> {
 	const extension: vscode.Extension<APExtensionContext> | undefined = vscode.extensions.getExtension('ardupilot-org.ardupilot-devenv');
 	if (!extension) {
 		throw new Error('ArduPilot extension is not active');
@@ -16,9 +16,11 @@ export async function getApExtApi(): Promise<APExtensionContext> {
 		if (!apExtensionContext) {
 			throw new Error('Failed to activate ArduPilot extension');
 		}
-		await apExtensionContext.active;
+		if (wait_active) {
+			await apExtensionContext.active;
+		}
 	}
-	if (!apExtensionContext || !apExtensionContext.active) {
+	if (!apExtensionContext || (wait_active && !apExtensionContext.active)) {
 		throw new Error('ArduPilot extension is not active');
 	}
 	return apExtensionContext;
