@@ -47,7 +47,9 @@ export class APTaskProvider implements vscode.TaskProvider {
 		}
 
 		const waffile = path.join(workspaceRoot, 'waf');
-		const wafCommand = `python3 ${waffile}`;
+		// use python from ProgramUtils
+		const python = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_PYTHON);
+		const wafCommand = `${python} ${waffile}`;
 
 		// Generate configure command
 		const configureCommand = `${wafCommand} configure --board=${board}${configureOptions ? ' ' + configureOptions : ''}`;
@@ -56,7 +58,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		const buildCommand = `${wafCommand} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
 
 		// Generate task command (with cd prefix for task execution)
-		const taskCommand = `cd ../../ && ${configureCommand} && python3 ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
+		const taskCommand = `cd ../../ && ${configureCommand} && ${python} ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
 
 		return {
 			configureCommand,
@@ -305,6 +307,14 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 		}
 
+		// also set PYTHON environment variable
+		const pythonPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_PYTHON);
+		if (pythonPath) {
+			env.PYTHON = pythonPath;
+			APTaskProvider.log.log(`Setting PYTHON environment variable to: ${pythonPath}`);
+		} else {
+			APTaskProvider.log.log('No PYTHON environment variable set, using default');
+		}
 		return env;
 	}
 
@@ -349,6 +359,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			if (!fs.existsSync(buildDir)) {
 				try {
 					fs.mkdirSync(buildDir, { recursive: true });
+					APTaskProvider.log.log(`Created build directory: ${buildDir}`);
 				} catch (error) {
 					APTaskProvider.log.log(`Failed to create build directory: ${error}`);
 					vscode.window.showErrorMessage(`Failed to create build directory: ${error}`);
@@ -489,7 +500,12 @@ export function getFeaturesList(extensionUri: vscode.Uri): Record<string, unknow
 	}
 	// run python script resources/featureLoader.py
 	const featureLoaderPath = path.join(extensionUri.path, 'resources', 'featureLoader.py');
-	const featureLoader = cp.spawnSync('python3', [featureLoaderPath, buildOptionsPath]);
+	// use python tool from ProgramUtils
+	const pythonPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_PYTHON);
+	if (!pythonPath) {
+		throw new Error('Python tool not found');
+	}
+	const featureLoader = cp.spawnSync(pythonPath, [featureLoaderPath, buildOptionsPath]);
 	if (featureLoader.status !== 0) {
 		throw new Error('featureLoader.py failed with exit code ' + featureLoader.status);
 	}
