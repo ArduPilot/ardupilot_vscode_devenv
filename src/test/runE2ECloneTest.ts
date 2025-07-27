@@ -2,6 +2,8 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { runTests, downloadAndUnzipVSCode, resolveCliArgsFromVSCodeExecutablePath } from '@vscode/test-electron';
+import * as os from 'os';
+import * as fs from 'fs';
 
 const execAsync = promisify(exec);
 
@@ -50,6 +52,12 @@ async function main() {
 		await installExtension(vscodeExecutablePath, 'marus25.cortex-debug');
 		await installExtension(vscodeExecutablePath, 'ms-vscode.cpptools');
 		await installExtension(vscodeExecutablePath, 'ms-python.python');
+		// create tmp folder ardupilot-e2e
+		const tempDir = path.join(os.tmpdir(), 'ardupilot-e2e');
+		//mkdir if it doesn't exist
+		if (!fs.existsSync(tempDir)) {
+			fs.mkdirSync(tempDir);
+		}
 
 		// Set environment variable to run only clone tests
 		process.env.E2E_TEST_MODE = 'clone';
@@ -68,6 +76,7 @@ async function main() {
 				'--disable-background-timer-throttling',
 				'--disable-backgrounding-occluded-windows',
 				'--disable-renderer-backgrounding',
+				tempDir // Open the temporary directory for E2E tests
 			],
 		});
 		console.log('E2E clone test completed successfully.');
