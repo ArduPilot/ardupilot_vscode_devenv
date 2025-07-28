@@ -251,6 +251,7 @@ export class ValidateEnvironmentPanel {
 		const ccacheCheck = this._checkCCache();
 		const pyserialCheck = ProgramUtils.findPyserial();
 		const tmuxCheck = ProgramUtils.findTmux();
+		const lsusbCheck = ProgramUtils.findLsusb();
 
 		// Check optional tools
 		const jlinkCheck = ProgramUtils.findJLinkGDBServerCLExe().catch(() => ({ available: false, isCustomPath: false }));
@@ -272,7 +273,8 @@ export class ValidateEnvironmentPanel {
 			openocdResult,
 			gdbserverResult,
 			pyserialResult,
-			tmuxResult
+			tmuxResult,
+			lsusbResult
 		] = await Promise.all([
 			pythonCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
 			pythonWinCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
@@ -287,7 +289,8 @@ export class ValidateEnvironmentPanel {
 			openocdCheck,
 			gdbserverCheck,
 			pyserialCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			tmuxCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message }))
+			tmuxCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
+			lsusbCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message }))
 		]);
 
 		// Report results to webview
@@ -316,6 +319,7 @@ export class ValidateEnvironmentPanel {
 		this._reportToolStatus(ProgramUtils.TOOL_GDBSERVER, gdbserverResult);
 		this._reportToolStatus(ProgramUtils.TOOL_PYSERIAL, pyserialResult);
 		this._reportToolStatus(ProgramUtils.TOOL_TMUX, tmuxResult);
+		this._reportToolStatus(ProgramUtils.TOOL_LSUSB, lsusbResult);
 
 		// Generate summary - only include required tools in the summary
 		const summaryTools = [pythonResult, mavproxyResult, armGccResult, gccResult, gppResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult, tmuxResult];
@@ -378,7 +382,8 @@ export class ValidateEnvironmentPanel {
 			[ProgramUtils.TOOL_OPENOCD]: 'OpenOCD',
 			[ProgramUtils.TOOL_GDBSERVER]: 'GDB Server',
 			[ProgramUtils.TOOL_PYSERIAL]: 'PySerial',
-			[ProgramUtils.TOOL_TMUX]: 'tmux'
+			[ProgramUtils.TOOL_TMUX]: 'tmux',
+			[ProgramUtils.TOOL_LSUSB]: 'lsusb'
 		};
 
 		const toolName = toolNames[toolId] || toolId;
@@ -462,6 +467,10 @@ export class ValidateEnvironmentPanel {
 				linux: 'sudo apt-get update && sudo apt-get install -y tmux',
 				darwin: 'brew install tmux',
 				description: 'Install tmux terminal multiplexer'
+			},
+			[ProgramUtils.TOOL_LSUSB]: {
+				linux: 'sudo apt-get update && sudo apt-get install -y usbutils',
+				description: 'Install lsusb utility for USB device detection'
 			}
 		};
 
@@ -771,7 +780,8 @@ export class ValidateEnvironmentPanel {
 					ProgramUtils.TOOL_ARM_GDB,
 					ProgramUtils.TOOL_GDBSERVER,
 					ProgramUtils.TOOL_PYSERIAL,
-					ProgramUtils.TOOL_TMUX
+					ProgramUtils.TOOL_TMUX,
+					ProgramUtils.TOOL_LSUSB
 				];
 
 				// Remove each tool path
@@ -854,13 +864,17 @@ export class ValidateEnvironmentPanel {
 			{ id: ProgramUtils.TOOL_OPENOCD, name: 'OpenOCD (Optional)' },
 			{ id: ProgramUtils.TOOL_GDBSERVER, name: 'GDB Server' },
 			{ id: ProgramUtils.TOOL_PYSERIAL, name: 'PySerial' },
-			{ id: ProgramUtils.TOOL_TMUX, name: 'tmux' }
+			{ id: ProgramUtils.TOOL_TMUX, name: 'tmux' },
+			{ id: ProgramUtils.TOOL_LSUSB, name: 'lsusb (Linux USB utilities)', linuxOnly: true }
 		];
 
 		// Filter tools based on current platform
 		const tools = allTools.filter(tool => {
 			if (tool.wslOnly) {
 				return isWSL;
+			}
+			if (tool.linuxOnly) {
+				return os.platform() === 'linux';
 			}
 			return true;
 		});

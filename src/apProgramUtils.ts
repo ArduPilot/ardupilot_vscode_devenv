@@ -68,7 +68,8 @@ export class ProgramUtils {
 		ARM_GDB: 'arm-gdb',
 		GDBSERVER: 'gdbserver',
 		PYSERIAL: 'pyserial',
-		TMUX: 'tmux'
+		TMUX: 'tmux',
+		LSUSB: 'lsusb'
 	} as const;
 
 	/**
@@ -89,6 +90,7 @@ export class ProgramUtils {
 	public static readonly TOOL_GDBSERVER = ProgramUtils.ToolId.GDBSERVER;
 	public static readonly TOOL_PYSERIAL = ProgramUtils.ToolId.PYSERIAL;
 	public static readonly TOOL_TMUX = ProgramUtils.ToolId.TMUX;
+	public static readonly TOOL_LSUSB = ProgramUtils.ToolId.LSUSB;
 
 	// Python packages for ArduPilot
 	public static readonly REQUIRED_PYTHON_PACKAGES: readonly {
@@ -146,6 +148,8 @@ export class ProgramUtils {
 				{ linux: ['gdbserver'], darwin: ['gdbserver'] },
 			[ProgramUtils.TOOL_TMUX]:
 				{ linux: ['tmux'], darwin: ['tmux'] },
+			[ProgramUtils.TOOL_LSUSB]:
+				{ linux: ['lsusb'], darwin: [] }, // lsusb is Linux-specific
 		};
 
 	// find the tool path for the tool id
@@ -448,6 +452,29 @@ export class ProgramUtils {
 	public static async findTmux(): Promise<ProgramInfo> {
 		// check for tmux
 		return this.findProgram(this.TOOL_TMUX, ['-V']);
+	}
+
+	// find lsusb
+	public static async findLsusb(): Promise<ProgramInfo> {
+		// lsusb is only available on Linux
+		const platform = os.platform();
+		if (platform === 'linux') {
+			const result = await this.findProgram(this.TOOL_LSUSB, ['-V'], {
+				versionRegex: /lsusb\s+(\S+)/
+			});
+
+			// If lsusb is not available, provide installation instructions
+			if (!result.available) {
+				return {
+					available: false,
+					info: 'To install lsusb, run: sudo apt-get install usbutils',
+					isCustomPath: false
+				};
+			}
+
+			return result;
+		}
+		return { available: false, info: 'lsusb is only available on Linux systems', isCustomPath: false };
 	}
 
 	/**
@@ -783,6 +810,9 @@ export class ProgramUtils {
 			break;
 		case this.TOOL_TMUX:
 			result = await this.findTmux();
+			break;
+		case this.TOOL_LSUSB:
+			result = await this.findLsusb();
 			break;
 		default:
 			result = { available: false, isCustomPath: false };

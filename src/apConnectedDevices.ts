@@ -352,9 +352,21 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	}
 
 	private async getLinuxDevices(): Promise<DeviceInfo[]> {
+		// Check if lsusb is available first
+		const lsusbInfo = await ProgramUtils.findLsusb();
+		let lsusbCmd = 'lsusb'; // Default fallback for testing
+
+		if (!lsusbInfo.available) {
+			// Log the info but don't fail completely - this allows WSL to continue gracefully
+			this.log.log(`lsusb not available: ${lsusbInfo.info || 'Please install usbutils package'}`);
+			// Still try with default 'lsusb' command in case tests mock it
+		} else {
+			lsusbCmd = lsusbInfo.path || 'lsusb';
+		}
+
 		return new Promise((resolve, reject) => {
-			// Use lsusb and grep for USB devices
-			cp.exec('lsusb', (error, stdout) => {
+			// Use lsusb for USB devices
+			cp.exec(lsusbCmd, (error, stdout) => {
 				if (error) {
 					reject(new Error(`Error executing lsusb: ${error.message}`));
 					return;
