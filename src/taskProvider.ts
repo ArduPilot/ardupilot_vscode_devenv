@@ -20,6 +20,157 @@ import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
+import { apTerminalMonitor } from './apTerminalMonitor';
+
+/**
+ * Custom execution class for ArduPilot build tasks
+ * Manages dedicated terminals and monitors output using terminal shell execution APIs
+ */
+class APCustomExecution extends vscode.CustomExecution {
+	public static readonly TERMINAL_NAME_PREFIX = 'ArduPilot Build';
+	private static log = new apLog('APCustomExecution');
+	private terminalOutputDisposables: vscode.Disposable[] = [];
+
+	constructor(
+		private definition: ArdupilotTaskDefinition,
+		private taskCommand: string,
+		private buildDir: string,
+		private env: { [key: string]: string }
+	) {
+		super(async (): Promise<vscode.Pseudoterminal> => {
+			return new APBuildPseudoterminal(
+				this.definition,
+				this.taskCommand,
+				this.buildDir,
+				this.env
+			);
+		});
+	}
+}
+
+/**
+ * Pseudoterminal implementation for ArduPilot build tasks
+ * Handles terminal creation, command execution, and output monitoring using apTerminalMonitor
+ */
+class APBuildPseudoterminal implements vscode.Pseudoterminal {
+	private writeEmitter = new vscode.EventEmitter<string>();
+	private closeEmitter = new vscode.EventEmitter<number>();
+	private static log = new apLog('APBuildPseudoterminal');
+	private terminalMonitor: apTerminalMonitor | undefined;
+
+	onDidWrite: vscode.Event<string> = this.writeEmitter.event;
+	onDidClose: vscode.Event<number> = this.closeEmitter.event;
+
+	constructor(
+		private definition: ArdupilotTaskDefinition,
+		private taskCommand: string,
+		private buildDir: string,
+		private env: { [key: string]: string }
+	) {}
+
+	open(): void {
+		this.writeEmitter.fire('Starting ArduPilot build task...\r\n');
+		APBuildPseudoterminal.log.log(`Opening pseudoterminal for task: ${this.definition.configName}`);
+
+		// Set up terminal monitoring with apTerminalMonitor
+		this.setupTerminalMonitoring();
+		if (!this.terminalMonitor) {
+			this.writeEmitter.fire('Error: Terminal monitor could not be initialized.\r\n');
+			return;
+		}
+
+		this.terminalMonitor.createTerminal({
+			env: this.env,
+			cwd: this.buildDir
+		}, true); // we dispose existing terminal and start again
+
+		// Execute the build command
+		this.executeBuildCommand();
+	}
+
+	close(): void {
+		APBuildPseudoterminal.log.log(`Closing pseudoterminal for task: ${this.definition.configName}`);
+
+		// Clean up terminal monitoring
+		if (this.terminalMonitor) {
+			this.terminalMonitor.dispose();
+			this.terminalMonitor = undefined;
+		}
+
+		this.writeEmitter.fire('Build task completed.\r\n');
+		this.closeEmitter.fire(0);
+	}
+
+	private setupTerminalMonitoring(): void {
+		const terminalName = `${APCustomExecution.TERMINAL_NAME_PREFIX}: ${this.definition.configName}`;
+
+		// Create terminal monitor instance
+		this.terminalMonitor = new apTerminalMonitor(terminalName);
+
+		// Set up text callback for real-time output
+		this.terminalMonitor.addTextCallback((text) => {
+			const trimmedOutput = text.trim();
+			if (trimmedOutput) {
+				// Write to pseudoterminal
+				this.writeEmitter.fire(`${text}\r\n`);
+
+				// Redirect to extension logger
+				apLog.channel.appendLine(`[BUILD] ${trimmedOutput}`);
+			}
+		});
+
+		APBuildPseudoterminal.log.log('Terminal monitoring setup completed with apTerminalMonitor');
+	}
+
+	private executeBuildCommand(): void {
+		if (!this.terminalMonitor) {
+			this.writeEmitter.fire('Error: No terminal or terminal monitor available for build execution\r\n');
+			this.closeEmitter.fire(1);
+			return;
+		}
+
+		if (!this.terminalMonitor) {
+			this.writeEmitter.fire('Error: Terminal monitor was closed during initialization delay\r\n');
+			this.closeEmitter.fire(1);
+			return;
+		}
+
+		APBuildPseudoterminal.log.log(`Executing build command: ${this.taskCommand}`);
+		this.writeEmitter.fire(`Executing: ${this.taskCommand}\r\n`);
+
+		// Use the terminalMonitor.runCommand method for better command lifecycle tracking
+		this.terminalMonitor.runCommand(this.taskCommand)
+			.then(async exitCode => {
+				APBuildPseudoterminal.log.log(`Shell execution ended with exit code: ${exitCode}`);
+				this.writeEmitter.fire(`Build completed with exit code: ${exitCode}\r\n`);
+				// Redirect completion info to extension logger
+				apLog.channel.appendLine('[BUILD] ======== Build Completed ========');
+				apLog.channel.appendLine(`[BUILD] Task: ${this.definition.configName}`);
+				apLog.channel.appendLine(`[BUILD] Exit code: ${exitCode}`);
+				apLog.channel.appendLine(`[BUILD] Status: ${exitCode === 0 ? 'SUCCESS ✅' : 'FAILED ❌'}`);
+				apLog.channel.appendLine('[BUILD] ===================================');
+
+				// Close the pseudoterminal with the actual exit code
+				this.closeEmitter.fire(exitCode || 0);
+			})
+			.catch(error => {
+				const errorMsg = error instanceof Error ? error.message : String(error);
+				APBuildPseudoterminal.log.log(`Build command failed: ${errorMsg}`);
+				this.writeEmitter.fire(`Error: ${errorMsg}\r\n`);
+				this.closeEmitter.fire(1);
+			});
+
+		APBuildPseudoterminal.log.log('Build command initiated');
+
+		// Log build start info immediately when command is initiated
+		apLog.channel.appendLine('[BUILD] ======== Build Started ========');
+		apLog.channel.appendLine(`[BUILD] Task: ${this.definition.configName}`);
+		apLog.channel.appendLine(`[BUILD] Command: ${this.taskCommand}`);
+		apLog.channel.appendLine(`[BUILD] Working Directory: ${this.buildDir}`);
+		apLog.channel.appendLine('[BUILD] ================================');
+	}
+
+}
 
 export class APTaskProvider implements vscode.TaskProvider {
 	static ardupilotTaskType = 'ardupilot';
@@ -47,18 +198,15 @@ export class APTaskProvider implements vscode.TaskProvider {
 		}
 
 		const waffile = path.join(workspaceRoot, 'waf');
-		// use python from ProgramUtils
-		const python = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_PYTHON);
-		const wafCommand = `${python} ${waffile}`;
 
-		// Generate configure command
-		const configureCommand = `${wafCommand} configure --board=${board}${configureOptions ? ' ' + configureOptions : ''}`;
+		// Generate configure command with optional --python argument
+		const configureCommand = `${waffile} configure --board=${board} ${configureOptions ? ' ' + configureOptions : ''}`;
 
 		// Generate build command
-		const buildCommand = `${wafCommand} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
+		const buildCommand = `${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
 
-		// Generate task command (with cd prefix for task execution)
-		const taskCommand = `cd ../../ && ${configureCommand} && ${python} ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
+		// Generate task command (with cd prefix for task execution and optional venv activation)
+		const taskCommand = `cd ../../ && ${configureCommand} && python3 ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
 
 		return {
 			configureCommand,
@@ -299,16 +447,10 @@ export class APTaskProvider implements vscode.TaskProvider {
 		} else {
 			// For non-SITL builds, use ARM toolchain
 			const armGccPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_ARM_GCC);
-			const armGppPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_ARM_GPP);
 
-			if (armGccPath) {
-				env.CC = armGccPath;
-				APTaskProvider.log.log(`Setting CC environment variable to ARM GCC: ${armGccPath}`);
-			}
-
-			if (armGppPath) {
-				env.CXX = armGppPath;
-				APTaskProvider.log.log(`Setting CXX environment variable to ARM G++: ${armGppPath}`);
+			const armBinPath = armGccPath ? path.dirname(armGccPath) : undefined;
+			if (armBinPath) {
+				env.PATH = env.PATH ? `${env.PATH}:${armBinPath}` : armBinPath;
 			}
 		}
 
@@ -387,9 +529,11 @@ export class APTaskProvider implements vscode.TaskProvider {
 			vscode.TaskScope.Workspace,
 			task_name,
 			'ardupilot',
-			new vscode.ShellExecution(
+			new APCustomExecution(
+				definition,
 				taskCommand,
-				{ cwd: buildDir, env: env }
+				buildDir,
+				env
 			),
 			'$apgcc'
 		);
