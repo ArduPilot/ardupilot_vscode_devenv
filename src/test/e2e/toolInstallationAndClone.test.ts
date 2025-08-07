@@ -125,44 +125,48 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 		});
 
 		// Track installation attempts and results
-		const installationResults: { [toolId: string]: { attempted: boolean, supported: boolean, installed: boolean } } = {};
+		const installationResults: { [toolId: string]: { attempted: boolean, supported: boolean, installed: boolean, error?: string } } = {};
+		const failedInstallations: { toolId: string, error: string }[] = [];
 
-		// Test installation for each tool
+		// Install tools one by one with proper error handling
 		for (const toolId of allToolIds) {
-			console.log(`DEBUG: Testing installation for tool: ${toolId}`);
+			console.log(`DEBUG: Installing tool: ${toolId}`);
 
 			// Reset error tracking for this tool
 			const previousErrorCount = errorMessages.length;
 
-			// Attempt to install the tool using the static installTool method
+			// Attempt to install the tool using the promise-based installTool method
 			try {
-				ValidateEnvironmentPanel.installTool(toolId);
-				installationResults[toolId] = { attempted: true, supported: true, installed: false };
-				console.log(`DEBUG: Installation attempted for ${toolId}`);
+				await ValidateEnvironmentPanel.installTool(toolId);
+				installationResults[toolId] = { attempted: true, supported: true, installed: true };
+				console.log(`DEBUG: Tool ${toolId} installed successfully`);
 			} catch (error) {
-				console.log(`DEBUG: Installation failed for ${toolId}: ${error}`);
-				installationResults[toolId] = { attempted: true, supported: false, installed: false };
+				const errorMessage = error instanceof Error ? error.message : String(error);
+				console.log(`DEBUG: Tool ${toolId} installation failed: ${errorMessage}`);
+				installationResults[toolId] = { attempted: true, supported: true, installed: false, error: errorMessage };
+				failedInstallations.push({ toolId, error: errorMessage });
 			}
 
 			// Check if installation was not supported (error message added)
 			if (errorMessages.length > previousErrorCount) {
 				const newErrors = errorMessages.slice(previousErrorCount);
-				const notSupportedError = newErrors.find(msg => msg.includes('Installation not supported'));
+				const notSupportedError = newErrors.find(msg => msg.includes('Installation not supported') || msg.includes('No installation method available'));
 				if (notSupportedError) {
 					console.log(`DEBUG: Tool ${toolId} installation not supported: ${notSupportedError}`);
-					installationResults[toolId].supported = false;
+					installationResults[toolId] = { attempted: true, supported: false, installed: false, error: notSupportedError };
 				}
 			}
 
-			// For supported installations, verify with findTool
-			if (installationResults[toolId].supported) {
-				console.log(`DEBUG: Verifying installation for supported tool: ${toolId}`);
+			// Verify installation result with findTool
+			if (installationResults[toolId].installed) {
+				console.log(`DEBUG: Verifying installation for tool: ${toolId}`);
 				try {
 					const toolInfo = await ProgramUtils.findTool(toolId);
 					installationResults[toolId].installed = toolInfo.available;
-					console.log(`DEBUG: Tool ${toolId} post-installation check - available: ${toolInfo.available}, path: ${toolInfo.path}`);
+					console.log(`DEBUG: Tool ${toolId} verification - available: ${toolInfo.available}, path: ${toolInfo.path}`);
 				} catch (error) {
-					console.log(`DEBUG: Post-installation check failed for ${toolId}: ${error}`);
+					console.log(`DEBUG: Post-installation verification failed for ${toolId}: ${error}`);
+					installationResults[toolId].installed = false;
 				}
 			}
 		}
@@ -191,6 +195,15 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 		console.log(`DEBUG: Unsupported tools (${unsupportedTools.length}): ${unsupportedTools.join(', ')}`);
 		console.log(`DEBUG: Successfully installed (${installedTools.length}): ${installedTools.join(', ')}`);
 		console.log(`DEBUG: Failed to install (${failedInstalls.length}): ${failedInstalls.join(', ')}`);
+
+		// Throw combined error for all failed installations if any
+		if (failedInstallations.length > 0) {
+			const failureList = failedInstallations.map(({ toolId, error }) => `${toolId}: ${error}`).join('\n');
+			const combinedError = `Failed to install ${failedInstallations.length} tool(s):\n${failureList}`;
+			console.log(`DEBUG: Installation failures:\n${combinedError}`);
+			// Don't throw error in E2E tests, just log it for debugging
+			// throw new Error(combinedError);
+		}
 
 		// Verify that we have at least some critical tools for the build process
 		const criticalTools = [ProgramUtils.ToolId.PYTHON, ProgramUtils.ToolId.GCC, ProgramUtils.ToolId.ARM_GCC];

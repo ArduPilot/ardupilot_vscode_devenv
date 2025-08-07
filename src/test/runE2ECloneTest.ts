@@ -76,6 +76,9 @@ async function main() {
 				'--disable-background-timer-throttling',
 				'--disable-backgrounding-occluded-windows',
 				'--disable-renderer-backgrounding',
+				'--enable-unsafe-swiftshader',
+				'--disable-workspace-trust', // Disable workspace trust prompt
+				'--user-data-dir', tempDir, // Use a temporary directory for user data
 				tempDir // Open the temporary directory for E2E tests
 			],
 		});

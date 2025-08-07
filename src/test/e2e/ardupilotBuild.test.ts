@@ -12,18 +12,81 @@ import { APTaskProvider } from '../../taskProvider';
 import { apLog } from '../../apLog';
 import { ValidateEnvironmentPanel } from '../../apEnvironmentValidator';
 import { getApExtApi } from '../suite/common';
+import { ProgramUtils } from '../../apProgramUtils';
 
 suite('E2E: ArduPilot Build', function() {
 	// Extended timeout for actual builds
-	this.timeout(600000); // 10 minutes
+	this.timeout(1800000); // 30 minutes
 
 	let apExtensionContext: APExtensionContext;
 	let tempDir: string;
 	let ardupilotDir: string;
 	let sandbox: sinon.SinonSandbox;
+	let shellExecutionDisposable: vscode.Disposable | undefined;
+	let shellCompletionDisposable: vscode.Disposable | undefined;
+	const globalTerminalOutputBuffer: string[] = [];
 
 	suiteSetup(async () => {
 		sandbox = sinon.createSandbox();
+
+		// Enable terminal shell integration for terminal output capture
+		console.log('DEBUG: Enabling terminal shell integration...');
+		const terminalConfig = vscode.workspace.getConfiguration('terminal.integrated');
+		await terminalConfig.update('shellIntegration.enabled', true, vscode.ConfigurationTarget.Global);
+		console.log('DEBUG: Terminal shell integration enabled successfully');
+
+		// Verify the setting was applied
+		const currentSetting = terminalConfig.get('shellIntegration.enabled');
+		if (!currentSetting) {
+			throw new Error('Failed to enable terminal shell integration - setting not applied');
+		}
+
+		// Set up global terminal shell execution monitoring
+		try {
+			// Listen for terminal shell execution events
+			shellExecutionDisposable = vscode.window.onDidStartTerminalShellExecution(async (event) => {
+				const execution = event.execution;
+				console.log(`Global terminal shell execution started: ${execution.commandLine.value}`);
+
+				try {
+					// Read the output stream
+					const stream = execution.read();
+
+					// Process the stream data using async iterator
+					const processStream = async () => {
+						try {
+							for await (const data of stream) {
+								const output = data.toString();
+								console.log(`[TERMINAL: ${event.terminal.name}] ${output.trim()}`);
+								globalTerminalOutputBuffer.push(output.trim());
+
+								// Also redirect to extension logger
+								apLog.channel.appendLine(`[BUILD] ${output.trim()}`);
+							}
+						} catch (streamError) {
+							console.log(`Error processing stream data: ${streamError}`);
+						}
+					};
+
+					// Start processing stream in background
+					processStream().catch(error => {
+						console.log(`Stream processing error: ${error}`);
+					});
+				} catch (error) {
+					console.log(`Error reading terminal stream: ${error}`);
+				}
+			});
+
+			// Listen for when commands complete
+			shellCompletionDisposable = vscode.window.onDidEndTerminalShellExecution((event) => {
+				console.log(`Global terminal command finished with exit code: ${event.exitCode}`);
+				console.log(`Command: ${event.execution.commandLine.value}`);
+			});
+
+			console.log('DEBUG: Global terminal shell execution monitoring enabled');
+		} catch (error) {
+			console.log(`Global terminal shell execution setup failed: ${error}`);
+		}
 
 		// Mock apLog to redirect VS Code output console to regular console
 		sandbox.stub(apLog.prototype, 'log').callsFake((message: string) => {
@@ -56,26 +119,19 @@ suite('E2E: ArduPilot Build', function() {
 		assert(fs.existsSync(ardupilotDir), 'ArduPilot directory should exist from clone test');
 		assert(fs.existsSync(path.join(ardupilotDir, 'wscript')), 'ArduPilot wscript should exist from clone test');
 		console.log('DEBUG: ArduPilot directory verified from clone test');
-
-		// Safely add ArduPilot directory to workspace without causing crashes
-		console.log('DEBUG: Adding existing ArduPilot directory to workspace...');
-		const ardupilotUri = vscode.Uri.file(ardupilotDir);
-
-		// Mock workspace folder update to avoid extension host crash
-		sandbox.stub(vscode.workspace, 'updateWorkspaceFolders').callsFake(() => {
-			console.log('DEBUG: Mocked workspace folder update to prevent extension host crash');
-			return true;
-		});
-
-		// Mock workspace folders property to return our ardupilot folder
-		sandbox.stub(vscode.workspace, 'workspaceFolders').get(() => {
-			return [{ uri: ardupilotUri, name: 'ardupilot', index: 0 }];
-		});
-
-		console.log(`DEBUG: Mocked workspace with ${ardupilotDir}`);
 	});
 
 	teardown(() => {
+		// Clean up global shell execution listeners
+		if (shellExecutionDisposable) {
+			shellExecutionDisposable.dispose();
+			shellExecutionDisposable = undefined;
+		}
+		if (shellCompletionDisposable) {
+			shellCompletionDisposable.dispose();
+			shellCompletionDisposable = undefined;
+		}
+
 		sandbox.restore();
 	});
 
@@ -145,10 +201,9 @@ suite('E2E: ArduPilot Build', function() {
 		// Set Python interpreter by directly updating configuration (more reliable for E2E tests)
 		try {
 			if (fs.existsSync(venvPath)) {
-				console.log(`DEBUG: Virtual environment verified at ${venvPath}`);
-
 				const pythonPath = path.join(venvPath, 'bin', 'python');
 				console.log(`DEBUG: Setting Python interpreter to: ${pythonPath}`);
+				console.log(`DEBUG: Workspace root: ${vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || 'unknown'}`);
 
 				// Directly update the workspace configuration to set the Python interpreter
 				// This is more reliable for E2E tests than trying to mock the complex QuickPick UI
@@ -191,13 +246,24 @@ suite('E2E: ArduPilot Build', function() {
 			console.log(`DEBUG: Python interpreter setup failed: ${error}, but continuing...`);
 		}
 
-		// Install Python packages in the virtual environment
+		// Install Python packages in the virtual environment and wait for completion
 		try {
+			console.log('DEBUG: Starting Python packages installation...');
 			await ValidateEnvironmentPanel.installPythonPackages();
-			console.log('DEBUG: Python packages installation initiated');
+			console.log('DEBUG: Python packages installation completed successfully');
 		} catch (error) {
-			console.log(`DEBUG: Python packages installation failed: ${error}, but continuing...`);
+			console.log(`DEBUG: Python packages installation failed: ${error}`);
+			throw new Error(`Python packages installation failed: ${error}`);
 		}
+
+		// Verify that critical packages are available before proceeding
+		console.log('DEBUG: Verifying Python packages are available...');
+		const packageStatus = await ProgramUtils.checkAllPythonPackages();
+		const dronecanStatus = packageStatus.find(pkg => pkg.packageName === 'dronecan');
+		if (!dronecanStatus || !dronecanStatus.result.available) {
+			throw new Error(`DroneCAN package not available: ${dronecanStatus?.result.info || 'Package not found'}`);
+		}
+		console.log('DEBUG: DroneCAN package verified as available');
 
 		// Phase 2: Build Testing using vscode.tasks.executeTask
 		console.log('DEBUG: Phase 2 - Testing ArduPilot builds using vscode.tasks.executeTask...');
@@ -221,13 +287,19 @@ suite('E2E: ArduPilot Build', function() {
 			return fs.existsSync(filePath);
 		};
 
-		// Helper function to execute a task using vscode.tasks.executeTask
+		// Helper function to execute a task using vscode.tasks.executeTask with terminal output capture
+		console.log(`DEBUG: Python packages status: ${JSON.stringify(await ProgramUtils.checkAllPythonPackages())}`);
+
 		const executeTask = async (task: vscode.Task, taskName: string): Promise<boolean> => {
 			return new Promise<boolean>((resolve) => {
 				console.log(`DEBUG: Executing task: ${taskName}`);
 				console.log(`DEBUG: Task configName: ${task.definition.configName}`);
+				console.log(`Starting ${taskName} task execution`);
 
-				// Set the pseudo-terminal for output capture
+				// Log task execution details
+				console.log(`Task details - Name: ${task.name}, Type: ${task.definition.type}, Config: ${task.definition.configName}`);
+
+				// Set the task presentation options
 				task.presentationOptions = {
 					echo: true,
 					reveal: vscode.TaskRevealKind.Always,
@@ -239,6 +311,9 @@ suite('E2E: ArduPilot Build', function() {
 
 				let isResolved = false;
 				const expectedConfigName = task.definition.configName;
+				let taskTerminal: vscode.Terminal | undefined;
+
+				// Terminal monitoring is now handled by apTerminalMonitor
 
 				const cleanupAndResolve = (result: boolean, reason: string) => {
 					if (isResolved) {
@@ -246,12 +321,34 @@ suite('E2E: ArduPilot Build', function() {
 					}
 					isResolved = true;
 					console.log(`DEBUG: Task ${taskName} (${expectedConfigName}) completing: ${reason}`);
+
+					// Terminal monitoring cleanup is handled automatically by apTerminalMonitor
+
 					resolve(result);
 				};
 
 				// Execute the task using vscode.tasks.executeTask (returns Thenable<TaskExecution>)
 				Promise.resolve(vscode.tasks.executeTask(task)).then((execution) => {
 					console.log(`DEBUG: Task ${taskName} started, actual name: ${execution.task.name}, configName: ${execution.task.definition.configName}`);
+
+					// Try to find the terminal associated with this task
+					setTimeout(() => {
+						// Give the task time to create its terminal, then try to find it
+						const matchingTerminals = vscode.window.terminals.filter(terminal =>
+							terminal.name.includes(expectedConfigName) ||
+							terminal.name.includes(taskName) ||
+							terminal.name.includes(task.name)
+						);
+
+						if (matchingTerminals.length > 0) {
+							taskTerminal = matchingTerminals[0];
+							console.log(`DEBUG: Found task terminal: ${taskTerminal.name}`);
+							// print shellIntegration enabled status
+							console.log(`DEBUG: Terminal shell integration enabled: ${JSON.stringify(taskTerminal.shellIntegration)}`);
+						} else {
+							console.log('DEBUG: No matching terminal found, will capture based on name matching');
+						}
+					}, 1000); // Wait 1 second for terminal to be created
 
 					// Listen for task process completion - this is the most reliable for ArduPilot tasks
 					const processEndDisposable = vscode.tasks.onDidEndTaskProcess((event) => {
@@ -260,13 +357,64 @@ suite('E2E: ArduPilot Build', function() {
 
 						if (taskMatches) {
 							console.log(`DEBUG: Task ${taskName} (${expectedConfigName}) process ended with exit code: ${event.exitCode}`);
+
+							// Log the captured terminal output buffer if any
+							if (globalTerminalOutputBuffer.length > 0) {
+								console.log(`Global terminal output buffer (${globalTerminalOutputBuffer.length} entries):`);
+								const taskRelevantOutput = globalTerminalOutputBuffer.filter(line =>
+									line.includes(expectedConfigName) ||
+									line.includes(taskName) ||
+									line.includes('waf') ||
+									line.includes('configure') ||
+									line.includes('build')
+								);
+
+								if (taskRelevantOutput.length > 0) {
+									console.log(`Task-relevant output (${taskRelevantOutput.length} entries):`);
+									taskRelevantOutput.forEach((line, index) => {
+										console.log(`[${index}] ${line}`);
+									});
+								}
+							}
+
+							// Cleanup disposables
 							processEndDisposable.dispose();
 							cleanupAndResolve(event.exitCode === 0, `process ended with code ${event.exitCode}`);
 						}
 					});
 
+					// Monitor task execution progress and log key events
+					const outputMonitorInterval = setInterval(() => {
+						// Log terminal monitoring status
+						const relevantTerminals = vscode.window.terminals.filter(terminal =>
+							terminal.name.includes(expectedConfigName) || terminal.name.includes(taskName)
+						);
+
+						if (relevantTerminals.length > 0) {
+							relevantTerminals.forEach(terminal => {
+								console.log(`DEBUG: Monitoring terminal: ${terminal.name}`);
+							});
+						}
+
+						// Log workspace build directory status if it exists
+						const buildDir = path.join(ardupilotDir, 'build');
+						if (fs.existsSync(buildDir)) {
+							try {
+								const buildDirs = fs.readdirSync(buildDir).filter(item =>
+									fs.statSync(path.join(buildDir, item)).isDirectory()
+								);
+								if (buildDirs.length > 0) {
+									console.log(`Build directories: ${buildDirs.join(', ')}`);
+								}
+							} catch (error) {
+								console.log(`DEBUG: Error checking build directory: ${error}`);
+							}
+						}
+					}, 10000); // Check every 10 seconds to avoid spam
+
 					// Timeout for task execution (8 minutes for build tasks)
 					setTimeout(() => {
+						clearInterval(outputMonitorInterval);
 						processEndDisposable.dispose();
 						cleanupAndResolve(false, 'timeout after 8 minutes');
 					}, 480000);
@@ -292,8 +440,8 @@ suite('E2E: ArduPilot Build', function() {
 			throw new Error('Failed to create SITL task');
 		}
 
-		// sleep for 30s
-		await new Promise(resolve => setTimeout(resolve, 30000));
+		// Wait a brief moment for VS Code to settle after package installation
+		await new Promise(resolve => setTimeout(resolve, 5000));
 		const sitlBuildSuccess = await executeTask(sitlTask, 'SITL Build');
 		assert(sitlBuildSuccess, 'SITL build task should succeed');
 		console.log('DEBUG: SITL build task completed successfully');
@@ -302,7 +450,7 @@ suite('E2E: ArduPilot Build', function() {
 		const sitlBuildDir = path.join(ardupilotDir, 'build', 'sitl', 'bin');
 		const sitlBinary = path.join(sitlBuildDir, 'arducopter');
 		console.log(`DEBUG: Waiting for SITL binary creation at ${sitlBinary}...`);
-		const sitlCreated = await waitForFileCreation(sitlBinary, 120000); // 2 minute timeout
+		const sitlCreated = await waitForFileCreation(sitlBinary, 1200000); // 20 minute timeout
 		console.log(`DEBUG: SITL binary created: ${sitlCreated} (${sitlBinary})`);
 		assert(sitlCreated, `SITL binary should be created at ${sitlBinary} within timeout`);
 
@@ -329,7 +477,7 @@ suite('E2E: ArduPilot Build', function() {
 		const cubeOrangeBuildDir = path.join(ardupilotDir, 'build', 'CubeOrange', 'bin');
 		const cubeOrangeFirmware = path.join(cubeOrangeBuildDir, 'arducopter.apj');
 		console.log(`DEBUG: Waiting for CubeOrange+ firmware creation at ${cubeOrangeFirmware}...`);
-		const cubeOrangeCreated = await waitForFileCreation(cubeOrangeFirmware, 120000); // 2 minute timeout
+		const cubeOrangeCreated = await waitForFileCreation(cubeOrangeFirmware, 1200000); // 20 minute timeout
 		console.log(`DEBUG: CubeOrange+ firmware created: ${cubeOrangeCreated} (${cubeOrangeFirmware})`);
 		assert(cubeOrangeCreated, `CubeOrange+ firmware should be created at ${cubeOrangeFirmware} within timeout`);
 

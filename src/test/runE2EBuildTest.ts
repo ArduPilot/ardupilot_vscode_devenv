@@ -44,7 +44,7 @@ async function main() {
 		// Passed to --extensionTestsPath
 		const extensionTestsPath = path.resolve(__dirname, './e2e/index');
 
-		// Download VS Code if needed and get the executable path
+		// Download VS Code stable release
 		const vscodeExecutablePath = await downloadAndUnzipVSCode();
 
 		// Install required extensions
@@ -73,6 +73,9 @@ async function main() {
 				'--disable-background-timer-throttling',
 				'--disable-backgrounding-occluded-windows',
 				'--disable-renderer-backgrounding',
+				'--enable-unsafe-swiftshader',
+				'--disable-workspace-trust', // Disable workspace trust prompt
+				'--user-data-dir', tempDir, // Use a temporary directory for user data
 				ardupilotDir
 			],
 		});
