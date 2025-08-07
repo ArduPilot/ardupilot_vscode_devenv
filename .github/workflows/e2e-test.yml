@@ -3,9 +3,9 @@ name: E2E Tests
 on:
   workflow_dispatch:
   push:
-    branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
+
   schedule:
     # Run weekly on Sundays at 3 AM UTC
     - cron: '0 3 * * 0'
@@ -59,6 +59,10 @@ jobs:
         run: |
           echo "Running E2E test suite..."
           xvfb-run -a npm run test:e2e
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 1
+          GALLIUM_DRIVER: llvmpipe
+          MESA_GL_VERSION_OVERRIDE: 3.3
 
       - name: Run E2E Test (macOS)
         if: matrix.os == 'macos-latest'
