@@ -27,3 +27,9 @@ dist-ssr
 *.sln
 *.sw?
 *.npmrc
+STMicro/
+openocd/
+old_plans/
+ardupilot/
+!resources/*
+mav\.*
