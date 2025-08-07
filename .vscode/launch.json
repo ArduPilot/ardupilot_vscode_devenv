@@ -72,7 +72,8 @@
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}",
 				"--extensionTestsPath=${workspaceFolder}/out/test/e2e/index",
-				"--disable-workspace-trust"
+				"--disable-workspace-trust",
+				"${workspaceFolder}/ardupilot",
 			],
 			"outFiles": [
 				"${workspaceFolder}/out/test/**/*.js",
