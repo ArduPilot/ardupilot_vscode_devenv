@@ -104,7 +104,8 @@ export class ProgramUtils {
 		{ name: 'lxml', description: 'XML processing for MAVLink' },
 		{ name: 'pexpect', description: 'Process control and automation' },
 		{ name: 'dronecan', description: 'DroneCAN protocol implementation' },
-		{ name: 'pyserial', description: 'Serial communication library' }
+		{ name: 'pyserial', description: 'Serial communication library' },
+		{ name: 'setuptools', description: 'Python package development utilities (provides pkg_resources)' }
 	] as const;
 
 	// usual list of paths for the tools per platform per tool id
@@ -139,9 +140,9 @@ export class ProgramUtils {
 			[ProgramUtils.TOOL_GDB]:
 				{ linux: ['gdb'], darwin: ['gdb'] },
 			[ProgramUtils.TOOL_ARM_GCC]:
-				{ linux: ['arm-none-eabi-gcc'], darwin: ['arm-none-eabi-gcc'] },
+				{ linux: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-gcc'], darwin: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-gcc'] },
 			[ProgramUtils.TOOL_ARM_GPP]:
-				{ linux: ['arm-none-eabi-g++'], darwin: ['arm-none-eabi-g++'] },
+				{ linux: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-g++'], darwin: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-g++'] },
 			[ProgramUtils.TOOL_ARM_GDB]:
 				{ linux: ['gdb-multiarch', 'arm-none-eabi-gdb'], darwin: ['arm-none-eabi-gdb'] },
 			[ProgramUtils.TOOL_GDBSERVER]:
@@ -184,6 +185,7 @@ export class ProgramUtils {
 					// use which or where to find the tool
 					try {
 						const result = child_process.execSync(`which ${toolPath}`).toString().trim();
+						ProgramUtils.log.log(`which ${toolPath} : ${result}`);
 						if (result) {
 							return result; // Return the first matching path
 						}
@@ -191,6 +193,7 @@ export class ProgramUtils {
 					// eslint-disable-next-line @typescript-eslint/no-unused-vars
 					catch (error) {
 						// Ignore errors, continue searching
+						ProgramUtils.log.log(`Error finding tool ${toolPath}: ${error}`);
 					}
 				}
 			}
