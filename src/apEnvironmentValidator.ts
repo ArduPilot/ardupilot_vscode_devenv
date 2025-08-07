@@ -24,6 +24,7 @@ import * as child_process from 'child_process';
 import { apWelcomeItem } from './apWelcomeItem';
 import { apLog } from './apLog';
 import { ProgramUtils, ProgramInfo } from './apProgramUtils';
+import { apTerminalMonitor } from './apTerminalMonitor';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -171,10 +172,14 @@ export class ValidateEnvironmentPanel {
 			this._selectPythonInterpreter();
 			break;
 		case 'installTool':
-			ValidateEnvironmentPanel.installTool(message.toolId);
+			ValidateEnvironmentPanel.installTool(message.toolId).catch(error => {
+				ValidateEnvironmentPanel.log.log(`Tool installation failed: ${error}`);
+			});
 			break;
 		case 'installPythonPackages':
-			ValidateEnvironmentPanel.installPythonPackages(this);
+			ValidateEnvironmentPanel.installPythonPackages(this).catch(error => {
+				ValidateEnvironmentPanel.log.log(`Python package installation failed: ${error}`);
+			});
 			break;
 		case 'getPythonPackagesList':
 			this._sendPythonPackagesList();
@@ -362,8 +367,10 @@ export class ValidateEnvironmentPanel {
 
 	/**
 	 * Installs a missing tool based on the tool ID and platform
+	 * @param toolId - The ID of the tool to install
+	 * @returns Promise that resolves on successful installation (exit code 0) or rejects on failure
 	 */
-	public static installTool(toolId: string): void {
+	public static installTool(toolId: string): Promise<void> {
 		const platform = process.platform;
 		const isWSL = ProgramUtils.isWSL();
 
@@ -476,8 +483,9 @@ export class ValidateEnvironmentPanel {
 
 		const installation = installations[toolId];
 		if (!installation) {
-			vscode.window.showErrorMessage(`Installation not supported for ${toolName}`);
-			return;
+			const errorMsg = `Installation not supported for ${toolName}`;
+			vscode.window.showErrorMessage(errorMsg);
+			return Promise.reject(new Error(errorMsg));
 		}
 
 		// Determine the appropriate installation method
@@ -494,38 +502,75 @@ export class ValidateEnvironmentPanel {
 			command = installation.win32;
 		}
 
-		if (command) {
-			// Use terminal installation
-			const terminal = vscode.window.createTerminal(`Install ${toolName}`);
-			terminal.sendText(command);
-			terminal.show();
+		return new Promise<void>((resolve, reject) => {
+			if (command) {
+				// Use terminal installation with monitoring
+				const terminalName = `Install ${toolName}`;
 
-			vscode.window.showInformationMessage(
-				`Installing ${toolName}... Check the terminal for progress.`,
-				'Refresh Validation'
-			).then(choice => {
-				if (choice === 'Refresh Validation') {
-					// Note: In E2E testing context, we don't need to refresh validation
-					// This would normally call this._validateEnvironment() in normal usage
-					console.log('Refresh validation requested after tool installation');
-				}
-			});
-		} else if (installation.webUrl) {
-			// Use web-based installation
-			vscode.env.openExternal(vscode.Uri.parse(installation.webUrl));
-			vscode.window.showInformationMessage(
-				`Opening ${toolName} download page. ${installation.description || 'Please download and install manually.'}`,
-				'Refresh Validation'
-			).then(choice => {
-				if (choice === 'Refresh Validation') {
-					// Note: In E2E testing context, we don't need to refresh validation
-					// This would normally call this._validateEnvironment() in normal usage
-					console.log('Refresh validation requested after web installation');
-				}
-			});
-		} else {
-			vscode.window.showErrorMessage(`No installation method available for ${toolName} on ${platform}`);
-		}
+				// Create terminal monitor to track installation progress
+				const terminalMonitor = new apTerminalMonitor(terminalName);
+				terminalMonitor.createTerminal();
+
+				vscode.window.showInformationMessage(
+					`Installing ${toolName}... Check the terminal for progress.`
+				);
+
+				// Set up text callback for logging terminal output
+				terminalMonitor.addTextCallback((text) => {
+					ValidateEnvironmentPanel.log.log(`Terminal output[${terminalName}]: ${text}`);
+				});
+
+				// Use the terminalMonitor.runCommand method for better command lifecycle tracking
+				terminalMonitor.runCommand(command)
+					.then(async exitCode => {
+						ValidateEnvironmentPanel.log.log(`Installation completed with exit code: ${exitCode}`);
+
+						// Clean up the terminal monitor
+						terminalMonitor.dispose();
+
+						// Resolve or reject based on exit code
+						if (exitCode === 0) {
+							vscode.window.showInformationMessage(`${toolName} installed successfully!`);
+							const tool = await ProgramUtils.findTool(toolId);
+							if (tool.available) {
+								ValidateEnvironmentPanel.log.log(`${toolName} installed successfully at ${tool.info}`);
+								resolve();
+							} else {
+								const errorMsg = `Installation succeeded but ${toolName} not found in PATH. Please check your installation.`;
+								ValidateEnvironmentPanel.log.log(errorMsg);
+								vscode.window.showErrorMessage(errorMsg);
+								reject(new Error(errorMsg));
+							}
+						} else {
+							const errorMsg = `Installation failed with exit code ${exitCode}`;
+							vscode.window.showErrorMessage(`Failed to install ${toolName}: ${errorMsg}`);
+							reject(new Error(errorMsg));
+						}
+					})
+					.catch(error => {
+						// Clean up the terminal monitor on error
+						terminalMonitor.dispose();
+
+						const errorMsg = error instanceof Error ? error.message : String(error);
+						ValidateEnvironmentPanel.log.log(`Tool installation failed: ${errorMsg}`);
+						vscode.window.showErrorMessage(`Failed to install ${toolName}: ${errorMsg}`);
+						reject(error);
+					});
+
+			} else if (installation.webUrl) {
+				// Use web-based installation - resolve immediately as we can't track completion
+				vscode.env.openExternal(vscode.Uri.parse(installation.webUrl));
+				vscode.window.showInformationMessage(
+					`Opening ${toolName} download page. ${installation.description || 'Please download and install manually.'}`
+				);
+				resolve(); // Web installation can't be tracked, so resolve immediately
+
+			} else {
+				const errorMsg = `No installation method available for ${toolName} on ${platform}`;
+				vscode.window.showErrorMessage(errorMsg);
+				reject(new Error(errorMsg));
+			}
+		});
 	}
 
 	/**
@@ -546,9 +591,8 @@ export class ValidateEnvironmentPanel {
 		}
 
 		const url = `https://firmware.ardupilot.org/Tools/STM32-tools/${filename}`;
-		const extractedDir = filename.replace('.tar.bz2', '');
 
-		return `cd /tmp && wget "${url}" && tar -xjf "${filename}" && sudo mv "${extractedDir}" /opt/gcc-arm-none-eabi && echo 'export PATH="/opt/gcc-arm-none-eabi/bin:\\$PATH"' >> ~/.bashrc && echo "ARM GCC installed! Please restart your terminal or run: source ~/.bashrc"`;
+		return `cd /tmp && wget "${url}" && mkdir -p gcc-arm-none-eabi && tar -xjf "${filename}" -C gcc-arm-none-eabi --strip-components=1 && sudo mv gcc-arm-none-eabi /opt/gcc-arm-none-eabi && echo "ARM GCC installed! Please restart your terminal or run: source ~/.bashrc"`;
 	}
 
 	/**
@@ -928,6 +972,8 @@ export class ValidateEnvironmentPanel {
 
 	/**
 	 * Opens a terminal to install missing Python packages
+	 * @param instance - Optional ValidateEnvironmentPanel instance for auto-refresh
+	 * @returns Promise that resolves on successful installation (exit code 0) or rejects on failure
 	 */
 	public static async installPythonPackages(instance?: ValidateEnvironmentPanel): Promise<void> {
 		const packages = ProgramUtils.REQUIRED_PYTHON_PACKAGES.map(pkg => {
@@ -944,50 +990,56 @@ export class ValidateEnvironmentPanel {
 				return;
 			}
 
+			ValidateEnvironmentPanel.log.log(`Installing Python packages: ${packageList} using command: ${pythonInfo.command}`);
 			const installCommand = `${pythonInfo.command} -m pip install ${packageList}`;
 
 			// Create terminal with a unique name to track it
 			const terminalName = 'Install Python Packages';
-			const terminal = vscode.window.createTerminal({
-				name: terminalName,
-			});
 
-			// Monitor terminal close event to auto-refresh validation (only if instance provided)
-			if (instance) {
-				const disposable = vscode.window.onDidCloseTerminal((closedTerminal) => {
-					if (closedTerminal.name === terminalName) {
-						// Terminal closed, automatically refresh validation
-						ValidateEnvironmentPanel.log.log('Package installation terminal closed, refreshing validation...');
-						setTimeout(() => {
-							instance._validateEnvironment();
-						}, 1000); // Small delay to ensure pip install has completed
+			// Create terminal monitor to track installation progress
+			const terminalMonitor = new apTerminalMonitor(terminalName);
 
-						// Clean up the event listener
-						disposable.dispose();
-					}
-				});
-
-				// Add the disposable to our list for cleanup
-				instance._disposables.push(disposable);
-			}
-
-			// Show the terminal first
-			terminal.show();
-
-			// Wait 2 seconds for Python extension to activate the environment
-			setTimeout(() => {
-				// Send installation command with conditional exit (only on success)
-				terminal.sendText(`${installCommand} && echo "\nInstallation completed successfully! Terminal will close in 3 seconds..." && sleep 3 && exit || echo "\nInstallation failed. Please check the errors above. Terminal will remain open."`);
-			}, 2000);
+			terminalMonitor.createTerminal();
 
 			vscode.window.showInformationMessage(
-				'Installing Python packages... Validation will refresh automatically when installation completes successfully.',
-				'Manual Refresh'
-			).then(choice => {
-				if (choice === 'Manual Refresh' && instance) {
-					instance._validateEnvironment();
-				}
+				'Installing Python packages... Please wait for completion.'
+			);
+
+			// Set up text callback for logging terminal output
+			terminalMonitor.addTextCallback((text) => {
+				ValidateEnvironmentPanel.log.log(`[${terminalName}] ${text}`);
 			});
+
+			// Use the new runCommand method which handles the complete command lifecycle
+			try {
+				const exitCode = await terminalMonitor.runCommand(installCommand);
+				ValidateEnvironmentPanel.log.log(`Python package installation completed with exit code: ${exitCode}`);
+
+				// Clean up the terminal monitor
+				terminalMonitor.dispose();
+
+				// Auto-refresh validation if instance provided
+				if (instance && exitCode === 0) {
+					ValidateEnvironmentPanel.log.log('Package installation successful, refreshing validation...');
+					setTimeout(() => {
+						instance._validateEnvironment();
+					}, 1000); // Small delay to ensure pip install has completed
+				}
+
+				// Resolve or reject based on exit code
+				if (exitCode === 0) {
+					vscode.window.showInformationMessage('Python packages installed successfully!');
+				} else {
+					const errorMsg = `Installation failed with exit code ${exitCode}`;
+					vscode.window.showErrorMessage(`Failed to install Python packages: ${errorMsg}`);
+					throw new Error(errorMsg);
+				}
+			} catch (error) {
+				terminalMonitor.dispose();
+				const errorMsg = error instanceof Error ? error.message : String(error);
+				vscode.window.showErrorMessage(`Python package installation failed: ${errorMsg}`);
+				throw error;
+			}
 
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to get Python path: ${error}`);
