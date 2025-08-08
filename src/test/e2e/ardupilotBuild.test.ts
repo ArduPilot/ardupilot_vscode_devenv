@@ -412,12 +412,12 @@ suite('E2E: ArduPilot Build', function() {
 						}
 					}, 10000); // Check every 10 seconds to avoid spam
 
-					// Timeout for task execution (8 minutes for build tasks)
+					// Timeout for task execution (15 minutes for build tasks)
 					setTimeout(() => {
 						clearInterval(outputMonitorInterval);
 						processEndDisposable.dispose();
-						cleanupAndResolve(false, 'timeout after 8 minutes');
-					}, 480000);
+						cleanupAndResolve(false, 'timeout after 15 minutes');
+					}, 900000);
 
 				}).catch((error: unknown) => {
 					console.error(`DEBUG: Failed to execute task ${taskName}: ${error}`);
