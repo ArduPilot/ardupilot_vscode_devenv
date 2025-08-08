@@ -24,6 +24,7 @@ import * as child_process from 'child_process';
 import { apWelcomeItem } from './apWelcomeItem';
 import { apLog } from './apLog';
 import { ProgramUtils, ProgramInfo } from './apProgramUtils';
+import * as apToolsConfig from './apToolsConfig';
 import { apTerminalMonitor } from './apTerminalMonitor';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -231,6 +232,23 @@ export class ValidateEnvironmentPanel {
 		return webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, ...pathList));
 	}
 
+	/**
+	 * Helper to check if a tool is supported on current platform
+	 */
+	private _isToolSupportedOnPlatform(toolInfo: apToolsConfig.ToolInfo): boolean {
+		const platform = os.platform() as 'linux' | 'darwin';
+		const isWSL = ProgramUtils.isWSL();
+
+		// Check if tool has paths for current platform
+		if (isWSL) {
+			// WSL: check for wsl-specific paths first, fallback to linux
+			return !!(toolInfo.paths.wsl || toolInfo.paths.linux);
+		} else {
+			// Native platform: check for platform-specific paths
+			return !!toolInfo.paths[platform];
+		}
+	}
+
 	private async _validateEnvironment(): Promise<void> {
 		// First check if the platform is supported
 		this._checkPlatform();
@@ -240,68 +258,58 @@ export class ValidateEnvironmentPanel {
 			return;
 		}
 
-		const isWSL = ProgramUtils.isWSL();
+		// Registry-driven tool validation - iterate through all tools
+		const toolChecks: Array<{ key: string; toolInfo: apToolsConfig.ToolInfo; promise: Promise<ProgramInfo> }> = [];
 
-		const pythonCheck = ProgramUtils.findPython();
-		const pythonWinCheck = isWSL ? ProgramUtils.findPythonWin() : Promise.resolve({ available: false, info: 'Not applicable outside WSL.', isCustomPath: false });
+		// Iterate through registry and create checks for supported tools
+		for (const [toolKey, toolInfo] of Object.entries(apToolsConfig.TOOLS_REGISTRY)) {
+			// Skip tools not supported on current platform
+			if (!this._isToolSupportedOnPlatform(toolInfo)) {
+				continue;
+			}
+
+			// Special handling for ccache (has custom validation logic)
+			if (toolKey === 'CCACHE') {
+				toolChecks.push({
+					key: toolKey,
+					toolInfo,
+					promise: this._checkCCache().catch((error: unknown) => ({
+						available: false,
+						isCustomPath: false,
+						info: error instanceof Error ? error.message : String(error)
+					}))
+				});
+				continue;
+			}
+
+			// Standard tool validation using registry
+			toolChecks.push({
+				key: toolKey,
+				toolInfo,
+				promise: ProgramUtils.findProgram(toolInfo).catch((error: unknown) => ({
+					available: false,
+					isCustomPath: false,
+					info: error instanceof Error ? error.message : String(error)
+				}))
+			});
+		}
 
 		// Python package checks
 		const pythonPackagesCheck = ProgramUtils.checkAllPythonPackages();
 
-		const mavproxyCheck = ProgramUtils.findMavproxy();
-		const armGccCheck = ProgramUtils.findArmGCC();
-		const gccCheck = ProgramUtils.findGCC();
-		const gppCheck = ProgramUtils.findGPP();
-		const gdbCheck = ProgramUtils.findArmGDB();
-		const ccacheCheck = this._checkCCache();
-		const pyserialCheck = ProgramUtils.findPyserial();
-		const tmuxCheck = ProgramUtils.findTmux();
-		const lsusbCheck = ProgramUtils.findLsusb();
-
-		// Check optional tools
-		const jlinkCheck = ProgramUtils.findJLinkGDBServerCLExe().catch(() => ({ available: false, isCustomPath: false }));
-		const openocdCheck = ProgramUtils.findOpenOCD().catch(() => ({ available: false, isCustomPath: false }));
-		const gdbserverCheck = ProgramUtils.findGDBServer().catch(() => ({ available: false, isCustomPath: false }));
-
-		// Await all checks
-		const [
-			pythonResult,
-			pythonWinResult,
-			pythonPackagesResult,
-			mavproxyResult,
-			armGccResult,
-			gccResult,
-			gppResult,
-			gdbResult,
-			ccacheResult,
-			jlinkResult,
-			openocdResult,
-			gdbserverResult,
-			pyserialResult,
-			tmuxResult,
-			lsusbResult
-		] = await Promise.all([
-			pythonCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			pythonWinCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			pythonPackagesCheck.catch(() => []),
-			mavproxyCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			armGccCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			gccCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			gppCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			gdbCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			ccacheCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			jlinkCheck,
-			openocdCheck,
-			gdbserverCheck,
-			pyserialCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			tmuxCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message })),
-			lsusbCheck.catch(error => ({ available: false, isCustomPath: false, info: error.message }))
+		// Await all tool checks and Python packages
+		const [toolResults, pythonPackagesResult] = await Promise.all([
+			Promise.all(toolChecks.map(check => check.promise)),
+			pythonPackagesCheck.catch(() => [])
 		]);
 
-		// Report results to webview
-		this._reportToolStatus(ProgramUtils.TOOL_PYTHON, pythonResult);
-		if (isWSL) {
-			this._reportToolStatus(ProgramUtils.TOOL_PYTHON_WIN, pythonWinResult);
+		// Report tool results to webview using registry keys as IDs
+		for (let i = 0; i < toolChecks.length; i++) {
+			const toolCheck = toolChecks[i];
+			const result = toolResults[i];
+
+			// Report using registry key as tool ID
+			this._reportToolStatus(toolCheck.key, result);
 		}
 
 		// Report Python packages results
@@ -313,26 +321,19 @@ export class ValidateEnvironmentPanel {
 		const hasMissingPackages = pythonPackagesResult.some(({result}) => !result.available);
 		this._updateInstallPackagesButton(hasMissingPackages);
 
-		this._reportToolStatus(ProgramUtils.TOOL_MAVPROXY, mavproxyResult);
-		this._reportToolStatus(ProgramUtils.TOOL_ARM_GCC, armGccResult);
-		this._reportToolStatus(ProgramUtils.TOOL_GCC, gccResult);
-		this._reportToolStatus(ProgramUtils.TOOL_GPP, gppResult);
-		this._reportToolStatus(ProgramUtils.TOOL_ARM_GDB, gdbResult);
-		this._reportToolStatus(ProgramUtils.TOOL_CCACHE, ccacheResult);
-		this._reportToolStatus(ProgramUtils.TOOL_JLINK, jlinkResult);
-		this._reportToolStatus(ProgramUtils.TOOL_OPENOCD, openocdResult);
-		this._reportToolStatus(ProgramUtils.TOOL_GDBSERVER, gdbserverResult);
-		this._reportToolStatus(ProgramUtils.TOOL_PYSERIAL, pyserialResult);
-		this._reportToolStatus(ProgramUtils.TOOL_TMUX, tmuxResult);
-		this._reportToolStatus(ProgramUtils.TOOL_LSUSB, lsusbResult);
+		// Generate summary - collect results for required tools (non-optional)
+		const summaryResults: ProgramInfo[] = [];
+		for (let i = 0; i < toolChecks.length; i++) {
+			const toolCheck = toolChecks[i];
+			const result = toolResults[i];
 
-		// Generate summary - only include required tools in the summary
-		const summaryTools = [pythonResult, mavproxyResult, armGccResult, gccResult, gppResult, gdbResult, ccacheResult, gdbserverResult, pyserialResult, tmuxResult];
-		if (isWSL) {
-			// Add Windows Python to summary if in WSL, as it's important for SITL components like PySerial.
-			summaryTools.push(pythonWinResult);
+			// Include only non-optional tools in summary
+			if (!toolCheck.toolInfo.optional) {
+				summaryResults.push(result);
+			}
 		}
-		this._generateSummary(summaryTools);
+
+		this._generateSummary(summaryResults);
 	}
 
 	/**
@@ -374,136 +375,38 @@ export class ValidateEnvironmentPanel {
 		const platform = process.platform;
 		const isWSL = ProgramUtils.isWSL();
 
-		// Get tool name for display
-		const toolNames: { [key: string]: string } = {
-			[ProgramUtils.TOOL_PYTHON]: 'Python',
-			[ProgramUtils.TOOL_PYTHON_WIN]: 'Python (Windows)',
-			[ProgramUtils.TOOL_MAVPROXY]: 'MAVProxy',
-			[ProgramUtils.TOOL_ARM_GCC]: 'ARM GCC Toolchain',
-			[ProgramUtils.TOOL_ARM_GDB]: 'ARM GDB',
-			[ProgramUtils.TOOL_GCC]: 'GCC',
-			[ProgramUtils.TOOL_GPP]: 'G++',
-			[ProgramUtils.TOOL_GDB]: 'GDB',
-			[ProgramUtils.TOOL_CCACHE]: 'ccache',
-			[ProgramUtils.TOOL_JLINK]: 'J-Link',
-			[ProgramUtils.TOOL_OPENOCD]: 'OpenOCD',
-			[ProgramUtils.TOOL_GDBSERVER]: 'GDB Server',
-			[ProgramUtils.TOOL_PYSERIAL]: 'PySerial',
-			[ProgramUtils.TOOL_TMUX]: 'tmux',
-			[ProgramUtils.TOOL_LSUSB]: 'lsusb'
-		};
+		// Find tool in registry
+		const toolInfo = apToolsConfig.TOOLS_REGISTRY[toolId as apToolsConfig.ToolID];
+		if (!toolInfo) {
+			const errorMsg = `Tool '${toolId}' not found in registry`;
+			vscode.window.showErrorMessage(errorMsg);
+			return Promise.reject(new Error(errorMsg));
+		}
 
-		const toolName = toolNames[toolId] || toolId;
+		const toolName = toolInfo.name;
+		const installCommands = toolInfo.installCommands;
 
-		// Define installation commands and web pages
-		const installations: { [key: string]: {
-			wsl?: string,
-			linux?: string,
-			darwin?: string,
-			win32?: string,
-			webUrl?: string,
-			description?: string
-		} } = {
-			[ProgramUtils.TOOL_PYTHON]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y python3 python3-pip',
-				darwin: 'brew install python3',
-				webUrl: 'https://www.python.org/downloads/',
-				description: 'Install Python 3 and pip'
-			},
-			[ProgramUtils.TOOL_PYTHON_WIN]: {
-				webUrl: 'https://www.python.org/downloads/',
-				description: 'Download and install Python for Windows, then restart WSL'
-			},
-			[ProgramUtils.TOOL_MAVPROXY]: {
-				linux: 'pip3 install mavproxy',
-				darwin: 'pip3 install mavproxy',
-				webUrl: isWSL ? 'https://firmware.ardupilot.org/Tools/MAVProxy/' : undefined,
-				description: isWSL ? 'Download MAVProxy installer for WSL' : 'Install MAVProxy via pip'
-			},
-			[ProgramUtils.TOOL_ARM_GCC]: {
-				linux: ValidateEnvironmentPanel._getArmGccInstallCommand('linux'),
-				darwin: ValidateEnvironmentPanel._getArmGccInstallCommand('darwin'),
-				webUrl: 'https://firmware.ardupilot.org/Tools/STM32-tools/',
-				description: 'Download and install ARM GCC toolchain version 10'
-			},
-			[ProgramUtils.TOOL_ARM_GDB]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y gdb-multiarch',
-				darwin: 'brew install gdb',
-				description: 'Install GDB for ARM debugging'
-			},
-			[ProgramUtils.TOOL_GCC]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y gcc',
-				darwin: 'xcode-select --install',
-				description: 'Install GCC compiler'
-			},
-			[ProgramUtils.TOOL_GPP]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y g++',
-				darwin: 'xcode-select --install',
-				description: 'Install G++ compiler'
-			},
-			[ProgramUtils.TOOL_GDB]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y gdb',
-				darwin: 'brew install gdb',
-				description: 'Install GDB debugger'
-			},
-			[ProgramUtils.TOOL_CCACHE]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y ccache',
-				darwin: 'brew install ccache',
-				description: 'Install ccache for faster builds'
-			},
-			[ProgramUtils.TOOL_JLINK]: {
-				webUrl: 'https://www.segger.com/downloads/jlink/',
-				description: 'Download J-Link software from SEGGER website'
-			},
-			[ProgramUtils.TOOL_OPENOCD]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y openocd',
-				darwin: 'brew install openocd',
-				description: 'Install OpenOCD for debugging'
-			},
-			[ProgramUtils.TOOL_GDBSERVER]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y gdbserver',
-				description: 'Install GDB server'
-			},
-			[ProgramUtils.TOOL_PYSERIAL]: {
-				wsl: 'pip.exe install pyserial',
-				linux: 'pip3 install pyserial',
-				darwin: 'pip3 install pyserial',
-				description: 'Install PySerial via pip'
-			},
-			[ProgramUtils.TOOL_TMUX]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y tmux',
-				darwin: 'brew install tmux',
-				description: 'Install tmux terminal multiplexer'
-			},
-			[ProgramUtils.TOOL_LSUSB]: {
-				linux: 'sudo apt-get update && sudo apt-get install -y usbutils',
-				description: 'Install lsusb utility for USB device detection'
-			}
-		};
-
-		const installation = installations[toolId];
-		if (!installation) {
+		if (!installCommands) {
 			const errorMsg = `Installation not supported for ${toolName}`;
 			vscode.window.showErrorMessage(errorMsg);
 			return Promise.reject(new Error(errorMsg));
 		}
 
-		// Determine the appropriate installation method
-		let command: string | undefined;
+		// Determine the appropriate installation method based on platform
+		let installMethod: apToolsConfig.InstallMethod | undefined;
 
-		// Special handling for MAVProxy in WSL - use web installer
-		if (isWSL && toolId === ProgramUtils.TOOL_MAVPROXY) {
-			command = undefined; // Force web installation
-		} else if (platform === 'linux' || isWSL) {
-			command = installation.linux;
+		if (isWSL) {
+			// WSL: check for wsl-specific install method first, fallback to linux
+			installMethod = ('wsl' in installCommands ? installCommands.wsl : undefined) ||
+							('linux' in installCommands ? installCommands.linux : undefined);
+		} else if (platform === 'linux') {
+			installMethod = 'linux' in installCommands ? installCommands.linux : undefined;
 		} else if (platform === 'darwin') {
-			command = installation.darwin;
-		} else if (platform === 'win32') {
-			command = installation.win32;
+			installMethod = 'darwin' in installCommands ? installCommands.darwin : undefined;
 		}
 
 		return new Promise<void>((resolve, reject) => {
-			if (command) {
+			if (installMethod && installMethod.type === 'command') {
 				// Use terminal installation with monitoring
 				const terminalName = `Install ${toolName}`;
 
@@ -521,7 +424,7 @@ export class ValidateEnvironmentPanel {
 				});
 
 				// Use the terminalMonitor.runCommand method for better command lifecycle tracking
-				terminalMonitor.runCommand(command)
+				terminalMonitor.runCommand(installMethod.command)
 					.then(async exitCode => {
 						ValidateEnvironmentPanel.log.log(`Installation completed with exit code: ${exitCode}`);
 
@@ -531,7 +434,7 @@ export class ValidateEnvironmentPanel {
 						// Resolve or reject based on exit code
 						if (exitCode === 0) {
 							vscode.window.showInformationMessage(`${toolName} installed successfully!`);
-							const tool = await ProgramUtils.findTool(toolId);
+							const tool = await ProgramUtils.findProgram(toolInfo);
 							if (tool.available) {
 								ValidateEnvironmentPanel.log.log(`${toolName} installed successfully at ${tool.info}`);
 								resolve();
@@ -557,11 +460,11 @@ export class ValidateEnvironmentPanel {
 						reject(error);
 					});
 
-			} else if (installation.webUrl) {
+			} else if (installMethod && installMethod.type === 'url') {
 				// Use web-based installation - resolve immediately as we can't track completion
-				vscode.env.openExternal(vscode.Uri.parse(installation.webUrl));
+				vscode.env.openExternal(vscode.Uri.parse(installMethod.url));
 				vscode.window.showInformationMessage(
-					`Opening ${toolName} download page. ${installation.description || 'Please download and install manually.'}`
+					`Opening ${toolName} download page. ${toolInfo.description}`
 				);
 				resolve(); // Web installation can't be tracked, so resolve immediately
 
@@ -626,7 +529,7 @@ export class ValidateEnvironmentPanel {
 		return new Promise(async (resolve, reject) => {
 			try {
 				// First check if ccache is installed
-				const ccacheResult = await ProgramUtils.findCcache().catch(() => null);
+				const ccacheResult = await ProgramUtils.findProgram(apToolsConfig.TOOLS_REGISTRY.CCACHE).catch(() => null);
 
 				if (!ccacheResult) {
 					reject(new Error('ccache is not installed'));
@@ -742,7 +645,12 @@ export class ValidateEnvironmentPanel {
 	 */
 	private async _configureToolPath(toolId: string, toolName: string): Promise<void> {
 		// Get the existing tool info to use its directory as default location
-		const existingToolInfo = await ProgramUtils.findTool(toolId);
+		const toolInfo = apToolsConfig.TOOLS_REGISTRY[toolId as apToolsConfig.ToolID];
+		if (!toolInfo) {
+			vscode.window.showErrorMessage(`Tool '${toolId}' not found in registry`);
+			return;
+		}
+		const existingToolInfo = await ProgramUtils.findProgram(toolInfo);
 		const existingToolPath = existingToolInfo.path;
 
 		// Show open file dialog to select the tool executable
@@ -779,7 +687,7 @@ export class ValidateEnvironmentPanel {
 				}
 
 				// Save the custom path in the configuration
-				await ProgramUtils.setToolCustomPath(toolId, filePath);
+				apToolsConfig.ToolsConfig.setToolPath(toolId as apToolsConfig.ToolID, filePath);
 
 				// Notify the webview that configuration was saved
 				this._panel.webview.postMessage({
@@ -808,29 +716,12 @@ export class ValidateEnvironmentPanel {
 			'Yes', 'No'
 		).then(async (answer) => {
 			if (answer === 'Yes') {
-				// Get all tool IDs from the ProgramUtils
-				const toolIds = [
-					ProgramUtils.TOOL_PYTHON,
-					ProgramUtils.TOOL_PYTHON_WIN,
-					ProgramUtils.TOOL_MAVPROXY,
-					ProgramUtils.TOOL_CCACHE,
-					ProgramUtils.TOOL_OPENOCD,
-					ProgramUtils.TOOL_JLINK,
-					ProgramUtils.TOOL_GCC,
-					ProgramUtils.TOOL_GPP,
-					ProgramUtils.TOOL_GDB,
-					ProgramUtils.TOOL_ARM_GCC,
-					ProgramUtils.TOOL_ARM_GPP,
-					ProgramUtils.TOOL_ARM_GDB,
-					ProgramUtils.TOOL_GDBSERVER,
-					ProgramUtils.TOOL_PYSERIAL,
-					ProgramUtils.TOOL_TMUX,
-					ProgramUtils.TOOL_LSUSB
-				];
+				// Get all tool IDs from the registry
+				const toolIds = apToolsConfig.ToolsRegistryHelpers.getToolIdsList();
 
 				// Remove each tool path
 				for (const toolId of toolIds) {
-					await ProgramUtils.removeToolCustomPath(toolId);
+					apToolsConfig.ToolsConfig.removeToolPath(toolId);
 				}
 
 				// Notify the webview that configuration was reset
@@ -875,9 +766,6 @@ export class ValidateEnvironmentPanel {
 		try {
 			const interpreterPath = await ProgramUtils.selectPythonInterpreter();
 			if (interpreterPath) {
-				// Save the selected interpreter path as the Python tool path
-				await ProgramUtils.setToolCustomPath(ProgramUtils.TOOL_PYTHON, interpreterPath);
-
 				vscode.window.showInformationMessage(`Python interpreter set to: ${interpreterPath}`);
 
 				// Refresh the validation to show the new interpreter
@@ -893,35 +781,13 @@ export class ValidateEnvironmentPanel {
 	 * Sends the tools list to the webview
 	 */
 	private _sendToolsList(): void {
-		const isWSL = ProgramUtils.isWSL();
-
-		const allTools = [
-			{ id: ProgramUtils.TOOL_PYTHON, name: 'Python' },
-			{ id: ProgramUtils.TOOL_PYTHON_WIN, name: 'Python (Windows via WSL)', wslOnly: true },
-			{ id: ProgramUtils.TOOL_MAVPROXY, name: 'MAVProxy' },
-			{ id: ProgramUtils.TOOL_ARM_GCC, name: 'arm-none-eabi-gcc' },
-			{ id: ProgramUtils.TOOL_GCC, name: 'gcc' },
-			{ id: ProgramUtils.TOOL_GPP, name: 'g++' },
-			{ id: ProgramUtils.TOOL_ARM_GDB, name: 'arm-none-eabi-gdb / gdb-multiarch' },
-			{ id: ProgramUtils.TOOL_CCACHE, name: 'ccache' },
-			{ id: ProgramUtils.TOOL_JLINK, name: 'JLinkGDBServerCLExe (Optional)' },
-			{ id: ProgramUtils.TOOL_OPENOCD, name: 'OpenOCD (Optional)' },
-			{ id: ProgramUtils.TOOL_GDBSERVER, name: 'GDB Server' },
-			{ id: ProgramUtils.TOOL_PYSERIAL, name: 'PySerial' },
-			{ id: ProgramUtils.TOOL_TMUX, name: 'tmux' },
-			{ id: ProgramUtils.TOOL_LSUSB, name: 'lsusb (Linux USB utilities)', linuxOnly: true }
-		];
-
-		// Filter tools based on current platform
-		const tools = allTools.filter(tool => {
-			if (tool.wslOnly) {
-				return isWSL;
-			}
-			if (tool.linuxOnly) {
-				return os.platform() === 'linux';
-			}
-			return true;
-		});
+		// Generate tools list from registry with platform filtering
+		const tools = Object.entries(apToolsConfig.TOOLS_REGISTRY)
+			.filter(([, toolInfo]) => this._isToolSupportedOnPlatform(toolInfo))
+			.map(([toolKey, toolInfo]) => ({
+				id: toolKey,
+				name: toolInfo.name
+			}));
 
 		this._panel.webview.postMessage({
 			command: 'toolsList',
@@ -933,10 +799,12 @@ export class ValidateEnvironmentPanel {
 	 * Sends the Python packages list to the webview
 	 */
 	private _sendPythonPackagesList(): void {
-		const packages = ProgramUtils.REQUIRED_PYTHON_PACKAGES.map((pkg: {name: string; description: string}) => ({
-			name: pkg.name,
-			description: pkg.description || pkg.name
-		}));
+		// Generate packages list from registry
+		const packages = Object.entries(apToolsConfig.PYTHON_PACKAGES_REGISTRY)
+			.map(([, packageInfo]) => ({
+				name: packageInfo.name,
+				description: packageInfo.description
+			}));
 
 		this._panel.webview.postMessage({
 			command: 'pythonPackagesList',
@@ -976,15 +844,12 @@ export class ValidateEnvironmentPanel {
 	 * @returns Promise that resolves on successful installation (exit code 0) or rejects on failure
 	 */
 	public static async installPythonPackages(instance?: ValidateEnvironmentPanel): Promise<void> {
-		const packages = ProgramUtils.REQUIRED_PYTHON_PACKAGES.map(pkg => {
-			// Include version if specified
-			return pkg.version ? `${pkg.name}==${pkg.version}` : pkg.name;
-		});
+		const packages = apToolsConfig.ToolsRegistryHelpers.getPythonPackagesForInstallation();
 		const packageList = packages.join(' ');
 
 		// Get the same Python interpreter that was used for validation
 		try {
-			const pythonInfo = await ProgramUtils.findPython();
+			const pythonInfo = await ProgramUtils.findProgram(apToolsConfig.TOOLS_REGISTRY.PYTHON);
 			if (!pythonInfo.available || !pythonInfo.command) {
 				vscode.window.showErrorMessage('Python not found. Please install Python first.');
 				return;
