@@ -170,7 +170,9 @@ export class ValidateEnvironmentPanel {
 			this._openVSCodeWithWSL();
 			break;
 		case 'selectPythonInterpreter':
-			this._selectPythonInterpreter();
+			this._selectPythonInterpreter().catch(error => {
+				ValidateEnvironmentPanel.log.log(`Python interpreter selection failed: ${error}`);
+			});
 			break;
 		case 'installTool':
 			ValidateEnvironmentPanel.installTool(message.toolId).catch(error => {

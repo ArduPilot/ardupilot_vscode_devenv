@@ -417,12 +417,16 @@ export class ProgramUtils {
 			await vscode.commands.executeCommand('python.setInterpreter');
 
 			// Get the selected interpreter path after the user makes a selection
-			// Access the path properly based on the Python extension API
-			const selectedInterpreter = await this.findProgram(apToolsConfig.TOOLS_REGISTRY.PYTHON);
+			// Access the path via the Python extension's interpreterPath command
+			const interpreterPath = await vscode.commands.executeCommand('python.interpreterPath') as string;
 
-			if (selectedInterpreter) {
-				this.log.log(`Selected Python interpreter: ${selectedInterpreter}`);
-				return selectedInterpreter.path; // Return the path of the selected interpreter
+			if (interpreterPath) {
+				this.log.log(`Selected Python interpreter: ${interpreterPath}`);
+
+				// Save the selected interpreter path to the configuration
+				apToolsConfig.ToolsConfig.setToolPath('PYTHON', interpreterPath);
+
+				return interpreterPath; // Return the path of the selected interpreter
 			} else {
 				this.log.log('No Python interpreter selected');
 				return undefined;
