@@ -19,6 +19,7 @@ import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { targetToBin } from './apBuildConfig';
+import { TOOLS_REGISTRY } from './apToolsConfig';
 import * as fs from 'fs';
 
 // Map vehicle types to ArduPilot binary names
@@ -76,7 +77,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 			APLaunchConfigurationProvider.log.log(`Debug session terminated, cleaning up tmux session: ${this.tmuxSessionName}`);
 
 			// Find tmux path
-			const tmux = await ProgramUtils.findTmux();
+			const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
 			const tmuxPath = tmux.available && tmux.path ? tmux.path : 'tmux';
 
 			// Kill the tmux session
@@ -201,14 +202,14 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					}
 				}
 				// Check if GDB is available
-				const gdb = await ProgramUtils.findGDB();
+				const gdb = await ProgramUtils.findProgram(TOOLS_REGISTRY.GDB);
 				if (!gdb.available) {
 					vscode.window.showErrorMessage('GDB not found. Please install GDB to debug SITL.');
 					return undefined;
 				}
 
 				// Check if tmux is available
-				const tmux = await ProgramUtils.findTmux();
+				const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
 				if (!tmux.available || !tmux.path) {
 					vscode.window.showErrorMessage('tmux not found. Please install tmux to debug SITL.');
 					return undefined;

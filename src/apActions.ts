@@ -20,6 +20,7 @@ import * as fs from 'fs';
 import { apLog } from './apLog';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { ProgramUtils } from './apProgramUtils';
+import { TOOLS_REGISTRY } from './apToolsConfig';
 import { targetToVehicleType } from './apLaunch';
 
 // Interface for launch configuration
@@ -108,10 +109,10 @@ async function updateCppProperties(boardName: string): Promise<void> {
 	// Get the appropriate compiler path
 	let compilerPath: string;
 	if (isSITL) {
-		const gccInfo = await ProgramUtils.findGCC();
+		const gccInfo = await ProgramUtils.findProgram(TOOLS_REGISTRY.GCC);
 		compilerPath = gccInfo.path || 'gcc';
 	} else {
-		const armGccInfo = await ProgramUtils.findArmGCC();
+		const armGccInfo = await ProgramUtils.findProgram(TOOLS_REGISTRY.ARM_GCC);
 		compilerPath = armGccInfo.path || 'arm-none-eabi-gcc';
 	}
 
@@ -426,7 +427,7 @@ export class apActionItem extends vscode.TreeItem {
 		}
 	}
 
-	private runFirmware(): void {
+	private async runFirmware(): Promise<void> {
 		if (!activeConfiguration) {
 			vscode.window.showErrorMessage('No active configuration selected');
 			return;
@@ -489,7 +490,7 @@ export class apActionItem extends vscode.TreeItem {
 
 		// Prepare environment variables using the shared method from APTaskProvider
 		// This will set CC/CXX appropriately based on SITL vs non-SITL builds
-		const terminalEnv = APTaskProvider.prepareEnvironmentVariables(config);
+		const terminalEnv = await APTaskProvider.prepareEnvironmentVariables(config);
 
 		// Run the SITL simulation using sim_vehicle.py
 		const terminal = vscode.window.createTerminal({

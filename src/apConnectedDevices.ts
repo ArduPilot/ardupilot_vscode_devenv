@@ -19,6 +19,7 @@ import * as cp from 'child_process';
 import * as os from 'os';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
+import { TOOLS_REGISTRY } from './apToolsConfig';
 
 // Device information interface
 export interface DeviceInfo {
@@ -353,7 +354,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 
 	private async getLinuxDevices(): Promise<DeviceInfo[]> {
 		// Check if lsusb is available first
-		const lsusbInfo = await ProgramUtils.findLsusb();
+		const lsusbInfo = await ProgramUtils.findProgram(TOOLS_REGISTRY.LSUSB);
 		let lsusbCmd = 'lsusb'; // Default fallback for testing
 
 		if (!lsusbInfo.available) {
@@ -873,7 +874,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		let mavproxyCommand = '';
 
 		// Use mavproxy.py on native Linux or Windows
-		const mavproxy = await ProgramUtils.findMavproxy();
+		const mavproxy = await ProgramUtils.findProgram(TOOLS_REGISTRY.MAVPROXY);
 
 		if (!mavproxy.available) {
 			vscode.window.showErrorMessage('MAVProxy not found. Please install it first.');
