@@ -107,7 +107,7 @@ export class apBuildConfigPanel {
 		this._panel.webview.html = this._getWebviewContent(this._panel.webview);
 
 		// Handle messages from the webview
-		this._uiHooks.on('build', (message: Record<string, unknown>) => {
+		this._uiHooks.on('build', async (message: Record<string, unknown>) => {
 			// create a new build configuration
 			apBuildConfigPanel.log('Received message from webview: build');
 			console.log(message);
@@ -123,7 +123,7 @@ export class apBuildConfigPanel {
 					buildOptions: ''
 				};
 
-				const currentTaskDef = APTaskProvider.getOrCreateBuildConfig(
+				const currentTaskDef = await APTaskProvider.getOrCreateBuildConfig(
 					taskDefinition.configure,
 					taskDefinition.target,
 					message?.configName as string,

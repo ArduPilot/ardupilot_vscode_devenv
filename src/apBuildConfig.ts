@@ -192,10 +192,10 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 		apBuildConfigPanel.createOrShow(this.context.extensionUri);
 	}
 
-	getChildren(): Thenable<apBuildConfig[]> {
+	async getChildren(): Promise<apBuildConfig[]> {
 		apBuildConfigProvider.log('getChildren');
 		if (!this.workspaceRoot) {
-			return Promise.resolve([]);
+			return [];
 		}
 
 		// Get all configurations from tasks.json instead of scanning build folders
@@ -212,7 +212,7 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 		for (const taskDef of ardupilotTasks) {
 			try {
 				// Create a VS Code task from the task definition
-				const task = APTaskProvider.createTask(taskDef);
+				const task = await APTaskProvider.createTask(taskDef);
 				if (task) {
 					// Use configName for display
 					const displayName = taskDef.configName;
@@ -225,6 +225,6 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 		}
 
 		apBuildConfigProvider.log(`Found ${buildConfigList.length} configurations in tasks.json`);
-		return Promise.resolve(buildConfigList);
+		return buildConfigList;
 	}
 }

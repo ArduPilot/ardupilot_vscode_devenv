@@ -117,8 +117,9 @@ export class UIHooks {
 		}
 	}
 
-	public getFeaturesList(): void {
-		this._panel.webview.postMessage({ command: 'getFeaturesList', featuresList: getFeaturesList(this._extensionUri) });
+	public async getFeaturesList(): Promise<void> {
+		const featuresList = await getFeaturesList(this._extensionUri);
+		this._panel.webview.postMessage({ command: 'getFeaturesList', featuresList });
 	}
 
 	public extractFeatures(message: Record<string, unknown>): void {
@@ -211,7 +212,7 @@ export class UIHooks {
 		this.listeners[event].push(listener);
 	}
 
-	public getConfigureOptions(): void {
+	public async getConfigureOptions(): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
 			this._panel.webview.postMessage({ command: 'getConfigureOptions', options: [], error: 'No workspace folder found' });
@@ -240,7 +241,7 @@ export class UIHooks {
 			const options = this.parseConfigureOptions(output);
 
 			// Get feature list to filter out feature-specific options
-			const featuresData = getFeaturesList(this._extensionUri);
+			const featuresData = await getFeaturesList(this._extensionUri);
 			const featuresObject = (featuresData as Record<string, unknown>)?.features || {};
 			const featureOptions = new Set<string>();
 
