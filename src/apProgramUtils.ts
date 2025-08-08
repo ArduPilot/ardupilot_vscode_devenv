@@ -306,16 +306,9 @@ export class ProgramUtils {
 
 						// Extract version from output
 						const versionOutput = output || errorOutput;
-						let version = 'Unknown';
+						let version: string | undefined = undefined;
 
-						// Special handling for JLinkGDBServerCL which has a different version format
-						if (command.includes('JLinkGDBServerCL')) {
-							// Example: "SEGGER J-Link GDB Server V7.94e Command Line Version"
-							const jlinkVersionMatch = versionOutput.match(/GDB Server V([\d.]+[a-z]?)/);
-							if (jlinkVersionMatch) {
-								version = jlinkVersionMatch[1];
-							}
-						} else if (versionRegex) {
+						if (versionRegex) {
 							// Use custom regex if provided
 							const match = versionOutput.match(versionRegex);
 							if (match && match[1]) {
@@ -397,14 +390,14 @@ export class ProgramUtils {
 	 * and returns the selected interpreter path
 	 * @returns Promise resolving to the selected Python interpreter path or undefined if cancelled
 	 */
-	public static async selectPythonInterpreter(): Promise<string | undefined> {
+	public static async selectPythonInterpreter(): Promise<string | null> {
 		this.log.log('Opening Python interpreter selection dialog');
 
 		// Check if ms-python.python extension is installed and active
 		const pythonExtension = vscode.extensions.getExtension('ms-python.python');
 		if (!pythonExtension) {
 			vscode.window.showErrorMessage('Microsoft Python extension is not installed. Please install it to use this feature.');
-			return undefined;
+			return null;
 		}
 
 		if (!pythonExtension.isActive) {
@@ -429,12 +422,12 @@ export class ProgramUtils {
 				return interpreterPath; // Return the path of the selected interpreter
 			} else {
 				this.log.log('No Python interpreter selected');
-				return undefined;
+				return null;
 			}
 		} catch (error) {
 			this.log.log(`Error selecting Python interpreter: ${error}`);
 			vscode.window.showErrorMessage(`Failed to select Python interpreter: ${error}`);
-			return undefined;
+			return null;
 		}
 	}
 
