@@ -34,8 +34,350 @@ interface ToolsConfigFile {
 }
 
 /**
+ * Type for install method - either a command or a URL
+ */
+export type InstallMethod =
+    | { type: 'command'; command: string }
+    | { type: 'url'; url: string };
+
+/**
+ * Interface for consolidated tool information
+ */
+export interface ToolInfo {
+    id?: string;
+    name: string;
+    description: string;
+    optional?: boolean;
+	webUrl?: string;
+    paths: {
+        linux?: readonly string[];
+        darwin?: readonly string[];
+        wsl?: readonly string[];
+    };
+    installCommands?: {
+        linux?: InstallMethod;
+        darwin?: InstallMethod;
+        wsl?: InstallMethod;
+    };
+    findArgs?: {
+        args: readonly string[];
+        versionRegex?: RegExp;
+    };
+}
+
+/**
+ * Interface for Python package information
+ */
+export interface PythonPackageInfo {
+    name: string;
+    version?: string;
+    description: string;
+}
+
+/**
  * Class to manage tool configurations
  */
+/**
+ * Consolidated registry for all tools with enum-like access
+ */
+export const TOOLS_REGISTRY = {
+	PYTHON: {
+		name: 'Python',
+		description: 'Install Python 3 and pip',
+		webUrl: 'https://www.python.org/downloads/',
+		paths: {
+			linux: ['python3', 'python'],
+			darwin: ['python3', 'python']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y python3 python3-pip' },
+			darwin: { type: 'command', command: 'brew install python3' },
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	PYTHON_WIN: {
+		name: 'Python (Windows)',
+		description: 'Download and install Python for Windows, then restart WSL',
+		webUrl: 'https://www.python.org/downloads/windows/',
+		paths: {
+			wsl: ['python.exe']
+		},
+		installCommands: {
+			wsl: { type: 'url', url: 'https://www.python.org/downloads/windows/' },
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	MAVPROXY: {
+		name: 'MAVProxy',
+		description: 'Install MAVProxy via pip',
+		paths: {
+			linux: ['mavproxy.py'],
+			darwin: ['mavproxy.py'],
+			wsl: ['mavproxy.exe', 'mavproxy.py']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'pip3 install mavproxy' },
+			darwin: { type: 'command', command: 'pip3 install mavproxy' }
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	CCACHE: {
+		name: 'ccache',
+		description: 'Install ccache for faster builds',
+		paths: {
+			linux: ['ccache'],
+			darwin: ['ccache']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y ccache' },
+			darwin: { type: 'command', command: 'brew install ccache' }
+		},
+		findArgs: {
+			args: ['-V']
+		}
+	},
+	OPENOCD: {
+		name: 'OpenOCD',
+		description: 'Install OpenOCD for debugging',
+		optional: true,
+		paths: {
+			linux: ['openocd'],
+			darwin: ['openocd']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y openocd' },
+			darwin: { type: 'command', command: 'brew install openocd' }
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	JLINK: {
+		name: 'J-Link',
+		description: 'Download J-Link software from SEGGER website',
+		optional: true,
+		webUrl: 'https://www.segger.com/',
+		paths: {
+			linux: [
+				'/mnt/c/Program Files/SEGGER/JLink*/JLinkGDBServerCL.exe',
+				'/mnt/c/Program Files (x86)/SEGGER/JLink*/JLinkGDBServerCL.exe',
+				'/opt/SEGGER/JLink*/JLinkGDBServerCLExe'
+			],
+			darwin: [
+				'JLinkGDBServerCLExe',
+				'/Applications/SEGGER/JLink/JLinkGDBServerCLExe'
+			],
+			wsl: [
+				'/mnt/c/Program Files/SEGGER/JLink*/JLinkGDBServerCL.exe',
+				'/mnt/c/Program Files (x86)/SEGGER/JLink*/JLinkGDBServerCL.exe'
+			]
+		},
+		installCommands: {
+			linux: { type: 'url', url: 'https://www.segger.com/downloads/jlink/' },
+			darwin: { type: 'url', url: 'https://www.segger.com/downloads/jlink/' }
+		},
+		findArgs: {
+			args: ['-version', '-nogui'],
+			versionRegex: /SEGGER J-Link GDB Server V([\d.]+[a-z]?)/
+		}
+	},
+	GCC: {
+		name: 'GCC',
+		description: 'Install GCC compiler',
+		paths: {
+			linux: ['gcc'],
+			darwin: ['gcc']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y gcc' },
+			darwin: { type: 'command', command: 'xcode-select --install' }
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	GPP: {
+		name: 'G++',
+		description: 'Install G++ compiler',
+		paths: {
+			linux: ['g++'],
+			darwin: ['g++']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y g++' },
+			darwin: { type: 'command', command: 'xcode-select --install' }
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	GDB: {
+		name: 'GDB',
+		description: 'Install GDB debugger',
+		paths: {
+			linux: ['gdb'],
+			darwin: ['gdb']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y gdb' },
+			darwin: { type: 'command', command: 'brew install gdb' }
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	ARM_GCC: {
+		name: 'ARM GCC Toolchain',
+		description: 'Download and install ARM GCC toolchain version 10',
+		paths: {
+			linux: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-gcc'],
+			darwin: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-gcc', '/Applications/ARM/bin/arm-none-eabi-gcc']
+		},
+		installCommands: {
+			linux: { type: 'url', url: 'https://firmware.ardupilot.org/Tools/STM32-tools/' },
+			darwin: { type: 'url', url: 'https://firmware.ardupilot.org/Tools/STM32-tools/' }
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	ARM_GDB: {
+		name: 'ARM GDB',
+		description: 'Install GDB for ARM debugging',
+		paths: {
+			linux: ['gdb-multiarch', 'arm-none-eabi-gdb'],
+			darwin: ['arm-none-eabi-gdb']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y gdb-multiarch' },
+			darwin: { type: 'command', command: 'brew install gdb' }
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	GDBSERVER: {
+		name: 'GDB Server',
+		description: 'Install GDB server',
+		paths: {
+			linux: ['gdbserver'],
+			darwin: ['gdbserver']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y gdbserver' }
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	TMUX: {
+		name: 'tmux',
+		description: 'Install tmux terminal multiplexer',
+		paths: {
+			linux: ['tmux'],
+			darwin: ['tmux']
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y tmux' },
+			darwin: { type: 'command', command: 'brew install tmux' }
+		},
+		findArgs: {
+			args: ['-V']
+		}
+	},
+	LSUSB: {
+		name: 'lsusb',
+		description: 'Install lsusb utility for USB device detection',
+		paths: {
+			linux: ['lsusb'],
+		},
+		installCommands: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y usbutils' }
+		},
+		findArgs: {
+			args: ['-V'],
+			versionRegex: /lsusb\s+(\S+)/
+		}
+	}
+} as const;
+
+/**
+ * Type for ToolID
+ */
+export type ToolID = keyof typeof TOOLS_REGISTRY;
+
+// Initialize the id field for each tool with its key
+Object.entries(TOOLS_REGISTRY).forEach(([key, tool]) => {
+	(tool as ToolInfo).id = key;
+});
+
+/**
+ * Registry of required Python packages
+ */
+export const PYTHON_PACKAGES_REGISTRY = {
+	EMPY: { name: 'empy', version: '3.3.4', description: 'Template engine for code generation' },
+	FUTURE: { name: 'future', description: 'Python 2/3 compatibility' },
+	PYMAVLINK: { name: 'pymavlink', description: 'MAVLink protocol implementation' },
+	LXML: { name: 'lxml', description: 'XML processing for MAVLink' },
+	PEXPECT: { name: 'pexpect', description: 'Process control and automation' },
+	DRONECAN: { name: 'dronecan', description: 'DroneCAN protocol implementation' },
+	PYSERIAL: { name: 'pyserial', description: 'Serial communication library' },
+	SETUPTOOLS: { name: 'setuptools', description: 'Python package development utilities (provides pkg_resources)' }
+} as const;
+
+/**
+ * Type for PythonPackageId
+ */
+export type PythonPackageId = keyof typeof PYTHON_PACKAGES_REGISTRY;
+
+/**
+ * Helper functions for working with the tools registry
+ */
+export class ToolsRegistryHelpers {
+	/**
+	 * Get all tool IDs as an array
+	 */
+	static getToolIdsList(): ToolID[] {
+		return Object.keys(TOOLS_REGISTRY) as ToolID[];
+	}
+
+	/**
+	 * Get all tools as an array
+	 */
+	static getAllTools(): Array<ToolInfo & { key: string }> {
+		return Object.entries(TOOLS_REGISTRY).map(([key, info]) => ({
+			key,
+			...info
+		}));
+	}
+
+	/**
+	 * Get all Python packages as an array
+	 */
+	static getAllPythonPackages(): Array<PythonPackageInfo & { key: string }> {
+		return Object.entries(PYTHON_PACKAGES_REGISTRY).map(([key, info]) => ({
+			key,
+			...info
+		}));
+	}
+
+	/**
+	 * Get Python packages formatted for pip installation
+	 */
+	static getPythonPackagesForInstallation(): string[] {
+		return Object.entries(PYTHON_PACKAGES_REGISTRY).map(([, pkg]) => {
+			// Include version if specified
+			return (pkg as PythonPackageInfo).version ? `${pkg.name}==${(pkg as PythonPackageInfo).version}` : pkg.name;
+		});
+	}
+}
+
 export class ToolsConfig {
 	private static log = new apLog('ToolsConfig');
 	private static readonly CONFIG_FILE = '.vscode/apenv.json';
@@ -173,7 +515,7 @@ export class ToolsConfig {
      * @param toolId The ID of the tool
      * @returns The configured path for the tool, or undefined if not configured
      */
-	public static getToolPath(toolId: string): string | undefined {
+	public static getToolPath(toolId: ToolID): string | undefined {
 		return this.toolPaths[toolId];
 	}
 
@@ -182,7 +524,7 @@ export class ToolsConfig {
      * @param toolId The ID of the tool
      * @param path The path to the tool
      */
-	public static setToolPath(toolId: string, path: string): void {
+	public static setToolPath(toolId: ToolID, path: string): void {
 		this.toolPaths[toolId] = path;
 		this.saveConfig();
 	}
@@ -191,7 +533,7 @@ export class ToolsConfig {
      * Removes the configured path for a tool
      * @param toolId The ID of the tool
      */
-	public static removeToolPath(toolId: string): void {
+	public static removeToolPath(toolId: ToolID): void {
 		delete this.toolPaths[toolId];
 		this.saveConfig();
 	}
