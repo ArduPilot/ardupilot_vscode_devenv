@@ -51,9 +51,6 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	// Initialize ToolsConfig
 	ToolsConfig.initialize(_context);
 
-	// Initialize all tools cache asynchronously
-	ProgramUtils.initializeToolsCache();
-
 	// Configure venv-ardupilot as default Python interpreter if available
 	ProgramUtils.configureVenvArdupilot();
 
