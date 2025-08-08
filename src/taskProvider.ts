@@ -21,6 +21,7 @@ import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { apTerminalMonitor } from './apTerminalMonitor';
+import { TOOLS_REGISTRY } from './apToolsConfig';
 
 /**
  * Custom execution class for ArduPilot build tasks
@@ -265,7 +266,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		return undefined;
 	}
 
-	public static getOrCreateBuildConfig(board: string, target: string, configName: string, configureOptions?: string, simVehicleCommand?: string, overrideEnabled?: boolean, customConfigureCommand?: string, customBuildCommand?: string): vscode.Task | undefined {
+	public static async getOrCreateBuildConfig(board: string, target: string, configName: string, configureOptions?: string, simVehicleCommand?: string, overrideEnabled?: boolean, customConfigureCommand?: string, customBuildCommand?: string): Promise<vscode.Task | undefined> {
 		// create a new task definition in tasks.json
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 
@@ -365,7 +366,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 		}
 
-		const task = taskDef ? this.createTask(taskDef) : undefined;
+		const task = taskDef ? await this.createTask(taskDef) : undefined;
 		if (!task) {
 			vscode.window.showErrorMessage('Failed to create task definition.');
 			return undefined;
@@ -416,7 +417,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 	 * @param definition The task definition to determine SITL vs non-SITL builds
 	 * @returns Environment variables object
 	 */
-	public static prepareEnvironmentVariables(definition?: ArdupilotTaskDefinition): { [key: string]: string } {
+	public static async prepareEnvironmentVariables(definition?: ArdupilotTaskDefinition): Promise<{ [key: string]: string }> {
 		const env: { [key: string]: string } = {};
 
 		// Copy process.env but filter out undefined values
@@ -432,40 +433,40 @@ export class APTaskProvider implements vscode.TaskProvider {
 
 		if (isSitlBuild) {
 			// For SITL builds, use regular GCC/G++
-			const gccPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_GCC);
-			const gppPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_GPP);
+			const gccPath = await ProgramUtils.findProgram(TOOLS_REGISTRY.GCC);
+			const gppPath = await ProgramUtils.findProgram(TOOLS_REGISTRY.GPP);
 
-			if (gccPath) {
-				env.CC = gccPath;
-				APTaskProvider.log.log(`Setting CC environment variable for SITL to: ${gccPath}`);
+			if (gccPath.path) {
+				env.CC = gccPath.path;
+				APTaskProvider.log.log(`Setting CC environment variable for SITL to: ${gccPath.path}`);
 			}
 
-			if (gppPath) {
-				env.CXX = gppPath;
-				APTaskProvider.log.log(`Setting CXX environment variable for SITL to: ${gppPath}`);
+			if (gppPath.path) {
+				env.CXX = gppPath.path;
+				APTaskProvider.log.log(`Setting CXX environment variable for SITL to: ${gppPath.path}`);
 			}
 		} else {
 			// For non-SITL builds, use ARM toolchain
-			const armGccPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_ARM_GCC);
+			const armGccPath = await ProgramUtils.findProgram(TOOLS_REGISTRY.ARM_GCC);
 
-			const armBinPath = armGccPath ? path.dirname(armGccPath) : undefined;
+			const armBinPath = armGccPath.path ? path.dirname(armGccPath.path) : undefined;
 			if (armBinPath) {
 				env.PATH = env.PATH ? `${env.PATH}:${armBinPath}` : armBinPath;
 			}
 		}
 
 		// also set PYTHON environment variable
-		const pythonPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_PYTHON);
-		if (pythonPath) {
-			env.PYTHON = pythonPath;
-			APTaskProvider.log.log(`Setting PYTHON environment variable to: ${pythonPath}`);
+		const pythonInfo = await ProgramUtils.findProgram(TOOLS_REGISTRY.PYTHON);
+		if (pythonInfo.path) {
+			env.PYTHON = pythonInfo.path;
+			APTaskProvider.log.log(`Setting PYTHON environment variable to: ${pythonInfo.path}`);
 		} else {
 			APTaskProvider.log.log('No PYTHON environment variable set, using default');
 		}
 		return env;
 	}
 
-	static createTask(definition: ArdupilotTaskDefinition): vscode.Task | undefined {
+	static async createTask(definition: ArdupilotTaskDefinition): Promise<vscode.Task | undefined> {
 		const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
 		if (!workspaceRoot) {
 			return undefined;
@@ -475,7 +476,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		const task_name = definition.configName;
 
 		// Prepare environment variables - with or without CC/CXX paths
-		const env = this.prepareEnvironmentVariables(definition);
+		const env = await this.prepareEnvironmentVariables(definition);
 
 		// Generate commands using shared method or use custom commands
 		let taskCommand: string;
@@ -574,7 +575,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 		}
 	}
 
-	public resolveTask(task: vscode.Task): vscode.Task | undefined {
+	public async resolveTask(task: vscode.Task): Promise<vscode.Task | undefined> {
 		const taskDef = task.definition;
 		if (taskDef) {
 			// Note: resolveTask cannot be async, so we return the task without CC/CXX environment variables
@@ -637,7 +638,7 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	customBuildCommand?: string;
 }
 
-export function getFeaturesList(extensionUri: vscode.Uri): Record<string, unknown> {
+export async function getFeaturesList(extensionUri: vscode.Uri): Promise<Record<string, unknown>> {
 	// run resources/featureLoader.py on workspaceRoot/Tools/scripts/build_options.py
 	const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 	if (workspaceRoot === undefined) {
@@ -650,11 +651,11 @@ export function getFeaturesList(extensionUri: vscode.Uri): Record<string, unknow
 	// run python script resources/featureLoader.py
 	const featureLoaderPath = path.join(extensionUri.path, 'resources', 'featureLoader.py');
 	// use python tool from ProgramUtils
-	const pythonPath = ProgramUtils.cachedToolPath(ProgramUtils.TOOL_PYTHON);
-	if (!pythonPath) {
+	const pythonInfo = await ProgramUtils.findProgram(TOOLS_REGISTRY.PYTHON);
+	if (!pythonInfo.path) {
 		throw new Error('Python tool not found');
 	}
-	const featureLoader = cp.spawnSync(pythonPath, [featureLoaderPath, buildOptionsPath]);
+	const featureLoader = cp.spawnSync(pythonInfo.path, [featureLoaderPath, buildOptionsPath]);
 	if (featureLoader.status !== 0) {
 		throw new Error('featureLoader.py failed with exit code ' + featureLoader.status);
 	}
