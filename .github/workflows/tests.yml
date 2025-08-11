@@ -52,17 +52,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           # Update package lists
-          sudo apt update
-          
-          # Install core development tools
-          sudo apt install -y gcc g++ gdb ccache tmux python3 python3-pip
-          
-          # Install ARM cross-compilation toolchain
-          sudo apt install -y gcc-arm-none-eabi gdb-multiarch
-          
-          # Install optional tools
-          sudo apt install -y openocd gdbserver
-          
+          sudo apt update          
           # Install virtual display for VSCode extension testing
           sudo apt install -y xvfb
 
@@ -72,16 +62,7 @@ jobs:
         run: |
           # Update package lists
           sudo apt update
-          
-          # Install core development tools
-          sudo apt install -y gcc g++ gdb ccache tmux python3 python3-pip
-          
-          # Install ARM cross-compilation toolchain
-          sudo apt install -y gcc-arm-none-eabi gdb-multiarch
-          
-          # Install optional tools
-          sudo apt install -y openocd gdbserver
-          
+
           # Install virtual display for VSCode extension testing
           sudo apt install -y xvfb
           
@@ -126,70 +107,6 @@ jobs:
           npm --version
           # Add Node.js to PATH
           echo '. "$HOME/.nvm/nvm.sh"' >> ~/.bashrc
-
-      - name: Install J-Link (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: wsl-bash {0}
-        run: |
-          # Install J-Link from local package
-          ./ci-tools/JLink_Windows_V840_x86_64.exe /S
-          /mnt/c/Program\ Files/SEGGER/JLink/JLinkGDBServerCLExe.exe --version || echo "J-Link: Version check (may fail normally)"
-
-      - name: Setup Python virtual environment (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          python3 -m pip install --upgrade pip
-          echo "VIRTUAL_ENV=$PWD/venv" >> $GITHUB_ENV
-          echo "$PWD/venv/bin" >> $GITHUB_PATH
-
-      - name: Install Python packages (Unix)
-        if: matrix.os != 'windows-latest'
-        run: |
-          if [ "${{ matrix.os }}" == "macos-latest" ]; then
-            source venv/bin/activate
-          fi
-          python3 -m pip install --upgrade pip
-          python3 -m pip install pyserial mavproxy
-
-      - name: Verify tool installation (WSL2)
-        if: matrix.os == 'windows-latest'
-        shell: wsl-bash {0}
-        run: |
-          . $HOME/.nvm/nvm.sh
-          echo "=== Tool Verification in WSL2 ==="
-          python3 --version
-          gcc --version | head -1
-          g++ --version | head -1
-          gdb --version | head -1
-          arm-none-eabi-gcc --version | head -1
-          ccache --version | head -1
-          tmux -V
-          openocd --version 2>&1 | head -1
-
-          node --version
-          npm --version
-
-      - name: Verify tool installation (Unix)
-        if: matrix.os != 'windows-latest'
-        run: |
-          if [ "${{ matrix.os }}" == "macos-latest" ]; then
-            source venv/bin/activate
-          fi
-          echo "=== Tool Verification ==="
-          python3 --version
-          gcc --version | head -1
-          g++ --version | head -1
-          gdb --version | head -1
-          arm-none-eabi-gcc --version | head -1
-          ccache --version | head -1
-          tmux -V
-          openocd --version 2>&1 | head -1
-          echo "=== J-Link Verification ==="
-          which JLinkGDBServerCLExe || echo "JLinkGDBServerCLExe not in PATH"
-          find /opt/SEGGER /Applications/SEGGER -name "JLinkGDBServerCLExe" 2>/dev/null || echo "J-Link: Manual path search"
-          JLinkGDBServerCLExe -version 2>&1 | head -3 || echo "J-Link: Version check (may fail normally)"
 
       - name: Install npm dependencies (WSL2)
         if: matrix.os == 'windows-latest'
