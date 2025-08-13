@@ -259,7 +259,7 @@ export class apTerminalMonitor {
 	 * Create a new VS Code terminal
 	 * @returns The created terminal instance
 	 */
-	public createTerminal(options?: Omit<vscode.TerminalOptions, 'name'>, disposeExisting?: boolean): vscode.Terminal {
+	public createTerminal(options?: Omit<vscode.TerminalOptions, 'name'>, disposeExisting?: boolean): void {
 		if (this.terminal && disposeExisting) {
 			this.terminal.dispose();
 		}
@@ -279,7 +279,6 @@ export class apTerminalMonitor {
 		this.terminal.show();
 
 		this.setupTerminalListeners();
-		return this.terminal;
 	}
 
 	public findExistingTerminal(): vscode.Terminal | null {
@@ -472,105 +471,97 @@ export class apTerminalMonitor {
 		}
 	}
 
-	public sendText(text: string): void {
-		// Ensure terminal is available, create one if needed
-		if (!this.terminal) {
-			this.log.log('Terminal not available for sendText, attempting to find or create one');
-
-			// Try to find existing terminal first
-			if (!this.findExistingTerminal()) {
-				// If no existing terminal found, create a new one
-				this.log.log('No existing terminal found, creating new terminal for sendText');
-				this.createTerminal();
-			}
-		}
-
-		if (this.terminal) {
-			this.terminal.sendText(text);
-		} else {
-			this.log.log('Failed to create or find terminal for sendText');
-		}
-	}
-
 	/*
 	 * Run a command in the terminal and wait for completion
 	 * @param command - The command to execute
 	 * @returns Promise that resolves with the exit code
 	 */
-	public async runCommand(command: string): Promise<number> {
-		return new Promise((resolve, reject) => {
-			// Ensure terminal is available, create one if needed
-			if (!this.terminal) {
-				this.log.log('Terminal not available, attempting to find or create one');
+	public async runCommand(command: string, options: { noevents?: boolean } = {}): Promise<number> {
+		// Ensure terminal is available, create one if needed
+		if (!this.terminal) {
+			this.log.log('Terminal not available, attempting to find or create one');
 
-				// Try to find existing terminal first
-				if (!this.findExistingTerminal()) {
-					// If no existing terminal found, create a new one
-					this.log.log('No existing terminal found, creating new terminal');
-					this.createTerminal();
-				}
+			// Try to find existing terminal first
+			if (!this.findExistingTerminal()) {
+				// If no existing terminal found, create a new one
+				this.log.log('No existing terminal found, creating new terminal');
+				this.createTerminal();
 
-				// Double-check we now have a terminal
-				if (!this.terminal) {
-					reject(new Error('Failed to create or find terminal'));
-					return;
-				}
+				// Send the command after 3 second to allow terminal setup
+				// replace this with a proper mechanism to catch python venv activation
+				setTimeout(() => {
+					if (!this.terminal) {
+						this.log.log('Terminal was closed before command could be sent');
+						throw new Error('Terminal was closed before command could be sent');
+					}
+				}, 2000);
 			}
 
-			this.log.log(`Running command: ${command}`);
+			// Double-check we now have a terminal
+			if (!this.terminal) {
+				throw (new Error('Failed to create or find terminal'));
+			}
+		}
 
-			// Set the current command to filter shell execution events
-			this.currentCommand = command;
+		this.log.log(`Running command: ${command}`);
 
-			// Set up listener for shell execution start to match our command
-			let commandMatched = false;
+		// Set the current command to filter shell execution events
+		this.currentCommand = command;
 
-			const startListener = (event: TerminalEvent) => {
-				if (event.commandLine && (
-					this.normalizeCommand(event.commandLine) === this.normalizeCommand(command) ||
-					this.isPartOfCompoundCommand(event.commandLine, command)
-				)) {
-					commandMatched = true;
-					this.log.log(`Command execution started: ${event.commandLine}`);
+		// Set up listener for shell execution start to match our command
+		let commandMatched = false;
+
+		const startListener = (event: TerminalEvent) => {
+			if (event.commandLine && (
+				this.normalizeCommand(event.commandLine) === this.normalizeCommand(command) ||
+				this.isPartOfCompoundCommand(event.commandLine, command)
+			)) {
+				commandMatched = true;
+				this.log.log(`Command execution started: ${event.commandLine}`);
+			}
+		};
+
+		// Set up listener for shell execution end
+		const endListener = (event: TerminalEvent) => {
+			if (commandMatched && event.exitCode !== undefined && event.commandLine) {
+				const executedCommand = this.normalizeCommand(event.commandLine);
+				this.log.log(`Command execution completed: ${event.commandLine} with exit code: ${event.exitCode}`);
+
+				// Check if the executed command matches our original command (for both single and compound commands)
+				const isExactMatch = executedCommand === this.normalizeCommand(command);
+				const isPartMatch = this.isPartOfCompoundCommand(event.commandLine, command);
+
+				if (isExactMatch || isPartMatch) {
+					// This matches our command - resolve immediately (expect only one completion signal)
+					this.log.log(`Command completed: ${event.commandLine} with exit code: ${event.exitCode}`);
+					this.currentCommand = null;
+					this.removeEventListener(TerminalEventType.SHELL_EXECUTION_START, startListener);
+					this.removeEventListener(TerminalEventType.SHELL_EXECUTION_END, endListener);
+					return event.exitCode;
 				}
-			};
+			}
+		};
 
-			// Set up listener for shell execution end
-			const endListener = (event: TerminalEvent) => {
-				if (commandMatched && event.exitCode !== undefined && event.commandLine) {
-					const executedCommand = this.normalizeCommand(event.commandLine);
-					this.log.log(`Command execution completed: ${event.commandLine} with exit code: ${event.exitCode}`);
-
-					// Check if the executed command matches our original command (for both single and compound commands)
-					const isExactMatch = executedCommand === this.normalizeCommand(command);
-					const isPartMatch = this.isPartOfCompoundCommand(event.commandLine, command);
-
-					if (isExactMatch || isPartMatch) {
-						// This matches our command - resolve immediately (expect only one completion signal)
-						this.log.log(`Command completed: ${event.commandLine} with exit code: ${event.exitCode}`);
-						this.currentCommand = null;
-						this.removeEventListener(TerminalEventType.SHELL_EXECUTION_START, startListener);
-						this.removeEventListener(TerminalEventType.SHELL_EXECUTION_END, endListener);
-						resolve(event.exitCode);
-					}
-				}
-			};
-
-			// Add event listeners
+		// Add event listeners
+		if (options.noevents) {
 			this.addEventListener(TerminalEventType.SHELL_EXECUTION_START, startListener);
 			this.addEventListener(TerminalEventType.SHELL_EXECUTION_END, endListener);
+		}
 
-			// Send the command after 3 second to allow terminal setup
-			setTimeout(() => {
-				if (!this.terminal) {
-					this.log.log('Terminal was closed before command could be sent');
-					reject(new Error('Terminal was closed before command could be sent'));
-					return;
-				}
-				this.log.log(`Sending command to terminal: ${command}`);
-				this.terminal.sendText(command);
-			}, 3000);
-		});
+		this.log.log(`Sending command to terminal: ${command}`);
+		this.terminal.sendText(command, true);
+
+		if (!options.noevents) {
+			// wait for shell execution to complete
+			const exitCode = (await this.waitForShellExecutionEnd()).exitCode;
+			if (typeof exitCode === 'number') {
+				return exitCode;
+			}
+			throw new Error('Failed to get exit code');
+		} else {
+			// No events option is set, return 0
+			return 0;
+		}
 	}
 
 	public show(preserveFocus?: boolean): void {
