@@ -15,11 +15,14 @@
 */
 
 import * as path from 'path';
+import * as os from 'os';
 import * as vscode from 'vscode';
+import { spawn } from 'child_process';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { targetToBin } from './apBuildConfig';
 import { TOOLS_REGISTRY } from './apToolsConfig';
+import { apTerminalMonitor } from './apTerminalMonitor';
 import * as fs from 'fs';
 
 // Map vehicle types to ArduPilot binary names
@@ -63,31 +66,332 @@ export interface APLaunchDefinition {
 
 export class APLaunchConfigurationProvider implements vscode.DebugConfigurationProvider {
 	private static log = new apLog('APLaunchConfigurationProvider');
+	private static activeSessions: Set<string> = new Set();
 	private tmuxSessionName: string | undefined;
-	private debugSessionTerminal: vscode.Terminal | undefined;
+	private debugSessionTerminal: apTerminalMonitor | undefined;
+	private workspaceFolder: vscode.WorkspaceFolder;
 
-	constructor() {
+	constructor(workspaceFolder: vscode.WorkspaceFolder) {
+		this.workspaceFolder = workspaceFolder;
 		// Register a debug session termination listener
 		vscode.debug.onDidTerminateDebugSession(this.handleDebugSessionTermination.bind(this));
 	}
 
+	/*
+	 * Find ArduPilot process PID directly from tmux panes by command name
+	 * @param sessionName - Name of the tmux session to search in
+	 * @param binaryName - Name of the ArduPilot binary to find (e.g., 'arduplane')
+	 * @returns PID of the ArduPilot process or null if not found
+	 */
+	private async findArduPilotProcessInTmux(sessionName: string, binaryName: string): Promise<number | null> {
+		const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
+		if (!tmux.available || !tmux.path) {
+			throw new Error('tmux not found');
+		}
+
+		return new Promise((resolve, reject) => {
+			if (!tmux.path) {
+				reject(new Error('tmux path is undefined'));
+				return;
+			}
+
+			// List all panes across all windows in the specific session
+			const args = ['list-panes', '-t', sessionName, '-a', '-F', '#{session_name}:#{window_index}.#{pane_index} #{pane_pid} #{pane_current_command}'];
+
+			const tmuxProcess = spawn(tmux.path, args);
+			APLaunchConfigurationProvider.log.log(`DEBUG: Searching for ${binaryName} in tmux session: ${sessionName}`);
+
+			let output = '';
+			tmuxProcess.stdout?.on('data', (data: Buffer) => {
+				output += data.toString();
+			});
+
+			tmuxProcess.on('close', (code: number | null) => {
+				if (code !== 0) {
+					APLaunchConfigurationProvider.log.log(`DEBUG: tmux list-panes failed with exit code ${code} for session ${sessionName}`);
+					resolve(null);
+					return;
+				}
+
+				const lines = output.trim().split('\n').filter(line => line.trim() !== '');
+				APLaunchConfigurationProvider.log.log(`DEBUG: tmux panes output for session ${sessionName}:\n${lines.join('\n')}`);
+
+				// Parse each line: "session:window.pane pid command"
+				for (const line of lines) {
+					const parts = line.trim().split(' ');
+					if (parts.length >= 3) {
+						const paneInfo = parts[0]; // session:window.pane
+						const pidStr = parts[1];
+						const command = parts.slice(2).join(' '); // Join remaining parts as command might have spaces
+
+						const pid = parseInt(pidStr, 10);
+						if (!isNaN(pid)) {
+							APLaunchConfigurationProvider.log.log(`DEBUG: Found pane ${paneInfo}: PID ${pid}, command '${command}'`);
+
+							// Check if the command matches our binary name (case-insensitive)
+							if (command.toLowerCase().includes(binaryName.toLowerCase())) {
+								APLaunchConfigurationProvider.log.log(`DEBUG: Found ${binaryName} process: PID ${pid} in pane ${paneInfo}`);
+								resolve(pid);
+								return;
+							}
+						}
+					}
+				}
+
+				APLaunchConfigurationProvider.log.log(`DEBUG: ${binaryName} process not found in tmux session ${sessionName}`);
+				resolve(null);
+			});
+
+			tmuxProcess.on('error', (error: Error) => {
+				APLaunchConfigurationProvider.log.log(`DEBUG: Error running tmux list-panes for session ${sessionName}: ${error}`);
+				reject(error);
+			});
+		});
+	}
+
+	/*
+	 * Wait for ArduPilot process to start in tmux session
+	 * @param sessionName - Name of the tmux session
+	 * @param binaryName - Name of the ArduPilot binary (e.g., 'arduplane')
+	 * @param timeoutMs - Maximum time to wait in milliseconds
+	 * @returns PID of the ArduPilot process
+	 */
+	private async waitForProcessStart(sessionName: string, binaryName: string, timeoutMs: number = 30000): Promise<number> {
+		const startTime = Date.now();
+		const pollInterval = 1000; // Poll every 1 second
+
+		APLaunchConfigurationProvider.log.log(`DEBUG: Waiting for ${binaryName} process to start in tmux session ${sessionName}`);
+
+		while (Date.now() - startTime < timeoutMs) {
+			try {
+				// Look for ArduPilot process directly in tmux panes
+				const arduPilotPid = await this.findArduPilotProcessInTmux(sessionName, binaryName);
+				if (arduPilotPid !== null) {
+					APLaunchConfigurationProvider.log.log(`DEBUG: Found ${binaryName} process with PID: ${arduPilotPid}`);
+
+					// Give the process additional time to fully initialize before considering it "ready"
+					APLaunchConfigurationProvider.log.log(`DEBUG: Allowing ${binaryName} process to stabilize for 3 seconds...`);
+					await new Promise(resolve => setTimeout(resolve, 3000));
+
+					// Verify process is still running after the wait
+					const processStillExists = await this.verifyProcessExists(arduPilotPid);
+					if (!processStillExists) {
+						APLaunchConfigurationProvider.log.log(`DEBUG: ${binaryName} process ${arduPilotPid} terminated during stabilization wait`);
+						// Continue polling instead of returning - the process might restart
+						continue;
+					}
+
+					APLaunchConfigurationProvider.log.log(`DEBUG: ${binaryName} process ${arduPilotPid} is stable and ready for debugging`);
+					return arduPilotPid;
+				}
+
+				APLaunchConfigurationProvider.log.log(`DEBUG: ${binaryName} process not found yet, continuing to poll...`);
+			} catch (error) {
+				APLaunchConfigurationProvider.log.log(`DEBUG: Error while polling for process: ${error}`);
+			}
+
+			// Wait before next poll
+			await new Promise(resolve => setTimeout(resolve, pollInterval));
+		}
+
+		throw new Error(`Timeout waiting for ${binaryName} process to start after ${timeoutMs}ms`);
+	}
+
+	/*
+	 * Verify that a process with the given PID still exists
+	 * @param pid - Process ID to check
+	 * @returns Promise<boolean> - true if process exists, false otherwise
+	 */
+	private async verifyProcessExists(pid: number): Promise<boolean> {
+		return new Promise((resolve) => {
+			const psProcess = spawn('ps', ['-p', pid.toString()]);
+
+			psProcess.on('close', (code: number | null) => {
+				// ps returns 0 if process exists, 1 if it doesn't
+				resolve(code === 0);
+			});
+
+			psProcess.on('error', () => {
+				resolve(false);
+			});
+		});
+	}
+
+	/*
+	 * Kill any existing ardupilot_sitl* tmux sessions
+	 * This ensures a clean environment before starting new debugging sessions
+	 */
+	private async killExistingArduPilotSessions(): Promise<void> {
+		const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
+		if (!tmux.available || !tmux.path) {
+			APLaunchConfigurationProvider.log.log('DEBUG: tmux not available, skipping session cleanup');
+			return;
+		}
+
+		return new Promise((resolve) => {
+			if (!tmux.path) {
+				resolve();
+				return;
+			}
+
+			// First, list all tmux sessions to find ardupilot_sitl* sessions
+			const listProcess = spawn(tmux.path, ['list-sessions', '-F', '#{session_name}']);
+
+			let output = '';
+			listProcess.stdout?.on('data', (data: Buffer) => {
+				output += data.toString();
+			});
+
+			listProcess.on('close', (code: number | null) => {
+				if (code !== 0) {
+					APLaunchConfigurationProvider.log.log('DEBUG: No existing tmux sessions found or tmux list-sessions failed');
+					resolve();
+					return;
+				}
+
+				const sessionNames = output.trim().split('\n')
+					.filter(line => line.trim() !== '')
+					.filter(sessionName => sessionName.startsWith('ardupilot_sitl_'));
+
+				if (sessionNames.length === 0) {
+					APLaunchConfigurationProvider.log.log('DEBUG: No existing ardupilot_sitl* sessions found');
+					resolve();
+					return;
+				}
+
+				APLaunchConfigurationProvider.log.log(`DEBUG: Found ${sessionNames.length} existing ardupilot_sitl* sessions to kill: ${sessionNames.join(', ')}`);
+
+				// Kill each ardupilot_sitl* session
+				let killCount = 0;
+				const totalSessions = sessionNames.length;
+
+				const checkComplete = () => {
+					killCount++;
+					if (killCount === totalSessions) {
+						APLaunchConfigurationProvider.log.log('DEBUG: All existing ardupilot_sitl* sessions killed');
+						resolve();
+					}
+				};
+
+				sessionNames.forEach(sessionName => {
+					if (!tmux.path) {
+						checkComplete();
+						return;
+					}
+					const killProcess = spawn(tmux.path, ['kill-session', '-t', sessionName]);
+
+					killProcess.on('close', (killCode: number | null) => {
+						if (killCode === 0) {
+							APLaunchConfigurationProvider.log.log(`DEBUG: Killed tmux session: ${sessionName}`);
+						} else {
+							APLaunchConfigurationProvider.log.log(`DEBUG: Failed to kill tmux session: ${sessionName} (exit code: ${killCode})`);
+						}
+						checkComplete();
+					});
+
+					killProcess.on('error', (error: Error) => {
+						APLaunchConfigurationProvider.log.log(`DEBUG: Error killing tmux session ${sessionName}: ${error}`);
+						checkComplete();
+					});
+				});
+			});
+
+			listProcess.on('error', (error: Error) => {
+				APLaunchConfigurationProvider.log.log(`DEBUG: Error listing tmux sessions: ${error}`);
+				resolve();
+			});
+		});
+	}
+
+	/*
+	 * Register a tmux session to track for cleanup
+	 * @param sessionName - Name of the tmux session to register
+	 */
+	private static registerSession(sessionName: string): void {
+		APLaunchConfigurationProvider.activeSessions.add(sessionName);
+		APLaunchConfigurationProvider.log.log(`DEBUG: Registered tmux session: ${sessionName}`);
+	}
+
+	/*
+	 * Unregister a tmux session from tracking
+	 * @param sessionName - Name of the tmux session to unregister
+	 */
+	private static unregisterSession(sessionName: string): void {
+		APLaunchConfigurationProvider.activeSessions.delete(sessionName);
+		APLaunchConfigurationProvider.log.log(`DEBUG: Unregistered tmux session: ${sessionName}`);
+	}
+
+	/*
+	 * Clean up all tracked tmux sessions
+	 * This method is called during extension deactivation
+	 */
+	public static async cleanupAllSessions(): Promise<void> {
+		APLaunchConfigurationProvider.log.log(`DEBUG: Cleaning up ${APLaunchConfigurationProvider.activeSessions.size} tracked tmux sessions`);
+
+		if (APLaunchConfigurationProvider.activeSessions.size === 0) {
+			return;
+		}
+
+		const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
+		if (!tmux.available || !tmux.path) {
+			APLaunchConfigurationProvider.log.log('DEBUG: tmux not available for cleanup');
+			return;
+		}
+
+		const sessionsToCleanup = Array.from(APLaunchConfigurationProvider.activeSessions);
+		APLaunchConfigurationProvider.log.log(`DEBUG: Attempting to kill sessions: ${sessionsToCleanup.join(', ')}`);
+
+		const cleanupPromises = sessionsToCleanup.map(sessionName => {
+			if (tmux.path) {
+				return APLaunchConfigurationProvider.killSpecificSession(tmux.path, sessionName);
+			}
+			return Promise.resolve();
+		});
+
+		await Promise.allSettled(cleanupPromises);
+		APLaunchConfigurationProvider.activeSessions.clear();
+		APLaunchConfigurationProvider.log.log('DEBUG: Session cleanup completed');
+	}
+
+	/*
+	 * Kill a specific tmux session
+	 * @param tmuxPath - Path to the tmux executable
+	 * @param sessionName - Name of the session to kill
+	 */
+	private static async killSpecificSession(tmuxPath: string, sessionName: string): Promise<void> {
+		return new Promise((resolve) => {
+			const killProcess = spawn(tmuxPath, ['kill-session', '-t', sessionName]);
+
+			killProcess.on('close', (code: number | null) => {
+				if (code === 0) {
+					APLaunchConfigurationProvider.log.log(`DEBUG: Successfully killed tmux session: ${sessionName}`);
+				} else {
+					APLaunchConfigurationProvider.log.log(`DEBUG: Failed to kill tmux session: ${sessionName} (exit code: ${code})`);
+				}
+				resolve();
+			});
+
+			killProcess.on('error', (error: Error) => {
+				APLaunchConfigurationProvider.log.log(`DEBUG: Error killing tmux session ${sessionName}: ${error}`);
+				resolve();
+			});
+		});
+	}
+
 	private async handleDebugSessionTermination(session: vscode.DebugSession) {
-		// Only handle termination of our own debug sessions (SITL)
-		if (session.configuration.type === 'cppdbg' && this.tmuxSessionName && this.debugSessionTerminal) {
-			APLaunchConfigurationProvider.log.log(`Debug session terminated, cleaning up tmux session: ${this.tmuxSessionName}`);
+		// Only handle termination of our own debug sessions (SITL) - both cppdbg (Linux) and lldb (macOS)
+		if ((session.configuration.type === 'cppdbg' || session.configuration.type === 'lldb') && this.tmuxSessionName && this.debugSessionTerminal) {
+			APLaunchConfigurationProvider.log.log(`DEBUG: Debug session terminated for type '${session.configuration.type}', cleaning up tmux session: ${this.tmuxSessionName}`);
+			APLaunchConfigurationProvider.log.log(`DEBUG: Debug session configuration: ${JSON.stringify(session.configuration, null, 2)}`);
 
-			// Find tmux path
 			const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
-			const tmuxPath = tmux.available && tmux.path ? tmux.path : 'tmux';
-
-			// Kill the tmux session
-			// Create a separate terminal to kill the tmux session
-			const cleanupTerminal = vscode.window.createTerminal('ArduPilot SITL Cleanup');
-			cleanupTerminal.sendText(`"${tmuxPath}" kill-session -t "${this.tmuxSessionName}"`);
-			cleanupTerminal.sendText('exit'); // Close the cleanup terminal when done
+			if (tmux.path) {
+				// Unregister the session from tracking
+				APLaunchConfigurationProvider.killSpecificSession(tmux.path, this.tmuxSessionName);
+			}
 
 			// Close the debug session terminal as well
-			this.debugSessionTerminal.dispose();
+			this.debugSessionTerminal?.dispose();
 
 			// Reset the session tracking variables
 			this.tmuxSessionName = undefined;
@@ -201,13 +505,6 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 						additionalArgs = '-f heli';
 					}
 				}
-				// Check if GDB is available
-				const gdb = await ProgramUtils.findProgram(TOOLS_REGISTRY.GDB);
-				if (!gdb.available) {
-					vscode.window.showErrorMessage('GDB not found. Please install GDB to debug SITL.');
-					return undefined;
-				}
-
 				// Check if tmux is available
 				const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
 				if (!tmux.available || !tmux.path) {
@@ -219,92 +516,191 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				const binaryPath = path.join(workspaceRoot, 'build', 'sitl', targetToBin[vehicleBaseType]);
 				APLaunchConfigurationProvider.log.log(`Debug binary path: ${binaryPath}`);
 
-				// Generate a unique port for gdbserver (between 3000-4000)
-				const gdbPort = 3000 + Math.floor(Math.random() * 1000);
-
-				// check if run_in_terminal_window.sh contains TMUX_PREFIX
-				if (!fs.existsSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'))) {
-					vscode.window.showErrorMessage('run_in_terminal_window.sh not found. Please clone ArduPilot to debug SITL.');
-					return undefined;
-				} else {
-					// check file contains TMUX_PREFIX
-					const fileContent = fs.readFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), 'utf8');
-					if (!fileContent.includes('TMUX_PREFIX')) {
-						// if it doesn't contain TMUX_PREFIX, replace it with run_in_terminal_window.sh from resources, do backup of existing file
-						const backupPath = path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh.bak');
-						if (!fs.existsSync(backupPath)) {
-							// backup the existing file
-							fs.copyFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), backupPath);
-						}
-						const runInTerminalWindowPath = path.join(__dirname, '..', 'resources', 'run_in_terminal_window.sh');
-						if (fs.existsSync(runInTerminalWindowPath)) {
-							// write the data to the file
-							fs.writeFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), fs.readFileSync(runInTerminalWindowPath));
-						}
-					}
-				}
-
 				// Generate a unique tmux session name
 				this.tmuxSessionName = `ardupilot_sitl_${vehicleType}_${Date.now()}`;
 
-				// Set up the environment to use gdbserver through TMUX_PREFIX
-				const tmuxPath = tmux.path; // Use the discovered tmux path
-				const tmuxCommand = `"${tmuxPath}" new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
-				const simVehicleCmd = `export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
-				APLaunchConfigurationProvider.log.log(`Running SITL simulation with debug: ${simVehicleCmd}`);
+				// Register the session for cleanup tracking
+				APLaunchConfigurationProvider.registerSession(this.tmuxSessionName);
 
-				// Start the SITL simulation in a terminal and store the terminal reference
-				this.debugSessionTerminal = vscode.window.createTerminal('ArduPilot SITL');
-				this.debugSessionTerminal.sendText(`cd ${workspaceRoot}`);
-				// Check if tmux session already exists before creating it
-				this.debugSessionTerminal.sendText(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
-				this.debugSessionTerminal.sendText('sleep 1'); // Give tmux a moment to start
-				this.debugSessionTerminal.sendText(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
-				this.debugSessionTerminal.sendText(`"${tmuxPath}" set mouse on`);
-				this.debugSessionTerminal.sendText(simVehicleCmd);
+				// Platform-specific debugging setup
+				const isMacOS = os.platform() === 'darwin';
+				APLaunchConfigurationProvider.log.log(`DEBUG: Platform detected: ${os.platform()} (macOS: ${isMacOS})`);
 
-				this.debugSessionTerminal.show();
+				if (isMacOS) {
+					// macOS: Use CodeLLDB with PID attachment
+					APLaunchConfigurationProvider.log.log('DEBUG: Setting up macOS debugging with CodeLLDB');
 
-				// Create a debug configuration for the C++ debugger
-				const cppDebugConfig = {
-					type: 'cppdbg',
-					request: 'launch',
-					name: `Debug ${vehicleType} SITL`,
-					miDebuggerServerAddress: `localhost:${gdbPort}`,
-					program: binaryPath,
-					args: [],
-					stopAtEntry: false,
-					cwd: workspaceRoot,
-					environment: [],
-					externalConsole: false,
-					MIMode: 'gdb',
-					miDebuggerPath: gdb.path,
-					setupCommands: [
-						{
-							description: 'Enable pretty-printing for gdb',
-							text: '-enable-pretty-printing',
-							ignoreFailures: true
-						},
-						{
-							description: 'Set Disassembly Flavor to Intel',
-							text: '-gdb-set disassembly-flavor intel',
-							ignoreFailures: true
+					// Check if CodeLLDB extension is installed
+					const codelldbExtension = vscode.extensions.getExtension('vadimcn.vscode-lldb');
+					if (!codelldbExtension) {
+						const message = 'CodeLLDB extension is required for debugging on macOS. Would you like to install it?';
+						const installButton = 'Install CodeLLDB';
+						const cancelButton = 'Cancel';
+
+						const choice = await vscode.window.showErrorMessage(message, installButton, cancelButton);
+						if (choice === installButton) {
+							// Open the extension in the marketplace
+							await vscode.commands.executeCommand('workbench.extensions.search', 'vadimcn.vscode-lldb');
 						}
-					]
-				};
-				// Start the C++ debugger
-				APLaunchConfigurationProvider.log.log('Starting C++ debugger session');
-				return cppDebugConfig;
+						return undefined;
+					}
+
+					// Check if CodeLLDB extension is activated
+					if (!codelldbExtension.isActive) {
+						try {
+							APLaunchConfigurationProvider.log.log('DEBUG: Activating CodeLLDB extension...');
+							await codelldbExtension.activate();
+							APLaunchConfigurationProvider.log.log('DEBUG: CodeLLDB extension activated successfully');
+						} catch (error) {
+							APLaunchConfigurationProvider.log.log(`DEBUG: Failed to activate CodeLLDB extension: ${error}`);
+							vscode.window.showErrorMessage(`Failed to activate CodeLLDB extension: ${error}`);
+							return undefined;
+						}
+					} else {
+						APLaunchConfigurationProvider.log.log('DEBUG: CodeLLDB extension already active');
+					}
+
+					const tmuxPath = tmux.path;
+					const tmuxCommand = `"${tmuxPath}" new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
+					const simVehicleCmd = `python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
+					APLaunchConfigurationProvider.log.log(`DEBUG: Running SITL simulation: ${simVehicleCmd}`);
+
+					// Start the SITL simulation in a terminal using apTerminalMonitor
+					this.debugSessionTerminal = new apTerminalMonitor('ArduPilot SITL');
+					this.debugSessionTerminal.createTerminal();
+					this.debugSessionTerminal.show();
+					await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
+					// we push following commands back to back without waiting, as most of them will run till debugging is over.
+					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
+					new Promise(resolve => setTimeout(resolve, 1000)); // Give tmux a moment to start
+					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
+					this.debugSessionTerminal.runCommand(`"${tmuxPath}" set mouse on`);
+					this.debugSessionTerminal.runCommand(simVehicleCmd);
+
+					// Wait for ArduPilot process to start and get its PID
+					try {
+						const binaryName = path.basename(binaryPath);
+						APLaunchConfigurationProvider.log.log(`DEBUG: Waiting for ${binaryName} process to start...`);
+						const arduPilotPid = await this.waitForProcessStart(this.tmuxSessionName, binaryName, 60000); // 60 second timeout
+
+						// Create CodeLLDB debug configuration
+						const lldbDebugConfig = {
+							type: 'lldb',
+							request: 'attach',
+							name: `Debug ${vehicleType} SITL`,
+							program: binaryPath,
+							pid: arduPilotPid,
+							waitFor: false,
+							stopOnEntry: false,
+							initCommands: [
+								'setting set target.max-string-summary-length 10000'
+							]
+						};
+
+						APLaunchConfigurationProvider.log.log(`DEBUG: Starting CodeLLDB debugger session with PID ${arduPilotPid}`);
+						APLaunchConfigurationProvider.log.log(`DEBUG: CodeLLDB config: ${JSON.stringify(lldbDebugConfig, null, 2)}`);
+						return lldbDebugConfig;
+					} catch (error) {
+						vscode.window.showErrorMessage(`Failed to find ArduPilot process for debugging: ${error}`);
+						return undefined;
+					}
+				} else {
+					// Linux: Use existing gdbserver + cppdbg approach
+					APLaunchConfigurationProvider.log.log('DEBUG: Setting up Linux debugging with gdbserver + cppdbg');
+
+					// Check if GDB is available
+					const gdb = await ProgramUtils.findProgram(TOOLS_REGISTRY.GDB);
+					if (!gdb.available) {
+						vscode.window.showErrorMessage('GDB not found. Please install GDB to debug SITL.');
+						return undefined;
+					}
+
+					// Generate a unique port for gdbserver (between 3000-4000)
+					const gdbPort = 3000 + Math.floor(Math.random() * 1000);
+
+					// check if run_in_terminal_window.sh contains TMUX_PREFIX
+					if (!fs.existsSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'))) {
+						vscode.window.showErrorMessage('run_in_terminal_window.sh not found. Please clone ArduPilot to debug SITL.');
+						return undefined;
+					} else {
+						// check file contains TMUX_PREFIX
+						const fileContent = fs.readFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), 'utf8');
+						if (!fileContent.includes('TMUX_PREFIX')) {
+							// if it doesn't contain TMUX_PREFIX, replace it with run_in_terminal_window.sh from resources, do backup of existing file
+							const backupPath = path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh.bak');
+							if (!fs.existsSync(backupPath)) {
+								// backup the existing file
+								fs.copyFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), backupPath);
+							}
+							const runInTerminalWindowPath = path.join(__dirname, '..', 'resources', 'run_in_terminal_window.sh');
+							if (fs.existsSync(runInTerminalWindowPath)) {
+								// write the data to the file
+								fs.writeFileSync(path.join(workspaceRoot, 'Tools', 'autotest', 'run_in_terminal_window.sh'), fs.readFileSync(runInTerminalWindowPath));
+							}
+						}
+					}
+
+					// Set up the environment to use gdbserver through TMUX_PREFIX
+					const tmuxPath = tmux.path;
+					const tmuxCommand = `"${tmuxPath}" new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
+					const simVehicleCmd = `export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
+					APLaunchConfigurationProvider.log.log(`DEBUG: Running SITL simulation with gdbserver: ${simVehicleCmd}`);
+
+					// Start the SITL simulation in a terminal using apTerminalMonitor
+					this.debugSessionTerminal = new apTerminalMonitor('ArduPilot SITL');
+					this.debugSessionTerminal.createTerminal();
+					this.debugSessionTerminal.show();
+					await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
+					// we push following commands back to back without waiting, as most of them will run till debugging is over.
+					// Check if tmux session already exists before creating it
+					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`, { noevents: true });
+					this.debugSessionTerminal.runCommand('sleep 1'); // Give tmux a moment to start
+					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`, { noevents: true });
+					this.debugSessionTerminal.runCommand(`"${tmuxPath}" set mouse on`);
+					this.debugSessionTerminal.runCommand(simVehicleCmd); // we don't await here as this is the main command that will start the simulation
+
+					// Create a debug configuration for the C++ debugger
+					const cppDebugConfig = {
+						type: 'cppdbg',
+						request: 'launch',
+						name: `Debug ${vehicleType} SITL`,
+						miDebuggerServerAddress: `localhost:${gdbPort}`,
+						program: binaryPath,
+						args: [],
+						stopAtEntry: false,
+						cwd: workspaceRoot,
+						environment: [],
+						externalConsole: false,
+						MIMode: 'gdb',
+						miDebuggerPath: gdb.path,
+						setupCommands: [
+							{
+								description: 'Enable pretty-printing for gdb',
+								text: '-enable-pretty-printing',
+								ignoreFailures: true
+							},
+							{
+								description: 'Set Disassembly Flavor to Intel',
+								text: '-gdb-set disassembly-flavor intel',
+								ignoreFailures: true
+							}
+						]
+					};
+					// Start the C++ debugger
+					APLaunchConfigurationProvider.log.log('DEBUG: Starting cppdbg debugger session');
+					return cppDebugConfig;
+				}
 			} else {
 				// For physical board builds, run the upload command
-				const terminal = vscode.window.createTerminal('ArduPilot Upload');
-				terminal.sendText(`cd ${workspaceRoot}`);
+				this.debugSessionTerminal = new apTerminalMonitor('ArduPilot Upload');
+				this.debugSessionTerminal.createTerminal();
+				this.debugSessionTerminal.show();
+				await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
 
 				const uploadCommand = `python3 ${apConfig.waffile} ${apConfig.target} --upload`;
 				APLaunchConfigurationProvider.log.log(`Running upload command: ${uploadCommand}`);
 
-				terminal.sendText(uploadCommand);
-				terminal.show();
+				this.debugSessionTerminal.runCommand(uploadCommand);
 			}
 
 			// If we're here and we're not debugging, return undefined
