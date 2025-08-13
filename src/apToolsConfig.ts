@@ -115,13 +115,10 @@ export const TOOLS_REGISTRY = {
 		name: 'MAVProxy',
 		description: 'Install MAVProxy via pip',
 		paths: {
-			linux: ['mavproxy.py'],
-			darwin: ['mavproxy.py'],
-			wsl: ['mavproxy.exe', 'mavproxy.py']
+			wsl: ['mavproxy.exe']
 		},
 		installCommands: {
-			linux: { type: 'command', command: 'pip3 install mavproxy' },
-			darwin: { type: 'command', command: 'pip3 install mavproxy' }
+			wsl: { type: 'url', url: 'https://firmware.ardupilot.org/Tools/MAVProxy/' }
 		},
 		findArgs: {
 			args: ['--version']
@@ -222,11 +219,22 @@ export const TOOLS_REGISTRY = {
 		description: 'Install GDB debugger',
 		paths: {
 			linux: ['gdb'],
-			darwin: ['gdb']
 		},
 		installCommands: {
 			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y gdb' },
-			darwin: { type: 'command', command: 'brew install gdb' }
+		},
+		findArgs: {
+			args: ['--version']
+		}
+	},
+	LLDB: {
+		name: 'LLDB',
+		description: 'Install LLDB Debugger',
+		paths: {
+			darwin: ['lldb'],
+		},
+		installCommands: {
+			darwin: { type: 'command', command: 'xcode-select --install' }
 		},
 		findArgs: {
 			args: ['--version']
@@ -270,7 +278,6 @@ export const TOOLS_REGISTRY = {
 		description: 'Install GDB server',
 		paths: {
 			linux: ['gdbserver'],
-			darwin: ['gdbserver']
 		},
 		installCommands: {
 			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y gdbserver' }
@@ -331,7 +338,8 @@ export const PYTHON_PACKAGES_REGISTRY = {
 	PEXPECT: { name: 'pexpect', description: 'Process control and automation' },
 	DRONECAN: { name: 'dronecan', description: 'DroneCAN protocol implementation' },
 	PYSERIAL: { name: 'pyserial', description: 'Serial communication library' },
-	SETUPTOOLS: { name: 'setuptools', description: 'Python package development utilities (provides pkg_resources)' }
+	SETUPTOOLS: { name: 'setuptools', description: 'Python package development utilities (provides pkg_resources)' },
+	MAVPROXY: { name: 'mavproxy', description: 'MAVLink proxy for communication' }
 } as const;
 
 /**
