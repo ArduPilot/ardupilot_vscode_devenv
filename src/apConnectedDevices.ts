@@ -20,6 +20,7 @@ import * as os from 'os';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { TOOLS_REGISTRY } from './apToolsConfig';
+import { apTerminalMonitor, TerminalEventType } from './apTerminalMonitor';
 
 // Device information interface
 export interface DeviceInfo {
@@ -170,7 +171,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	private log = new apLog('apConnectedDevices');
 	private refreshTimer: NodeJS.Timeout | undefined;
 	private isWSL = false;
-	private activeConnections: Map<string, { process: cp.ChildProcess | null, terminal: vscode.Terminal | null }> = new Map();
+	private activeConnections: Map<string, { process: cp.ChildProcess | null, terminal: apTerminalMonitor | null }> = new Map();
 	private loggedDevices: Set<string> = new Set(); // Track which devices have been logged
 
 	public setIsWSL(isWSL: boolean): void {
@@ -874,24 +875,27 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		let mavproxyCommand = '';
 
 		// Use mavproxy.py on native Linux or Windows
-		const mavproxy = await ProgramUtils.findProgram(TOOLS_REGISTRY.MAVPROXY);
+		if (this.isWSL) {
+			const mavproxy = await ProgramUtils.findProgram(TOOLS_REGISTRY.MAVPROXY);
 
-		if (!mavproxy.available) {
-			vscode.window.showErrorMessage('MAVProxy not found. Please install it first.');
-			return;
+			if (!mavproxy.available) {
+				vscode.window.showErrorMessage('MAVProxy not found. Please install it first.');
+				return;
+			}
+
+			mavproxyCommand = `"${mavproxy.path}" --master=${devicePath} --baudrate=${baudRate} --console`;
+		} else if (await ProgramUtils.checkPythonPackage('mavproxy')) {
+			mavproxyCommand = `mavproxy.py --master=${devicePath} --baudrate=${baudRate} --console`;
 		}
 
-		mavproxyCommand = `"${mavproxy.path}" --master=${devicePath} --baudrate=${baudRate} --console`;
-
 		// Run MAVProxy in a terminal
-		const terminal = vscode.window.createTerminal('MAVProxy Connection');
-		terminal.sendText(mavproxyCommand);
-		terminal.show();
+		const terminalMonitor = new apTerminalMonitor(`MAVProxy - ${devicePath}`);
+		terminalMonitor.runCommand(mavproxyCommand);
 
 		// Track the active connection
 		this.activeConnections.set(device.path, {
 			process: null, // When using terminal, we don't have direct process access
-			terminal: terminal
+			terminal: terminalMonitor
 		});
 
 		// Update the device state and refresh the tree view
@@ -899,11 +903,8 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		this.refresh();
 
 		// Set up listeners for terminal close
-		const disposable = vscode.window.onDidCloseTerminal(closedTerminal => {
-			if (closedTerminal === terminal) {
-				this.handleTerminalClosed(device.path);
-				disposable.dispose(); // Clean up the event listener
-			}
+		terminalMonitor.addEventListener(TerminalEventType.SHELL_EXECUTION_END, () => {
+			this.handleTerminalClosed(device.path);
 		});
 
 		this.log.log(`Started MAVProxy connection to ${devicePath} at ${baudRate} baud using ${this.isWSL ? 'mavproxy.exe (WSL)' : 'mavproxy.py'}`);
