@@ -54,7 +54,7 @@ suite('apLaunch Test Suite', () => {
 		sandbox = sinon.createSandbox();
 
 		// Create fresh provider instance for each test
-		provider = new APLaunchConfigurationProvider();
+		provider = new APLaunchConfigurationProvider(workspaceFolder);
 	});
 
 	teardown(() => {
@@ -444,7 +444,7 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			// Create new provider for second session
-			const provider2 = new APLaunchConfigurationProvider();
+			const provider2 = new APLaunchConfigurationProvider(workspaceFolder);
 			const result2 = await provider2.resolveDebugConfiguration(
 				workspaceFolder,
 				config2 as vscode.DebugConfiguration
