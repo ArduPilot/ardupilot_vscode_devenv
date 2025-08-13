@@ -277,7 +277,7 @@
 								<div class="tool-path-text">Path: {toolStatuses[tool.id].path}</div>
 							{/if}
 							
-							{#if tool.id === 'python'}
+							{#if tool.id === 'PYTHON'}
 								<button class="config-button select-interpreter-btn" on:click={selectPythonInterpreter}>
 									Select Interpreter
 								</button>
@@ -298,7 +298,7 @@
 							<div class="custom-path-notification">Using custom configured path</div>
 						{/if}
 						
-						{#if tool.id === 'python'}
+						{#if tool.id === 'PYTHON'}
 							<div class="python-packages">
 								{#each pythonPackages as pkg}
 									<div class="package-item" data-package={pkg.name}>
