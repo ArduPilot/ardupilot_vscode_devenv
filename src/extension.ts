@@ -54,11 +54,25 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	// Configure venv-ardupilot as default Python interpreter if available
 	ProgramUtils.configureVenvArdupilot();
 
+	// Register process event handlers for cleanup as fallback
+	const cleanupHandler = async () => {
+		await APLaunchConfigurationProvider.cleanupAllSessions();
+	};
+
+	process.on('exit', cleanupHandler);
+	process.on('SIGINT', cleanupHandler);
+	process.on('SIGTERM', cleanupHandler);
+	process.on('uncaughtException', async (error) => {
+		console.error('Uncaught exception:', error);
+		await cleanupHandler();
+		process.exit(1);
+	});
+
 	apExtensionContext.apWelcomeProviderInstance = new apWelcomeProvider();
 
 	vscode.window.registerTreeDataProvider('apWelcome', apExtensionContext.apWelcomeProviderInstance);
 
-	const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0 ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+	const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0 ? vscode.workspace.workspaceFolders[0] : undefined;
 	if (!workspaceRoot) {
 		return apExtensionContext;
 	}
@@ -73,10 +87,10 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 		log.log('Migrated existing tasks.json to include configName fields');
 	}
 
-	apExtensionContext.apTaskProvider = vscode.tasks.registerTaskProvider(APTaskProvider.ardupilotTaskType, new APTaskProvider(workspaceRoot, _context.extensionUri));
+	apExtensionContext.apTaskProvider = vscode.tasks.registerTaskProvider(APTaskProvider.ardupilotTaskType, new APTaskProvider(workspaceRoot.uri.fsPath, _context.extensionUri));
 
 	// Register the APLaunch debug type
-	const apLaunchProvider = new APLaunchConfigurationProvider();
+	const apLaunchProvider = new APLaunchConfigurationProvider(workspaceRoot);
 	_context.subscriptions.push(
 		vscode.debug.registerDebugConfigurationProvider('apLaunch', apLaunchProvider)
 	);
@@ -151,6 +165,9 @@ export async function deactivate(): Promise<void> {
 	} else {
 		apExtensionContext = extension.exports;
 	}
+
+	// Clean up any active tmux sessions from debugging
+	await APLaunchConfigurationProvider.cleanupAllSessions();
 
 	if (apExtensionContext.apTaskProvider) {
 		apExtensionContext.apTaskProvider.dispose();
