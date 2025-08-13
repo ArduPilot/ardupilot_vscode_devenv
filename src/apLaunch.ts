@@ -567,12 +567,10 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 
 					// Start the SITL simulation in a terminal using apTerminalMonitor
 					this.debugSessionTerminal = new apTerminalMonitor('ArduPilot SITL');
-					this.debugSessionTerminal.createTerminal();
-					this.debugSessionTerminal.show();
 					await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
 					// we push following commands back to back without waiting, as most of them will run till debugging is over.
 					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
-					new Promise(resolve => setTimeout(resolve, 1000)); // Give tmux a moment to start
+					await new Promise(resolve => setTimeout(resolve, 1000)); // Give tmux a moment to start
 					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
 					this.debugSessionTerminal.runCommand(`"${tmuxPath}" set mouse on`);
 					this.debugSessionTerminal.runCommand(simVehicleCmd);
@@ -654,7 +652,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					// we push following commands back to back without waiting, as most of them will run till debugging is over.
 					// Check if tmux session already exists before creating it
 					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`, { noevents: true });
-					this.debugSessionTerminal.runCommand('sleep 1'); // Give tmux a moment to start
+					await new Promise(resolve => setTimeout(resolve, 1000)); // Give tmux a moment to start
 					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`, { noevents: true });
 					this.debugSessionTerminal.runCommand(`"${tmuxPath}" set mouse on`);
 					this.debugSessionTerminal.runCommand(simVehicleCmd); // we don't await here as this is the main command that will start the simulation

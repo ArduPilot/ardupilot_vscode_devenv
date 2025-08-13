@@ -414,7 +414,6 @@ export class ValidateEnvironmentPanel {
 
 				// Create terminal monitor to track installation progress
 				const terminalMonitor = new apTerminalMonitor(terminalName);
-				terminalMonitor.createTerminal();
 
 				vscode.window.showInformationMessage(
 					`Installing ${toolName}... Check the terminal for progress.`
@@ -865,8 +864,6 @@ export class ValidateEnvironmentPanel {
 
 			// Create terminal monitor to track installation progress
 			const terminalMonitor = new apTerminalMonitor(terminalName);
-
-			terminalMonitor.createTerminal();
 
 			vscode.window.showInformationMessage(
 				'Installing Python packages... Please wait for completion.'

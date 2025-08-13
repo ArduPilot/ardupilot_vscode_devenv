@@ -69,7 +69,7 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 		private env: { [key: string]: string }
 	) {}
 
-	open(): void {
+	async open(): Promise<void> {
 		this.writeEmitter.fire('Starting ArduPilot build task...\r\n');
 		APBuildPseudoterminal.log.log(`Opening pseudoterminal for task: ${this.definition.configName}`);
 
@@ -80,7 +80,7 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 			return;
 		}
 
-		this.terminalMonitor.createTerminal({
+		await this.terminalMonitor.createTerminal({
 			env: this.env,
 			cwd: this.buildDir
 		}, true); // we dispose existing terminal and start again

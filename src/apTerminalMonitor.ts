@@ -259,7 +259,7 @@ export class apTerminalMonitor {
 	 * Create a new VS Code terminal
 	 * @returns The created terminal instance
 	 */
-	public createTerminal(options?: Omit<vscode.TerminalOptions, 'name'>, disposeExisting?: boolean): void {
+	public async createTerminal(options?: Omit<vscode.TerminalOptions, 'name'>, disposeExisting?: boolean): Promise<void> {
 		if (this.terminal && disposeExisting) {
 			this.terminal.dispose();
 		}
@@ -279,6 +279,10 @@ export class apTerminalMonitor {
 		this.terminal.show();
 
 		this.setupTerminalListeners();
+
+		// Send the command after 3 second to allow terminal setup
+		// TODO: replace this with a proper mechanism to catch python venv activation
+		await new Promise(resolve => setTimeout(resolve, 2000));
 	}
 
 	public findExistingTerminal(): vscode.Terminal | null {
@@ -485,16 +489,7 @@ export class apTerminalMonitor {
 			if (!this.findExistingTerminal()) {
 				// If no existing terminal found, create a new one
 				this.log.log('No existing terminal found, creating new terminal');
-				this.createTerminal();
-
-				// Send the command after 3 second to allow terminal setup
-				// replace this with a proper mechanism to catch python venv activation
-				setTimeout(() => {
-					if (!this.terminal) {
-						this.log.log('Terminal was closed before command could be sent');
-						throw new Error('Terminal was closed before command could be sent');
-					}
-				}, 2000);
+				await this.createTerminal();
 			}
 
 			// Double-check we now have a terminal
