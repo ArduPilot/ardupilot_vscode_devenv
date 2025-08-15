@@ -480,7 +480,11 @@ export class apTerminalMonitor {
 	 * @param command - The command to execute
 	 * @returns Promise that resolves with the exit code
 	 */
-	public async runCommand(command: string, options: { noevents?: boolean } = {}): Promise<number> {
+	public async runCommand(command: string, options: {
+		nonblocking?: boolean,
+		onShellExecutionStart?: (event: TerminalEvent) => void,
+		onShellExecutionEnd?: (event: TerminalEvent) => void
+	} = {}): Promise<number> {
 		// Ensure terminal is available, create one if needed
 		if (!this.terminal) {
 			this.log.log('Terminal not available, attempting to find or create one');
@@ -503,50 +507,18 @@ export class apTerminalMonitor {
 		// Set the current command to filter shell execution events
 		this.currentCommand = command;
 
-		// Set up listener for shell execution start to match our command
-		let commandMatched = false;
-
-		const startListener = (event: TerminalEvent) => {
-			if (event.commandLine && (
-				this.normalizeCommand(event.commandLine) === this.normalizeCommand(command) ||
-				this.isPartOfCompoundCommand(event.commandLine, command)
-			)) {
-				commandMatched = true;
-				this.log.log(`Command execution started: ${event.commandLine}`);
-			}
-		};
-
-		// Set up listener for shell execution end
-		const endListener = (event: TerminalEvent) => {
-			if (commandMatched && event.exitCode !== undefined && event.commandLine) {
-				const executedCommand = this.normalizeCommand(event.commandLine);
-				this.log.log(`Command execution completed: ${event.commandLine} with exit code: ${event.exitCode}`);
-
-				// Check if the executed command matches our original command (for both single and compound commands)
-				const isExactMatch = executedCommand === this.normalizeCommand(command);
-				const isPartMatch = this.isPartOfCompoundCommand(event.commandLine, command);
-
-				if (isExactMatch || isPartMatch) {
-					// This matches our command - resolve immediately (expect only one completion signal)
-					this.log.log(`Command completed: ${event.commandLine} with exit code: ${event.exitCode}`);
-					this.currentCommand = null;
-					this.removeEventListener(TerminalEventType.SHELL_EXECUTION_START, startListener);
-					this.removeEventListener(TerminalEventType.SHELL_EXECUTION_END, endListener);
-					return event.exitCode;
-				}
-			}
-		};
-
 		// Add event listeners
-		if (options.noevents) {
-			this.addEventListener(TerminalEventType.SHELL_EXECUTION_START, startListener);
-			this.addEventListener(TerminalEventType.SHELL_EXECUTION_END, endListener);
+		if (options.onShellExecutionStart) {
+			this.addEventListener(TerminalEventType.SHELL_EXECUTION_START, options.onShellExecutionStart);
+		}
+		if (options.onShellExecutionEnd) {
+			this.addEventListener(TerminalEventType.SHELL_EXECUTION_END, options.onShellExecutionEnd);
 		}
 
 		this.log.log(`Sending command to terminal: ${command}`);
 		this.terminal.sendText(command, true);
 
-		if (!options.noevents) {
+		if (!options.nonblocking) {
 			// wait for shell execution to complete
 			const exitCode = (await this.waitForShellExecutionEnd()).exitCode;
 			if (typeof exitCode === 'number') {
