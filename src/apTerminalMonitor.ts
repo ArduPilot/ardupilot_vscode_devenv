@@ -365,21 +365,25 @@ export class apTerminalMonitor {
 		}
 	}
 
-	public waitForEvent(eventType: TerminalEventType, timeoutMs: number = 30000): Promise<TerminalEvent> {
+	public waitForEvent(eventType: TerminalEventType, timeoutMs?: number): Promise<TerminalEvent> {
 		return new Promise((resolve, reject) => {
-			const timeoutId = setTimeout(() => {
+			const timeoutId = timeoutMs ? setTimeout(() => {
 				this.removePromiseHandlers(eventType, resolve, reject);
 				reject(new Error(`Timeout waiting for ${eventType} event after ${timeoutMs}ms`));
-			}, timeoutMs);
+			}, timeoutMs) : null;
 
 			const wrappedResolve = (event: TerminalEvent) => {
-				clearTimeout(timeoutId);
+				if (timeoutId) {
+					clearTimeout(timeoutId);
+				}
 				this.removePromiseHandlers(eventType, resolve, reject);
 				resolve(event);
 			};
 
 			const wrappedReject = (reason: unknown) => {
-				clearTimeout(timeoutId);
+				if (timeoutId) {
+					clearTimeout(timeoutId);
+				}
 				this.removePromiseHandlers(eventType, resolve, reject);
 				reject(reason);
 			};
@@ -393,19 +397,19 @@ export class apTerminalMonitor {
 
 	/*
 	 * Wait for shell execution to start
-	 * @param timeoutMs - Timeout in milliseconds (default: 30000)
+	 * @param timeoutMs - Timeout in milliseconds (default: undefined)
 	 * @returns Promise that resolves when shell execution starts
 	 */
-	public waitForShellExecutionStart(timeoutMs: number = 30000): Promise<TerminalEvent> {
+	public waitForShellExecutionStart(timeoutMs?: number): Promise<TerminalEvent> {
 		return this.waitForEvent(TerminalEventType.SHELL_EXECUTION_START, timeoutMs);
 	}
 
 	/*
 	 * Wait for shell execution to end
-	 * @param timeoutMs - Timeout in milliseconds (default: 120000)
+	 * @param timeoutMs - Timeout in milliseconds (default: undefined)
 	 * @returns Promise that resolves when shell execution ends with exit code
 	 */
-	public waitForShellExecutionEnd(timeoutMs: number = 120000): Promise<TerminalEvent> {
+	public waitForShellExecutionEnd(timeoutMs?: number): Promise<TerminalEvent> {
 		return this.waitForEvent(TerminalEventType.SHELL_EXECUTION_END, timeoutMs);
 	}
 
