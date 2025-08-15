@@ -418,6 +418,17 @@ export const ENV_CHECK_REGISTRY = {
 		fix_issue: {
 			darwin: { type: 'command', command: 'xcode-select --install' }
 		}
+	},
+	ROSETTA_INSTALLED: {
+		name: 'Rosetta 2',
+		description: 'Rosetta 2 is required on Apple Silicon Macs to run x86-64 tools',
+		required: true,
+		checks: {
+			darwin: 'uname -m | grep -q arm64 && (pgrep -f rosetta > /dev/null || /usr/bin/pgrep oahd > /dev/null)'
+		},
+		fix_issue: {
+			darwin: { type: 'command', command: 'sudo softwareupdate --install-rosetta --agree-to-license' }
+		}
 	}
 } as const;
 
