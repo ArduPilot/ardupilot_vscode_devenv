@@ -543,7 +543,62 @@ export class apTerminalMonitor {
 		}
 	}
 
-	public dispose(): void {
+	/*
+	 * Attempt to interrupt and clean up any running processes in the terminal
+	 * Sends Ctrl+C signal and waits for shell execution to end
+	 * @returns Promise that resolves to true if cleanup succeeded, false if it failed
+	 */
+	private async interruptAndWaitForCleanup(): Promise<boolean> {
+		const maxRetries = 5;
+		const retryInterval = 1000; // 1 second
+
+		this.log.log('Attempting to interrupt and cleanup running processes');
+
+		for (let attempt = 1; attempt <= maxRetries; attempt++) {
+			this.log.log(`Cleanup attempt ${attempt}/${maxRetries}`);
+
+			// Send Ctrl+C signal to interrupt running processes
+			if (this.terminal) {
+				this.terminal.sendText('\x03'); // \x03 is Ctrl+C
+			}
+
+			try {
+				// Wait for shell execution to end with retry interval timeout
+				await this.waitForShellExecutionEnd(retryInterval);
+				this.log.log(`Cleanup succeeded on attempt ${attempt}`);
+				return true; // Success - process terminated cleanly
+			} catch (timeoutError) {
+				this.log.log(`Cleanup attempt ${attempt} timed out: ${timeoutError}`);
+				if (attempt === maxRetries) {
+					this.log.log('All cleanup attempts failed');
+					return false; // All retries exhausted
+				}
+				// Continue to next retry
+			}
+		}
+
+		return false; // Should never reach here, but just in case
+	}
+
+	public async dispose(): Promise<void> {
+		// If there are active shell executions, attempt to clean them up first
+		if (this.hasActiveShellExecution()) {
+			this.log.log('Active shell execution detected, attempting cleanup');
+
+			const cleanupSucceeded = await this.interruptAndWaitForCleanup();
+
+			if (!cleanupSucceeded) {
+				// Cleanup failed - show warning and exit early without disposing
+				vscode.window.showWarningMessage(
+					`Failed to cleanly terminate processes in terminal '${this.terminalName}'. ` +
+					'Please manually stop any running processes before closing this terminal. ' +
+					'The terminal has been left open to prevent orphaning background processes.'
+				);
+				this.log.log('Dispose cancelled due to failed process cleanup');
+				return; // Exit early without disposing the terminal
+			}
+		}
+
 		// Remove from static monitor list
 		apTerminalMonitor.terminalMonitors.delete(this.terminalName);
 
@@ -566,14 +621,16 @@ export class apTerminalMonitor {
 		this.log.log(`Terminal monitor ${this.terminalName} disposed`);
 	}
 
-	public static disposeAll(): void {
+	public static async disposeAll(): Promise<void> {
 		// Dispose all shell execution listeners
 		apTerminalMonitor.shellExecutionDisposables.forEach(disposable => disposable.dispose());
 		apTerminalMonitor.shellExecutionDisposables.length = 0;
 		apTerminalMonitor.shellExecutionListenersInitialized = false;
 
-		// Dispose all monitors
-		apTerminalMonitor.terminalMonitors.forEach(monitor => monitor.dispose());
+		// Dispose all monitors (now async)
+		const disposePromises = Array.from(apTerminalMonitor.terminalMonitors.values())
+			.map(monitor => monitor.dispose());
+		await Promise.all(disposePromises);
 		apTerminalMonitor.terminalMonitors.clear();
 
 		apTerminalMonitor.globalLog.log('All terminal monitors disposed');
