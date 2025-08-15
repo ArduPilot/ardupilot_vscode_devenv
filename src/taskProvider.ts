@@ -92,9 +92,11 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 	close(): void {
 		APBuildPseudoterminal.log.log(`Closing pseudoterminal for task: ${this.definition.configName}`);
 
-		// Clean up terminal monitoring
+		// Clean up terminal monitoring (fire-and-forget async dispose)
 		if (this.terminalMonitor) {
-			this.terminalMonitor.dispose();
+			this.terminalMonitor.dispose().catch(error => {
+				APBuildPseudoterminal.log.log(`Error during terminal monitor dispose: ${error}`);
+			});
 			this.terminalMonitor = undefined;
 		}
 

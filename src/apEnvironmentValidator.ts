@@ -430,7 +430,7 @@ export class ValidateEnvironmentPanel {
 						ValidateEnvironmentPanel.log.log(`Installation completed with exit code: ${exitCode}`);
 
 						// Clean up the terminal monitor
-						terminalMonitor.dispose();
+						await terminalMonitor.dispose();
 
 						// Resolve or reject based on exit code
 						if (exitCode === 0) {
@@ -451,9 +451,9 @@ export class ValidateEnvironmentPanel {
 							reject(new Error(errorMsg));
 						}
 					})
-					.catch(error => {
+					.catch(async error => {
 						// Clean up the terminal monitor on error
-						terminalMonitor.dispose();
+						await terminalMonitor.dispose();
 
 						const errorMsg = error instanceof Error ? error.message : String(error);
 						ValidateEnvironmentPanel.log.log(`Tool installation failed: ${errorMsg}`);
@@ -880,7 +880,7 @@ export class ValidateEnvironmentPanel {
 				ValidateEnvironmentPanel.log.log(`Python package installation completed with exit code: ${exitCode}`);
 
 				// Clean up the terminal monitor
-				terminalMonitor.dispose();
+				await terminalMonitor.dispose();
 
 				// Auto-refresh validation if instance provided
 				if (instance && exitCode === 0) {
@@ -899,7 +899,7 @@ export class ValidateEnvironmentPanel {
 					throw new Error(errorMsg);
 				}
 			} catch (error) {
-				terminalMonitor.dispose();
+				await terminalMonitor.dispose();
 				const errorMsg = error instanceof Error ? error.message : String(error);
 				vscode.window.showErrorMessage(`Python package installation failed: ${errorMsg}`);
 				throw error;
