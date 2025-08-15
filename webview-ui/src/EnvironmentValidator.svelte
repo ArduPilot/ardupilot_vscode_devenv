@@ -333,6 +333,43 @@
 			<button on:click={resetAllPaths}>Reset All Paths</button>
 		</div>
 
+		<!-- Environment Prerequisites Section -->
+		{#if envChecks.length > 0}
+			<div class="env-checks-section">
+				<h2>Environment Prerequisites</h2>
+				{#each envChecks as envCheck}
+					<div class="env-check-container" data-env-check-id={envCheck.id}>
+						<div class="env-check-header">
+							<div class="env-check-name">{envCheck.name}</div>
+							{#if envCheckStatuses[envCheck.id]?.status === 'checking'}
+								<vscode-progress-ring class="env-check-progress-ring"></vscode-progress-ring>
+							{:else}
+								<div class="env-check-status {getEnvCheckStatusClass(envCheckStatuses[envCheck.id]?.status)}">
+									{getEnvCheckStatusText(envCheckStatuses[envCheck.id]?.status)}
+								</div>
+							{/if}
+						</div>
+						
+						{#if envCheck.description}
+							<div class="env-check-description">{envCheck.description}</div>
+						{/if}
+						
+						{#if envCheckStatuses[envCheck.id]?.info}
+							<div class="env-check-info">{@html envCheckStatuses[envCheck.id].info}</div>
+						{/if}
+						
+						{#if !envCheckStatuses[envCheck.id]?.available}
+							<div class="env-check-actions">
+								<button class="fix-button" on:click={() => fixEnvironmentIssue(envCheck.id)}>
+									Fix Issue
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+
 		<div id="validation-results">
 			{#each tools as tool}
 				<div class="tool-container" data-tool-id={tool.id}>
@@ -410,43 +447,6 @@
 						{/if}
 				</div>
 			{/each}
-
-			<!-- Environment Prerequisites Section -->
-			{#if envChecks.length > 0}
-				<div class="env-checks-section">
-					<h2>Environment Prerequisites</h2>
-					{#each envChecks as envCheck}
-						<div class="env-check-container" data-env-check-id={envCheck.id}>
-							<div class="env-check-header">
-								<div class="env-check-name">{envCheck.name}</div>
-								{#if envCheckStatuses[envCheck.id]?.status === 'checking'}
-									<vscode-progress-ring class="env-check-progress-ring"></vscode-progress-ring>
-								{:else}
-									<div class="env-check-status {getEnvCheckStatusClass(envCheckStatuses[envCheck.id]?.status)}">
-										{getEnvCheckStatusText(envCheckStatuses[envCheck.id]?.status)}
-									</div>
-								{/if}
-							</div>
-							
-							{#if envCheck.description}
-								<div class="env-check-description">{envCheck.description}</div>
-							{/if}
-							
-							{#if envCheckStatuses[envCheck.id]?.info}
-								<div class="env-check-info">{@html envCheckStatuses[envCheck.id].info}</div>
-							{/if}
-							
-							{#if !envCheckStatuses[envCheck.id]?.available}
-								<div class="env-check-actions">
-									<button class="fix-button" on:click={() => fixEnvironmentIssue(envCheck.id)}>
-										Fix Issue
-									</button>
-								</div>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
 		</div>
 	{/if}
 </main>
@@ -698,7 +698,8 @@
 
 	/* Environment Check Styles */
 	.env-checks-section {
-		margin-top: 30px;
+		margin-top: 20px;
+		margin-bottom: 30px;
 	}
 
 	.env-checks-section h2 {
