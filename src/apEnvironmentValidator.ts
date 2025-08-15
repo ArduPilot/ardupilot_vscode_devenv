@@ -45,7 +45,9 @@ export class ValidateEnvironment extends apWelcomeItem {
 		'openVSCodeWSL',
 		'resetAllPaths',
 		'getPythonPackagesList',
-		'getToolsList'
+		'getToolsList',
+		'fixEnvironmentIssue',
+		'getEnvChecksList'
 	];
 
 	constructor(
@@ -138,6 +140,7 @@ export class ValidateEnvironmentPanel {
 					// Resend data when webview becomes visible
 					this._sendToolsList();
 					this._sendPythonPackagesList();
+					this._sendEnvChecksList();
 				}
 			},
 			null,
@@ -148,11 +151,12 @@ export class ValidateEnvironmentPanel {
 		setTimeout(() => {
 			this._sendToolsList();
 			this._sendPythonPackagesList();
+			this._sendEnvChecksList();
 			this._validateEnvironment();
 		}, 500);
 	}
 
-	private _onReceiveMessage(message: {command: string, toolId: string, toolName: string}): void {
+	private _onReceiveMessage(message: {command: string, toolId: string, toolName: string, envCheckId?: string}): void {
 		switch (message.command) {
 		case 'checkEnvironment':
 			this._validateEnvironment();
@@ -189,6 +193,16 @@ export class ValidateEnvironmentPanel {
 			break;
 		case 'getToolsList':
 			this._sendToolsList();
+			break;
+		case 'fixEnvironmentIssue':
+			if (message.envCheckId) {
+				ValidateEnvironmentPanel.fixEnvironmentIssue(message.envCheckId).catch(error => {
+					ValidateEnvironmentPanel.log.log(`Environment issue fix failed: ${error}`);
+				});
+			}
+			break;
+		case 'getEnvChecksList':
+			this._sendEnvChecksList();
 			break;
 		}
 	}
@@ -296,12 +310,43 @@ export class ValidateEnvironmentPanel {
 			});
 		}
 
+		// Environment checks using registry
+		const platform = process.platform;
+		const isWSL = ProgramUtils.isWSL();
+		const envChecks: Array<{ key: string; info: apToolsConfig.EnvCheckInfo; checkCommand: string }> = [];
+
+		// Get environment checks for current platform
+		for (const [key, info] of Object.entries(apToolsConfig.ENV_CHECK_REGISTRY)) {
+			let checkCommand: string | undefined;
+
+			if (isWSL && 'wsl' in info.checks && info.checks.wsl) {
+				checkCommand = info.checks.wsl;
+			} else if (platform === 'linux' && 'linux' in info.checks && info.checks.linux) {
+				checkCommand = info.checks.linux;
+			} else if (platform === 'darwin' && 'darwin' in info.checks && info.checks.darwin) {
+				checkCommand = info.checks.darwin;
+			}
+
+			if (checkCommand) {
+				envChecks.push({
+					key,
+					info: info as apToolsConfig.EnvCheckInfo,
+					checkCommand
+				});
+			}
+		}
+
+		const envCheckPromises = envChecks.map(({ key, info, checkCommand }) =>
+			this._runEnvironmentCheck(key, info, checkCommand)
+		);
+
 		// Python package checks
 		const pythonPackagesCheck = ProgramUtils.checkAllPythonPackages();
 
-		// Await all tool checks and Python packages
-		const [toolResults, pythonPackagesResult] = await Promise.all([
+		// Await all tool checks, environment checks, and Python packages
+		const [toolResults, envCheckResults, pythonPackagesResult] = await Promise.all([
 			Promise.all(toolChecks.map(check => check.promise)),
+			Promise.all(envCheckPromises),
 			pythonPackagesCheck.catch(() => [])
 		]);
 
@@ -312,6 +357,15 @@ export class ValidateEnvironmentPanel {
 
 			// Report using registry key as tool ID
 			this._reportToolStatus(toolCheck.key, result);
+		}
+
+		// Report environment check results
+		for (let i = 0; i < envChecks.length; i++) {
+			const envCheck = envChecks[i];
+			const result = envCheckResults[i];
+
+			// Report using registry key as environment check ID
+			this._reportEnvCheckStatus(envCheck.key, result);
 		}
 
 		// Report Python packages results
@@ -335,7 +389,24 @@ export class ValidateEnvironmentPanel {
 			}
 		}
 
-		this._generateSummary(summaryResults);
+		// Collect environment check results for required checks
+		const envCheckSummaryResults: ProgramInfo[] = [];
+		for (let i = 0; i < envChecks.length; i++) {
+			const envCheck = envChecks[i];
+			const result = envCheckResults[i];
+
+			// Include only required environment checks in summary
+			if (envCheck.info.required !== false) {
+				envCheckSummaryResults.push(result);
+			}
+		}
+
+		// Only generate summary if we have actual environment check results
+
+		// Ensure we have results for all environment checks before showing summary
+		if (envChecks.length === 0 || envCheckResults.length === envChecks.length) {
+			this._generateSummary(summaryResults, envCheckSummaryResults);
+		}
 	}
 
 	/**
@@ -615,28 +686,55 @@ export class ValidateEnvironmentPanel {
 		});
 	}
 
-	private _generateSummary(results: Array<{ available: boolean }>): void {
-		const missingCount = results.filter(r => !r.available).length;
+	private _generateSummary(toolResults: Array<{ available: boolean }>, envCheckResults: Array<{ available: boolean }> = []): void {
+		const toolMissingCount = toolResults.filter(r => !r.available).length;
+		const envCheckFailedCount = envCheckResults.filter(r => !r.available).length;
 
-		if (missingCount === 0) {
-			this._panel.webview.postMessage({
-				command: 'validationSummary',
-				status: 'ok',
-				message: '✅ Great! All required tools are available.'
-			});
-		} else if (missingCount < results.length) {
-			this._panel.webview.postMessage({
-				command: 'validationSummary',
-				status: 'warning',
-				message: `⚠️ Some tools are missing (${missingCount}/${results.length}). You may need to install them.`
-			});
+		const toolsTotal = toolResults.length;
+		const envChecksTotal = envCheckResults.length;
+		const toolsOk = toolsTotal - toolMissingCount;
+		const envChecksOk = envChecksTotal - envCheckFailedCount;
+
+		// DEBUG: Log summary calculation details
+
+		let status: string;
+		let message: string;
+
+		// Determine overall status
+		if (toolMissingCount === 0 && envCheckFailedCount === 0) {
+			status = 'ok';
+			if (envChecksTotal > 0) {
+				message = `✅ Environment ready! Tools: ${toolsOk}/${toolsTotal}, Environment: ${envChecksOk}/${envChecksTotal}`;
+			} else {
+				message = `✅ All required tools are available (${toolsOk}/${toolsTotal})`;
+			}
+		} else if (toolMissingCount > 0 && envCheckFailedCount > 0) {
+			status = 'error';
+			message = `❌ Issues found! Tools: ${toolsOk}/${toolsTotal}, Environment: ${envChecksOk}/${envChecksTotal}`;
+		} else if (toolMissingCount > 0) {
+			status = 'warning';
+			if (envChecksTotal > 0) {
+				message = `⚠️ Missing tools! Tools: ${toolsOk}/${toolsTotal}, Environment: ${envChecksOk}/${envChecksTotal}`;
+			} else {
+				message = `⚠️ Some tools are missing (${toolMissingCount}/${toolsTotal}). You may need to install them.`;
+			}
+		} else if (envCheckFailedCount > 0) {
+			status = 'warning';
+			message = `⚠️ Environment issues! Tools: ${toolsOk}/${toolsTotal}, Environment: ${envChecksOk}/${envChecksTotal}`;
 		} else {
-			this._panel.webview.postMessage({
-				command: 'validationSummary',
-				status: 'error',
-				message: '❌ All required tools are missing. Please set up your development environment.'
-			});
+			status = 'ok';
+			message = `✅ Environment ready! Tools: ${toolsOk}/${toolsTotal}`;
 		}
+
+		// DEBUG: Log the final status decision
+
+		this._panel.webview.postMessage({
+			command: 'validationSummary',
+			status,
+			message,
+			toolsStatus: { available: toolsOk, total: toolsTotal },
+			envChecksStatus: { available: envChecksOk, total: envChecksTotal }
+		});
 	}
 
 	/**
@@ -907,6 +1005,176 @@ export class ValidateEnvironmentPanel {
 
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to get Python path: ${error}`);
+		}
+	}
+
+	/**
+	 * Runs an environment check command
+	 * @param key Environment check key
+	 * @param info Environment check info
+	 * @param checkCommand Shell command to execute
+	 * @returns Promise with check result
+	 */
+	private async _runEnvironmentCheck(key: string, info: apToolsConfig.EnvCheckInfo, checkCommand: string): Promise<ProgramInfo> {
+
+		try {
+			const terminalMonitor = new apTerminalMonitor(`EnvCheck-${key}`);
+
+			// Run the check command and get exit code
+			const exitCode = await terminalMonitor.runCommand(checkCommand);
+			await terminalMonitor.dispose();
+
+			// Exit code 0 means check passed, non-zero means failed
+			const passed = exitCode === 0;
+
+			return {
+				available: passed,
+				info: passed ? '✅ Check passed' : '❌ Check failed',
+				isCustomPath: false
+			};
+		} catch (error) {
+			return {
+				available: false,
+				info: `❌ Check error: ${error instanceof Error ? error.message : String(error)}`,
+				isCustomPath: false
+			};
+		}
+	}
+
+	/**
+	 * Reports an environment check status to the webview
+	 * @param envCheckId Environment check ID
+	 * @param result Check result
+	 */
+	private _reportEnvCheckStatus(envCheckId: string, result: ProgramInfo): void {
+		this._panel.webview.postMessage({
+			command: 'envCheckResult',
+			envCheckId,
+			available: result.available,
+			info: result.info
+		});
+	}
+
+	/**
+	 * Sends the environment checks list to the webview
+	 */
+	private _sendEnvChecksList(): void {
+		const platform = process.platform;
+		const isWSL = ProgramUtils.isWSL();
+		const envChecks = [];
+
+		// Generate environment checks list for current platform
+		for (const [key, info] of Object.entries(apToolsConfig.ENV_CHECK_REGISTRY)) {
+			let hasCheck = false;
+
+			if (isWSL && 'wsl' in info.checks && info.checks.wsl) {
+				hasCheck = true;
+			} else if (platform === 'linux' && 'linux' in info.checks && info.checks.linux) {
+				hasCheck = true;
+			} else if (platform === 'darwin' && 'darwin' in info.checks && info.checks.darwin) {
+				hasCheck = true;
+			}
+
+			if (hasCheck) {
+				envChecks.push({
+					id: key,
+					name: info.name,
+					description: info.description,
+					required: info.required
+				});
+			}
+		}
+
+		this._panel.webview.postMessage({
+			command: 'envChecksList',
+			envChecks: envChecks
+		});
+	}
+
+	/**
+	 * Fixes an environment issue based on the environment check ID
+	 * @param envCheckId The ID of the environment check to fix
+	 * @returns Promise that resolves on successful fix or rejects on failure
+	 */
+	public static async fixEnvironmentIssue(envCheckId: string): Promise<void> {
+		const platform = process.platform;
+		const isWSL = ProgramUtils.isWSL();
+
+		// Find environment check in registry
+		const envCheckInfo = apToolsConfig.ENV_CHECK_REGISTRY[envCheckId as apToolsConfig.EnvCheckID];
+		if (!envCheckInfo) {
+			const errorMsg = `Environment check '${envCheckId}' not found in registry`;
+			vscode.window.showErrorMessage(errorMsg);
+			throw new Error(errorMsg);
+		}
+
+		const envCheckName = envCheckInfo.name;
+		const fixCommands = envCheckInfo.fix_issue;
+
+		if (!fixCommands) {
+			const errorMsg = `Fix not available for ${envCheckName}`;
+			vscode.window.showErrorMessage(errorMsg);
+			throw new Error(errorMsg);
+		}
+
+		// Determine the appropriate fix method based on platform
+		let fixMethod: apToolsConfig.InstallMethod | undefined;
+
+		if (isWSL && 'wsl' in fixCommands && fixCommands.wsl) {
+			fixMethod = fixCommands.wsl;
+		} else if (platform === 'linux' && 'linux' in fixCommands && fixCommands.linux) {
+			fixMethod = fixCommands.linux;
+		} else if (platform === 'darwin' && 'darwin' in fixCommands && fixCommands.darwin) {
+			fixMethod = fixCommands.darwin;
+		}
+
+		if (!fixMethod) {
+			const errorMsg = `No fix method available for ${envCheckName} on ${platform}`;
+			vscode.window.showErrorMessage(errorMsg);
+			throw new Error(errorMsg);
+		}
+
+		if (fixMethod.type === 'command') {
+			// Use terminal fix with monitoring
+			const terminalName = `Fix ${envCheckName}`;
+			const terminalMonitor = new apTerminalMonitor(terminalName);
+
+			vscode.window.showInformationMessage(
+				`Fixing ${envCheckName}... Check the terminal for progress.`
+			);
+
+			// Set up text callback for logging terminal output
+			terminalMonitor.addTextCallback((text) => {
+				ValidateEnvironmentPanel.log.log(`Terminal output[${terminalName}]: ${text}`);
+			});
+
+			try {
+				const exitCode = await terminalMonitor.runCommand(fixMethod.command);
+				ValidateEnvironmentPanel.log.log(`Fix completed with exit code: ${exitCode}`);
+
+				// Clean up the terminal monitor
+				await terminalMonitor.dispose();
+
+				if (exitCode === 0) {
+					vscode.window.showInformationMessage(`${envCheckName} fixed successfully!`);
+				} else {
+					const errorMsg = `Fix failed with exit code ${exitCode}`;
+					vscode.window.showErrorMessage(`Failed to fix ${envCheckName}: ${errorMsg}`);
+					throw new Error(errorMsg);
+				}
+			} catch (error) {
+				await terminalMonitor.dispose();
+				const errorMsg = error instanceof Error ? error.message : String(error);
+				ValidateEnvironmentPanel.log.log(`Environment fix failed: ${errorMsg}`);
+				vscode.window.showErrorMessage(`Failed to fix ${envCheckName}: ${errorMsg}`);
+				throw error;
+			}
+		} else if (fixMethod.type === 'url') {
+			// Use web-based fix
+			vscode.env.openExternal(vscode.Uri.parse(fixMethod.url));
+			vscode.window.showInformationMessage(
+				`Opening ${envCheckName} fix page. ${envCheckInfo.description}`
+			);
 		}
 	}
 

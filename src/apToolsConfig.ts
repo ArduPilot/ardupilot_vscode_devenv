@@ -314,7 +314,7 @@ export const TOOLS_REGISTRY = {
 			args: ['-V'],
 			versionRegex: /lsusb\s+(\S+)/
 		}
-	}
+	},
 } as const;
 
 /**
@@ -346,6 +346,90 @@ export const PYTHON_PACKAGES_REGISTRY = {
  * Type for PythonPackageId
  */
 export type PythonPackageId = keyof typeof PYTHON_PACKAGES_REGISTRY;
+
+/**
+ * Interface for environment check information
+ */
+export interface EnvCheckInfo {
+    id?: string;
+    name: string;
+    description: string;
+    required?: boolean;
+    checks: {
+        linux?: string;
+        darwin?: string;
+        wsl?: string;
+    };
+    fix_issue?: {
+        linux?: InstallMethod;
+        darwin?: InstallMethod;
+        wsl?: InstallMethod;
+    };
+}
+
+/**
+ * Registry of environment checks per platform
+ */
+export const ENV_CHECK_REGISTRY = {
+	MODEMMANAGER_NOT_INSTALLED: {
+		name: 'ModemManager Not Installed',
+		description: 'ModemManager interferes with ArduPilot device communication',
+		required: true,
+		checks: {
+			linux: '! command -v ModemManager',
+			wsl: '! command -v ModemManager'
+		},
+		fix_issue: {
+			linux: { type: 'command', command: 'sudo apt-get remove -y modemmanager' },
+			wsl: { type: 'command', command: 'sudo apt-get remove -y modemmanager' }
+		}
+	},
+	DIALOUT_GROUP_MEMBERSHIP: {
+		name: 'Dialout Group Membership',
+		description: 'User must be in dialout group to access serial devices',
+		required: true,
+		checks: {
+			linux: 'groups | grep -q dialout',
+			wsl: 'groups | grep -q dialout'
+		},
+		fix_issue: {
+			linux: { type: 'command', command: 'sudo usermod -a -G dialout $USER && echo "Please log out and log back in for group changes to take effect"' },
+			wsl: { type: 'command', command: 'sudo usermod -a -G dialout $USER && echo "Please restart WSL for group changes to take effect"' }
+		}
+	},
+	HOMEBREW_INSTALLED: {
+		name: 'Homebrew Package Manager',
+		description: 'Homebrew is required for installing development tools on macOS',
+		required: true,
+		checks: {
+			darwin: 'command -v brew'
+		},
+		fix_issue: {
+			darwin: { type: 'command', command: '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' }
+		}
+	},
+	XCODE_CLI_TOOLS: {
+		name: 'Xcode Command Line Tools',
+		description: 'Xcode CLI tools provide essential build tools for macOS development',
+		required: true,
+		checks: {
+			darwin: 'xcode-select -p'
+		},
+		fix_issue: {
+			darwin: { type: 'command', command: 'xcode-select --install' }
+		}
+	}
+} as const;
+
+/**
+ * Type for EnvCheckID
+ */
+export type EnvCheckID = keyof typeof ENV_CHECK_REGISTRY;
+
+// Initialize the id field for each environment check with its key
+Object.entries(ENV_CHECK_REGISTRY).forEach(([key, envCheck]) => {
+	(envCheck as EnvCheckInfo).id = key;
+});
 
 /**
  * Helper functions for working with the tools registry
@@ -387,6 +471,24 @@ export class ToolsRegistryHelpers {
 			return (pkg as PythonPackageInfo).version ? `${pkg.name}==${(pkg as PythonPackageInfo).version}` : pkg.name;
 		});
 	}
+
+	/**
+	 * Get all environment check IDs as an array
+	 */
+	static getEnvCheckIdsList(): EnvCheckID[] {
+		return Object.keys(ENV_CHECK_REGISTRY) as EnvCheckID[];
+	}
+
+	/**
+	 * Get all environment checks as an array
+	 */
+	static getAllEnvChecks(): Array<EnvCheckInfo & { key: string }> {
+		return Object.entries(ENV_CHECK_REGISTRY).map(([key, info]) => ({
+			key,
+			...info
+		}));
+	}
+
 }
 
 export class ToolsConfig {

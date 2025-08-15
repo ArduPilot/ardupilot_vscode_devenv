@@ -42,8 +42,15 @@
 		status?: 'checking' | 'available' | 'missing';
 	}
 
+	interface EnvCheckStatus {
+		available: boolean;
+		info?: string;
+		status?: 'checking' | 'passed' | 'failed';
+	}
+
 	let toolStatuses: Record<string, ToolStatus> = {};
 	let packageStatuses: Record<string, PackageStatus> = {};
+	let envCheckStatuses: Record<string, EnvCheckStatus> = {};
 	let summaryMessage = '';
 	let summaryStatus = '';
 	let showInstallPackagesButton = false;
@@ -54,6 +61,9 @@
 	// Python packages - will be populated from extension
 	let pythonPackages: Array<{ name: string; description?: string }> = [];
 
+	// Environment checks - will be populated from extension
+	let envChecks: Array<{ id: string; name: string; description?: string; required?: boolean }> = [];
+
 	onMount(() => {
 		// Start loading state
 		isLoading = true;
@@ -63,14 +73,20 @@
 			toolStatuses[tool.id] = { available: false, status: 'checking' };
 		});
 
+		// Initialize all environment checks as checking
+		envChecks.forEach(envCheck => {
+			envCheckStatuses[envCheck.id] = { available: false, status: 'checking' };
+		});
+
 		// Listen for messages from extension
 		window.addEventListener('message', (event: MessageEvent) => {
 			handleMessage(event.data);
 		});
 
-		// Request tools and packages lists first
+		// Request tools, packages, and environment checks lists first
 		vscodeHooks.postMessage('getToolsList', {});
 		vscodeHooks.postMessage('getPythonPackagesList', {});
+		vscodeHooks.postMessage('getEnvChecksList', {});
 
 		// Request initial validation
 		vscodeHooks.postMessage('checkEnvironment', {});
@@ -98,6 +114,12 @@
 				break;
 			case 'toolsList':
 				updateToolsList(message);
+				break;
+			case 'envCheckResult':
+				updateEnvCheckStatus(message);
+				break;
+			case 'envChecksList':
+				updateEnvChecksList(message);
 				break;
 		}
 	}
@@ -129,6 +151,9 @@
 	function updateSummary(message: Record<string, any>) {
 		summaryMessage = message.message;
 		summaryStatus = message.status;
+		
+		// Additional summary data is available in message.toolsStatus and message.envChecksStatus
+		// but for now we'll use the formatted message from the backend
 	}
 
 	function updatePlatformInfo(message: Record<string, any>) {
@@ -154,6 +179,25 @@
 		packageStatuses = { ...packageStatuses }; // Trigger reactivity
 	}
 
+	function updateEnvCheckStatus(message: Record<string, any>) {
+		const { envCheckId, available, info } = message;
+		envCheckStatuses[envCheckId] = {
+			available,
+			info,
+			status: available ? 'passed' : 'failed'
+		};
+		envCheckStatuses = { ...envCheckStatuses }; // Trigger reactivity
+	}
+
+	function updateEnvChecksList(message: Record<string, any>) {
+		envChecks = message.envChecks || [];
+		// Initialize all environment checks as checking
+		envChecks.forEach(envCheck => {
+			envCheckStatuses[envCheck.id] = { available: false, status: 'checking' };
+		});
+		envCheckStatuses = { ...envCheckStatuses }; // Trigger reactivity
+	}
+
 	function configureToolPath(toolId: string, toolName: string) {
 		vscodeHooks.postMessage('configureToolPath', { toolId, toolName });
 	}
@@ -168,6 +212,10 @@
 
 	function installPythonPackages() {
 		vscodeHooks.postMessage('installPythonPackages', {});
+	}
+
+	function fixEnvironmentIssue(envCheckId: string) {
+		vscodeHooks.postMessage('fixEnvironmentIssue', { envCheckId });
 	}
 
 	function launchWSL() {
@@ -232,6 +280,24 @@
 		return `summary-${summaryStatus}`;
 	}
 
+	function getEnvCheckStatusClass(status?: string): string {
+		switch (status) {
+			case 'checking': return 'env-status-checking';
+			case 'passed': return 'env-status-passed';
+			case 'failed': return 'env-status-failed';
+			default: return 'env-status-checking';
+		}
+	}
+
+	function getEnvCheckStatusText(status?: string): string {
+		switch (status) {
+			case 'checking': return 'Checking...';
+			case 'passed': return 'Passed';
+			case 'failed': return 'Failed';
+			default: return 'Checking...';
+		}
+	}
+
 </script>
 
 <main>
@@ -254,6 +320,19 @@
 			</div>
 		</div>
 	{:else}
+		<!-- Overall Summary Section at Top -->
+		{#if summaryMessage}
+			<div id="summary" class={getSummaryClass()}>
+				{summaryMessage}
+			</div>
+		{/if}
+		
+		<!-- Action Buttons at Top -->
+		<div class="action-buttons action-buttons-top">
+			<button on:click={refreshValidation}>Refresh Validation</button>
+			<button on:click={resetAllPaths}>Reset All Paths</button>
+		</div>
+
 		<div id="validation-results">
 			{#each tools as tool}
 				<div class="tool-container" data-tool-id={tool.id}>
@@ -331,17 +410,43 @@
 						{/if}
 				</div>
 			{/each}
-			
-			{#if summaryMessage}
-				<div id="summary" class={getSummaryClass()}>
-					{summaryMessage}
+
+			<!-- Environment Prerequisites Section -->
+			{#if envChecks.length > 0}
+				<div class="env-checks-section">
+					<h2>Environment Prerequisites</h2>
+					{#each envChecks as envCheck}
+						<div class="env-check-container" data-env-check-id={envCheck.id}>
+							<div class="env-check-header">
+								<div class="env-check-name">{envCheck.name}</div>
+								{#if envCheckStatuses[envCheck.id]?.status === 'checking'}
+									<vscode-progress-ring class="env-check-progress-ring"></vscode-progress-ring>
+								{:else}
+									<div class="env-check-status {getEnvCheckStatusClass(envCheckStatuses[envCheck.id]?.status)}">
+										{getEnvCheckStatusText(envCheckStatuses[envCheck.id]?.status)}
+									</div>
+								{/if}
+							</div>
+							
+							{#if envCheck.description}
+								<div class="env-check-description">{envCheck.description}</div>
+							{/if}
+							
+							{#if envCheckStatuses[envCheck.id]?.info}
+								<div class="env-check-info">{@html envCheckStatuses[envCheck.id].info}</div>
+							{/if}
+							
+							{#if !envCheckStatuses[envCheck.id]?.available}
+								<div class="env-check-actions">
+									<button class="fix-button" on:click={() => fixEnvironmentIssue(envCheck.id)}>
+										Fix Issue
+									</button>
+								</div>
+							{/if}
+						</div>
+					{/each}
 				</div>
 			{/if}
-			
-			<div class="action-buttons">
-				<button on:click={refreshValidation}>Refresh Validation</button>
-				<button on:click={resetAllPaths}>Reset All Paths</button>
-			</div>
 		</div>
 	{/if}
 </main>
@@ -464,27 +569,39 @@
 		display: flex;
 		gap: 10px;
 	}
+
+	.action-buttons-top {
+		margin-top: 15px;
+		margin-bottom: 25px;
+		display: flex;
+		gap: 10px;
+	}
 	
 	#summary {
-		margin-top: 20px;
-		padding: 10px;
+		margin-top: 15px;
+		margin-bottom: 5px;
+		padding: 12px;
 		border-radius: 5px;
 		font-weight: bold;
+		font-size: 16px;
 	}
 	
 	.summary-ok {
-		background-color: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 10%, var(--vscode-editor-background));
-		border: 1px solid var(--vscode-terminal-ansiGreen);
+		background-color: color-mix(in srgb, #22c55e 25%, var(--vscode-editor-background));
+		border: 1px solid #22c55e;
+		color: #22c55e;
 	}
 	
 	.summary-warning {
-		background-color: color-mix(in srgb, var(--vscode-terminal-ansiYellow) 10%, var(--vscode-editor-background));
+		background-color: color-mix(in srgb, var(--vscode-terminal-ansiYellow) 15%, var(--vscode-editor-background));
 		border: 1px solid var(--vscode-terminal-ansiYellow);
+		color: var(--vscode-terminal-ansiYellow);
 	}
 	
 	.summary-error {
-		background-color: color-mix(in srgb, var(--vscode-errorForeground) 10%, var(--vscode-editor-background));
+		background-color: color-mix(in srgb, var(--vscode-errorForeground) 15%, var(--vscode-editor-background));
 		border: 1px solid var(--vscode-errorForeground);
+		color: var(--vscode-errorForeground);
 	}
 	
 	.tool-info {
@@ -577,5 +694,91 @@
 	
 	.package-progress-ring {
 		--vscode-progress-ring-size: 12px;
+	}
+
+	/* Environment Check Styles */
+	.env-checks-section {
+		margin-top: 30px;
+	}
+
+	.env-checks-section h2 {
+		font-size: 20px;
+		margin-bottom: 15px;
+		color: var(--vscode-editor-foreground);
+	}
+
+	.env-check-container {
+		margin-bottom: 15px;
+		padding: 10px;
+		border: 1px solid var(--vscode-panel-border);
+		border-radius: 5px;
+		background-color: var(--vscode-editor-background);
+	}
+
+	.env-check-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+
+	.env-check-name {
+		font-weight: bold;
+		font-size: 16px;
+	}
+
+	.env-check-status {
+		font-size: 14px;
+		padding: 3px 8px;
+		border-radius: 3px;
+	}
+
+	.env-status-checking {
+		background-color: var(--vscode-progressBar-background);
+		color: var(--vscode-button-foreground);
+	}
+
+	.env-status-passed {
+		background-color: var(--vscode-terminal-ansiGreen);
+		color: var(--vscode-button-foreground);
+	}
+
+	.env-status-failed {
+		background-color: var(--vscode-errorForeground);
+		color: var(--vscode-button-foreground);
+	}
+
+	.env-check-description {
+		margin-top: 5px;
+		font-size: 14px;
+		color: var(--vscode-descriptionForeground);
+	}
+
+	.env-check-info {
+		margin-top: 5px;
+		font-size: 14px;
+		color: var(--vscode-descriptionForeground);
+	}
+
+	.env-check-actions {
+		margin-top: 8px;
+	}
+
+	.fix-button {
+		background-color: var(--vscode-button-background);
+		color: var(--vscode-button-foreground);
+		border: none;
+		padding: 4px 8px;
+		border-radius: 2px;
+		cursor: pointer;
+		font-size: 12px;
+	}
+
+	.fix-button:hover {
+		background-color: var(--vscode-button-hoverBackground);
+	}
+
+	.env-check-progress-ring {
+		--vscode-progress-ring-size: 16px;
 	}
 </style>
