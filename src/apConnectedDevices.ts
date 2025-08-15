@@ -20,7 +20,7 @@ import * as os from 'os';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { TOOLS_REGISTRY } from './apToolsConfig';
-import { apTerminalMonitor, TerminalEventType } from './apTerminalMonitor';
+import { apTerminalMonitor } from './apTerminalMonitor';
 
 // Device information interface
 export interface DeviceInfo {
@@ -171,7 +171,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	private log = new apLog('apConnectedDevices');
 	private refreshTimer: NodeJS.Timeout | undefined;
 	private isWSL = false;
-	private activeConnections: Map<string, { process: cp.ChildProcess | null, terminal: apTerminalMonitor | null }> = new Map();
+	private activeConnections: Map<string, { terminal: apTerminalMonitor | null }> = new Map();
 	private loggedDevices: Set<string> = new Set(); // Track which devices have been logged
 
 	public setIsWSL(isWSL: boolean): void {
@@ -890,22 +890,22 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 
 		// Run MAVProxy in a terminal
 		const terminalMonitor = new apTerminalMonitor(`MAVProxy - ${devicePath}`);
-		terminalMonitor.runCommand(mavproxyCommand);
-
-		// Track the active connection
-		this.activeConnections.set(device.path, {
-			process: null, // When using terminal, we don't have direct process access
-			terminal: terminalMonitor
-		});
-
-		// Update the device state and refresh the tree view
-		this.setMavproxyConnection(device.path, true);
-		this.refresh();
-
-		// Set up listeners for terminal close
-		terminalMonitor.addEventListener(TerminalEventType.SHELL_EXECUTION_END, () => {
-			this.handleTerminalClosed(device.path);
-		});
+		terminalMonitor.runCommand(mavproxyCommand,
+			{
+				onShellExecutionStart: () => {
+					// Track the active connection
+					this.activeConnections.set(device.path, {
+						terminal: terminalMonitor
+					});
+					// Update the device state and refresh the tree view
+					this.setMavproxyConnection(device.path, true);
+					this.refresh();
+				},
+				onShellExecutionEnd: () => {
+					this.handleTerminalClosed(device.path);
+				}
+			}
+		);
 
 		this.log.log(`Started MAVProxy connection to ${devicePath} at ${baudRate} baud using ${this.isWSL ? 'mavproxy.exe (WSL)' : 'mavproxy.py'}`);
 	}
@@ -918,12 +918,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 
 		// If we have a terminal, close it
 		if (connection.terminal) {
-			connection.terminal.dispose();
-		}
-
-		// If we have a process, kill it
-		if (connection.process) {
-			connection.process.kill();
+			await connection.terminal.dispose();
 		}
 
 		// Remove from active connections
