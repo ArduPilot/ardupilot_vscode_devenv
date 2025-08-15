@@ -252,7 +252,7 @@ export const TOOLS_REGISTRY = {
 				type: 'command',
 				command: 'cd /tmp && wget -O gcc-arm-none-eabi.tar.bz2 https://firmware.ardupilot.org/Tools/STM32-tools/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2 && sudo mkdir -p /opt/gcc-arm-none-eabi && sudo tar -xjf gcc-arm-none-eabi.tar.bz2 -C /opt/gcc-arm-none-eabi --strip-components=1'
 			},
-			darwin: { type: 'command', command: 'cd /tmp && wget -O gcc-arm-none-eabi.pkg https://firmware.ardupilot.org/Tools/STM32-tools/gcc-arm-none-eabi-10-2020-q4-major-mac.pkg && sudo installer -pkg gcc-arm-none-eabi.pkg -target /' }
+			darwin: { type: 'command', command: 'cd /tmp && curl --progress-bar -fL -o gcc-arm-none-eabi.pkg https://firmware.ardupilot.org/Tools/STM32-tools/gcc-arm-none-eabi-10-2020-q4-major-mac.pkg && sudo installer -pkg gcc-arm-none-eabi.pkg -target /' }
 		},
 		findArgs: {
 			args: ['--version']
