@@ -48,7 +48,7 @@ export class ProgramUtils {
 	private static log = new apLog('ProgramUtils');
 
 	// find the tool path for the tool using the registry
-	private static findToolPath(toolInfo: apToolsConfig.ToolInfo): string | undefined {
+	private static async findToolPath(toolInfo: apToolsConfig.ToolInfo): Promise<string | undefined> {
 
 		const platform = os.platform() as 'linux' | 'darwin';
 		const isWSL = this.isWSL();
@@ -85,17 +85,11 @@ export class ProgramUtils {
 				} else if (fs.existsSync(toolPath)) {
 					// Check if the path exists
 					return toolPath;
-				} else {
+				} else if (!toolPath.includes('/')) {
 					// use which or where to find the tool
 					try {
-						const result = child_process.spawnSync(`which ${toolPath}`, { stdio: 'pipe' }).stdout.toString().trim();
-						ProgramUtils.log.log(`which ${toolPath} : ${result}`);
-						if (result) {
-							return result; // Return the first matching path
-						}
-					}
-					// eslint-disable-next-line @typescript-eslint/no-unused-vars
-					catch (error) {
+						return await this.findCommandPath(toolPath);
+					} catch (error) {
 						// Ignore errors, continue searching
 						ProgramUtils.log.log(`Error finding tool ${toolPath}: ${error}`);
 					}
@@ -132,9 +126,6 @@ export class ProgramUtils {
 				return { available: false, isCustomPath: false };
 			}
 
-			const args = toolInfo.findArgs.args;
-			const versionRegex = toolInfo.findArgs.versionRegex;
-
 			// Check if there's a custom path configured for this tool
 			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 			const customPath = apToolsConfig.ToolsConfig.getToolPath(toolInfo.id! as apToolsConfig.ToolID);
@@ -142,28 +133,35 @@ export class ProgramUtils {
 				this.log.log(`Using custom path for ${toolInfo.name}: ${customPath}`);
 
 				// Try using the custom path
-				const result = await this._tryExecuteCommand(customPath, args, versionRegex);
-				if (result) {
-					result.command = customPath; // Keep the original command name
-					result.path = customPath; // Use the custom path
-					result.isCustomPath = true; // Mark as custom path
-					return result;
+				const version = await this.getVersion(toolInfo);
+				if (version) {
+					return {
+						command: customPath,
+						path: customPath,
+						version,
+						isCustomPath: true,
+						available: true
+					};
 				}
 
 				this.log.log(`Custom path for ${toolInfo.name} is invalid, falling back to default search`);
 			}
 
 			// Try to execute the command
-			const command = this.findToolPath(toolInfo);
+			const command = await this.findToolPath(toolInfo);
 			if (!command) {
 				this.log.log(`Command ${toolInfo.name} not found in system path`);
 				return { available: false, isCustomPath: false };
 			}
-			const result = await this._tryExecuteCommand(command, args, versionRegex);
-			if (result) {
-				result.command = command;
-				result.isCustomPath = false; // Mark as system path
-				return result;
+			const version = await this.getVersion(toolInfo);
+			if (version) {
+				return {
+					available: true,
+					path: command,
+					version,
+					command: command,
+					isCustomPath: false
+				};
 			}
 
 			// If we get here, all attempts failed
@@ -172,6 +170,20 @@ export class ProgramUtils {
 			this.log.log(`Error finding program ${toolInfo.name}: ${error}`);
 			return { available: false, isCustomPath: false };
 		}
+	}
+
+	private static async getVersion(tool: apToolsConfig.ToolInfo): Promise<string | undefined> {
+		const shell = process.env.SHELL || '';
+		const sourceCommand = `source ${shell.includes('zsh') ? '~/.zshrc' : '~/.bashrc'} 2>/dev/null; ${await this.findToolPath(tool)} ${tool.findArgs?.args.join(' ')}`;
+		const result = child_process.spawnSync(sourceCommand, { stdio: 'pipe', shell: true });
+		ProgramUtils.log.log(`Checking version for ${tool.name}: ${sourceCommand}:  ${result.stdout.toString().trim()}`);
+		if (result.status === 0) {
+			ProgramUtils.log.log(`Found version for ${tool.name}: ${result.stdout.toString().trim()}`);
+			// Use regex to extract version
+			const versionMatch = result.stdout.toString().trim().match(tool.findArgs?.versionRegex ?? /(\d+\.\d+\.\d+)/);
+			return versionMatch ? versionMatch[1] : result.stdout.toString().trim();
+		}
+		return undefined;
 	}
 
 	private static async findVSCodeExtPython(): Promise<ProgramInfo> {
@@ -186,13 +198,18 @@ export class ProgramUtils {
 					this.log.log(`Using Python interpreter from MS Python extension: ${interpreterPath}`);
 
 					// Try using this interpreter
-					const result = await this._tryExecuteCommand(interpreterPath, ['--version']);
-					if (result) {
-						result.command = interpreterPath;
-						result.path = interpreterPath;
-						result.info = 'Selected via Microsoft Python Extension';
-						result.isCustomPath = false; // Extension-selected, not custom path
-						return result;
+					const shell = process.env.SHELL || '';
+					const sourceCommand = `source ${shell.includes('zsh') ? '~/.zshrc' : '~/.bashrc'} 2>/dev/null; ${interpreterPath} --version`;
+					const result = child_process.spawnSync(sourceCommand, { stdio: 'pipe', shell: true });
+					ProgramUtils.log.log(`Checking version for ${interpreterPath}: ${sourceCommand}: ${result.stdout.toString().trim()}`);
+					if (result.status === 0) {
+						return {
+							command: interpreterPath,
+							path: interpreterPath,
+							info: 'Selected via Microsoft Python Extension',
+							isCustomPath: false,
+							available: true
+						};
 					}
 				}
 			}
@@ -272,95 +289,28 @@ export class ProgramUtils {
 	}
 
 	/**
-	 * Attempts to execute a command and extract its version and path
-	 * @param command The command to execute
-	 * @param args The arguments to pass to the command
-	 * @param versionRegex Optional regex to extract version
-	 * @returns Program information if successful, null if not
-	 */
-	private static async _tryExecuteCommand(
-		command: string,
-		args: readonly string[],
-		versionRegex?: RegExp
-	): Promise<ProgramInfo | null> {
-		return new Promise<ProgramInfo | null>((resolve) => {
-			try {
-				const process = child_process.spawn(command, args);
-				let output = '';
-				let errorOutput = '';
-
-				process.stdout.on('data', (data) => {
-					output += data.toString();
-				});
-
-				process.stderr.on('data', (data) => {
-					errorOutput += data.toString();
-				});
-
-				process.on('close', (code) => {
-					if (code === 0) {
-						// Tool exists, now find its path if it's not a custom path
-						// If command includes a path separator, it's likely a custom path
-						const isCustomPath = command.includes('/') || command.includes('\\');
-						const path = isCustomPath ? command : this.findCommandPath(command);
-
-						// Extract version from output
-						const versionOutput = output || errorOutput;
-						let version: string | undefined = undefined;
-
-						if (versionRegex) {
-							// Use custom regex if provided
-							const match = versionOutput.match(versionRegex);
-							if (match && match[1]) {
-								version = match[1];
-							}
-						} else {
-							// Standard version extraction for other tools
-							// Try to match major.minor.patch format first
-							const versionMatchFull = versionOutput.match(/(\d+\.\d+\.\d+)/);
-							if (versionMatchFull) {
-								version = versionMatchFull[1];
-							} else {
-								// Fall back to major.minor format
-								const versionMatchPartial = versionOutput.match(/(\d+\.\d+)/);
-								if (versionMatchPartial) {
-									version = versionMatchPartial[1];
-								}
-							}
-						}
-
-						resolve({
-							available: true,
-							version,
-							path,
-							isCustomPath: false // Will be set by calling function
-						});
-					} else {
-						resolve(null);
-					}
-				});
-
-				process.on('error', () => {
-					resolve(null);
-				});
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
-			} catch (error) {
-				resolve(null);
-			}
-		});
-	}
-
-	/**
 	 * Finds the path of a command using 'which' (Linux/Mac) or 'where' (Windows)
 	 * @param command The command to find
 	 * @returns The path to the command
 	 */
-	private static findCommandPath(command: string): string {
+	private static async findCommandPath(command: string): Promise<string | undefined> {
 		try {
-			return child_process.spawnSync(`which ${command}`, { stdio: 'pipe' }).stdout.toString().trim();
+			const shell = process.env.SHELL || '/bin/bash';
+
+			// Source rc file first to load environment, then run which/where
+			const commandToRun = `source ${shell.includes('zsh') ? '~/.zshrc' : '~/.bashrc'} 2>/dev/null; which ${command}`;
+
+			const result = child_process.spawnSync(commandToRun, { stdio: 'pipe', shell: true });
+			ProgramUtils.log.log(`Running command: ${commandToRun} : ${result.stdout.toString().trim()}`);
+			if (result.status === 0) {
+				// cleanup result output from shell decorations
+				return result.stdout.toString().trim();
+			} else {
+				return undefined;
+			}
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		} catch (error) {
-			return 'Unknown';
+			return undefined;
 		}
 	}
 
@@ -378,6 +328,7 @@ export class ProgramUtils {
 		// Check for WSL in release info
 		try {
 			const releaseInfo = child_process.spawnSync('cat /proc/version', { stdio: 'pipe' }).stdout.toString();
+			ProgramUtils.log.log(`WSL release info: ${releaseInfo}`);
 			return releaseInfo.toLowerCase().includes('microsoft') || releaseInfo.toLowerCase().includes('wsl');
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		} catch (error) {
