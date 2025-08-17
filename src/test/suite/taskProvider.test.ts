@@ -536,7 +536,7 @@ suite('APTaskProvider Test Suite', () => {
 			const cachedToolPathStub = sandbox.stub(ProgramUtils, 'cachedToolPath');
 			cachedToolPathStub.withArgs(ProgramUtils.TOOL_PYTHON).returns('python3');
 
-			const commands = APTaskProvider.generateBuildCommands(
+			const commands = await APTaskProvider.generateBuildCommands(
 				'sitl',
 				'copter',
 				'--debug',
@@ -556,7 +556,7 @@ suite('APTaskProvider Test Suite', () => {
 			const cachedToolPathStub = sandbox.stub(ProgramUtils, 'cachedToolPath');
 			cachedToolPathStub.withArgs(ProgramUtils.TOOL_PYTHON).returns('python3');
 
-			const commands = APTaskProvider.generateBuildCommands(
+			const commands = await APTaskProvider.generateBuildCommands(
 				'CubeOrange',
 				'plane',
 				'',
@@ -570,11 +570,11 @@ suite('APTaskProvider Test Suite', () => {
 			assert.strictEqual(commands.taskCommand, 'cd ../../ && python3 /mock/workspace/waf configure --board=CubeOrange && python3 /mock/workspace/waf plane');
 		});
 
-		test('should handle missing workspace root by using current workspace', () => {
+		test('should handle missing workspace root by using current workspace', async () => {
 			const mockWorkspaceFolder = { uri: { fsPath: '/test/workspace' } };
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value([mockWorkspaceFolder]);
 
-			const commands = APTaskProvider.generateBuildCommands('sitl', 'copter');
+			const commands = await APTaskProvider.generateBuildCommands('sitl', 'copter');
 
 			assert.ok(commands);
 			assert.ok(commands.configureCommand.includes('/test/workspace/waf'));
@@ -582,10 +582,10 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(commands.taskCommand.includes('/test/workspace/waf'));
 		});
 
-		test('should handle empty workspace folders', () => {
+		test('should handle empty workspace folders', async () => {
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
 
-			const commands = APTaskProvider.generateBuildCommands('sitl', 'copter');
+			const commands = await APTaskProvider.generateBuildCommands('sitl', 'copter');
 
 			assert.ok(commands);
 			assert.ok(commands.configureCommand.includes('python3 waf'));
@@ -598,7 +598,7 @@ suite('APTaskProvider Test Suite', () => {
 			const cachedToolPathStub = sandbox.stub(ProgramUtils, 'cachedToolPath');
 			cachedToolPathStub.withArgs(ProgramUtils.TOOL_PYTHON).returns('python3');
 
-			const commands = APTaskProvider.generateBuildCommands(
+			const commands = await APTaskProvider.generateBuildCommands(
 				'board-with-dash',
 				'target_with_underscore',
 				'--option=value --another-option',
