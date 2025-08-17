@@ -497,7 +497,7 @@ export class apActionItem extends vscode.TreeItem {
 			env: terminalEnv
 		});
 		terminal.sendText(`cd ${workspaceRoot}`);
-		const simVehicleCommand = `python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${config.simVehicleCommand || ''}`;
+		const simVehicleCommand = `${ProgramUtils.TOOL_PYTHON} ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${config.simVehicleCommand || ''}`;
 		terminal.sendText(simVehicleCommand);
 		terminal.show();
 	}
