@@ -22,6 +22,7 @@ import * as path from 'path';
 import * as glob from 'fast-glob';
 import * as apToolsConfig from './apToolsConfig';
 import { apLog } from './apLog';
+import { TOOLS_REGISTRY } from './apToolsConfig';
 
 /**
  * Interface for program information
@@ -99,6 +100,9 @@ export class ProgramUtils {
 		return undefined;
 	}
 
+	public static async PYTHON() : Promise<string> {
+		return (await ProgramUtils.findProgram(TOOLS_REGISTRY.PYTHON))?.path || 'python';
+	}
 	/**
 	 * Finds a program in the system path and returns information about it
 	 * @param command The command to check

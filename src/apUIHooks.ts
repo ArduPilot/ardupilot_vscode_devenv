@@ -139,7 +139,7 @@ export class UIHooks {
 		this._panel.webview.postMessage({ command: 'getFeaturesList', featuresList });
 	}
 
-	public extractFeatures(message: Record<string, unknown>): void {
+	public async extractFeatures(message: Record<string, unknown>): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
 			this._panel.webview.postMessage({ command: 'extractFeatures', features: [], error: 'No workspace folder found' });
@@ -180,7 +180,7 @@ export class UIHooks {
 			if (board.toLowerCase().includes('sitl')) {
 				nm = 'nm'; // Use 'nm' for SITL targets
 			}
-			const result = cp.spawnSync('python3', [extractFeaturesScript, '--nm', nm, binaryFile]);
+			const result = cp.spawnSync(`${await ProgramUtils.PYTHON()}`, [extractFeaturesScript, '--nm', nm, binaryFile]);
 			if (result.status !== 0) {
 				UIHooks.log(`extract_features.py failed: ${result.stderr?.toString()}`);
 				this._panel.webview.postMessage({
@@ -239,7 +239,7 @@ export class UIHooks {
 		try {
 			// Execute waf configure --help
 			const wafPath = path.join(workspaceRoot, 'waf');
-			const result = cp.spawnSync('python3', [wafPath, 'configure', '--help'], {
+			const result = cp.spawnSync(`${await ProgramUtils.PYTHON()}`, [wafPath, 'configure', '--help'], {
 				cwd: workspaceRoot,
 				encoding: 'utf8'
 			});
@@ -306,7 +306,7 @@ export class UIHooks {
 		}
 	}
 
-	public getSITLOptions(): void {
+	public async getSITLOptions(): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
 			this._panel.webview.postMessage({ command: 'getSITLOptions', options: [], error: 'No workspace folder found' });
@@ -316,7 +316,7 @@ export class UIHooks {
 		try {
 			// Execute sim_vehicle.py --help
 			const simVehiclePath = path.join(workspaceRoot, 'Tools', 'autotest', 'sim_vehicle.py');
-			const result = cp.spawnSync('python3', [simVehiclePath, '--help'], {
+			const result = cp.spawnSync(`${await ProgramUtils.PYTHON()}`, [simVehiclePath, '--help'], {
 				cwd: workspaceRoot,
 				encoding: 'utf8'
 			});
@@ -484,7 +484,7 @@ export class UIHooks {
 		return options;
 	}
 
-	public getBuildCommands(message: Record<string, unknown>): void {
+	public async getBuildCommands(message: Record<string, unknown>): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
 			this._panel.webview.postMessage({
@@ -512,7 +512,7 @@ export class UIHooks {
 
 		try {
 			// Use shared command generation method from APTaskProvider
-			const commands = APTaskProvider.generateBuildCommands(
+			const commands = await APTaskProvider.generateBuildCommands(
 				board,
 				target,
 				configureOptions,

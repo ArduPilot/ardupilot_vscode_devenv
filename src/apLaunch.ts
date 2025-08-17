@@ -562,7 +562,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 
 					const tmuxPath = tmux.path;
 					const tmuxCommand = `"${tmuxPath}" new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
-					const simVehicleCmd = `python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
+					const simVehicleCmd = `${await ProgramUtils.PYTHON()} ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
 					APLaunchConfigurationProvider.log.log(`DEBUG: Running SITL simulation: ${simVehicleCmd}`);
 
 					// Start the SITL simulation in a terminal using apTerminalMonitor
@@ -641,7 +641,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					// Set up the environment to use gdbserver through TMUX_PREFIX
 					const tmuxPath = tmux.path;
 					const tmuxCommand = `"${tmuxPath}" new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
-					const simVehicleCmd = `export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && python3 ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
+					const simVehicleCmd = `export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && ${await ProgramUtils.PYTHON()} ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
 					APLaunchConfigurationProvider.log.log(`DEBUG: Running SITL simulation with gdbserver: ${simVehicleCmd}`);
 
 					// Start the SITL simulation in a terminal using apTerminalMonitor
@@ -695,7 +695,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				this.debugSessionTerminal.show();
 				await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
 
-				const uploadCommand = `python3 ${apConfig.waffile} ${apConfig.target} --upload`;
+				const uploadCommand = `${await ProgramUtils.PYTHON()} ${apConfig.waffile} ${apConfig.target} --upload`;
 				APLaunchConfigurationProvider.log.log(`Running upload command: ${uploadCommand}`);
 
 				this.debugSessionTerminal.runCommand(uploadCommand);

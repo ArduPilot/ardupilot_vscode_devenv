@@ -189,13 +189,13 @@ export class APTaskProvider implements vscode.TaskProvider {
 	 * Generates build commands from task definition parameters
 	 * This method is used both by task creation and UI display
 	 */
-	public static generateBuildCommands(
+	public static async generateBuildCommands(
 		board: string,
 		target: string,
 		configureOptions: string = '',
 		buildOptions: string = '',
 		workspaceRoot?: string
-	): { configureCommand: string; buildCommand: string; taskCommand: string } {
+	): Promise<{ configureCommand: string; buildCommand: string; taskCommand: string; }> {
 		if (!workspaceRoot) {
 			workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
 		}
@@ -203,13 +203,13 @@ export class APTaskProvider implements vscode.TaskProvider {
 		const waffile = path.join(workspaceRoot, 'waf');
 
 		// Generate configure command with optional --python argument
-		const configureCommand = `${waffile} configure --board=${board} ${configureOptions ? ' ' + configureOptions : ''}`;
+		const configureCommand = `${await ProgramUtils.PYTHON()} ${waffile} configure --board=${board} ${configureOptions ? ' ' + configureOptions : ''}`;
 
 		// Generate build command
-		const buildCommand = `${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
+		const buildCommand = `${await ProgramUtils.PYTHON()} ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
 
 		// Generate task command (with cd prefix for task execution and optional venv activation)
-		const taskCommand = `cd ../../ && ${configureCommand} && python3 ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
+		const taskCommand = `cd ../../ && ${configureCommand} && ${await ProgramUtils.PYTHON()} ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
 
 		return {
 			configureCommand,
@@ -517,7 +517,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 				}
 			}
 
-			const commands = this.generateBuildCommands(
+			const commands = await this.generateBuildCommands(
 				definition.configure,
 				definition.target,
 				definition.configureOptions || '',
