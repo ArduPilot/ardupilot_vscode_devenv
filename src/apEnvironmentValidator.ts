@@ -1022,17 +1022,14 @@ export class ValidateEnvironmentPanel {
 	 * @param checkCommand Shell command to execute
 	 * @returns Promise with check result
 	 */
-	private async _runEnvironmentCheck(key: string, info: apToolsConfig.EnvCheckInfo, checkCommand: string): Promise<ProgramInfo> {
+	private _runEnvironmentCheck(key: string, info: apToolsConfig.EnvCheckInfo, checkCommand: string): ProgramInfo {
 
 		try {
-			const terminalMonitor = new apTerminalMonitor(`EnvCheck-${key}`);
-
 			// Run the check command and get exit code
-			const result = await terminalMonitor.runCommand(checkCommand);
-			await terminalMonitor.dispose();
+			const result = child_process.spawnSync(checkCommand, { stdio: 'pipe', shell: true });
 
 			// Exit code 0 means check passed, non-zero means failed
-			const passed = result.exitCode === 0;
+			const passed = result.status === 0;
 
 			return {
 				available: passed,
