@@ -137,7 +137,12 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 
 			// Attempt to install the tool using the promise-based installTool method
 			try {
-				await ValidateEnvironmentPanel.installTool(toolId);
+				// Create a mock ValidateEnvironmentPanel instance for testing
+				const mockInstance = {
+					_validateEnvironment: sandbox.stub()
+				} as any;
+
+				await ValidateEnvironmentPanel.installTool(toolId, mockInstance);
 				installationResults[toolId] = { attempted: true, supported: true, installed: true };
 				console.log(`DEBUG: Tool ${toolId} installed successfully`);
 			} catch (error) {
