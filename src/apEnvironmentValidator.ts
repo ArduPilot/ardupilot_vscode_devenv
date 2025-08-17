@@ -498,14 +498,14 @@ export class ValidateEnvironmentPanel {
 
 				// Use the terminalMonitor.runCommand method for better command lifecycle tracking
 				terminalMonitor.runCommand(installMethod.command)
-					.then(async exitCode => {
-						ValidateEnvironmentPanel.log.log(`Installation completed with exit code: ${exitCode}`);
+					.then(async result => {
+						ValidateEnvironmentPanel.log.log(`Installation completed with exit code: ${result.exitCode}`);
 
 						// Clean up the terminal monitor
 						await terminalMonitor.dispose();
 
 						// Resolve or reject based on exit code
-						if (exitCode === 0) {
+						if (result.exitCode === 0) {
 							vscode.window.showInformationMessage(`${toolName} installed successfully!`);
 							const tool = await ProgramUtils.findProgram(toolInfo);
 							if (tool.available) {
@@ -524,7 +524,7 @@ export class ValidateEnvironmentPanel {
 								reject(new Error(errorMsg));
 							}
 						} else {
-							const errorMsg = `Installation failed with exit code ${exitCode}`;
+							const errorMsg = `Installation failed with exit code ${result.exitCode}`;
 							vscode.window.showErrorMessage(`Failed to install ${toolName}: ${errorMsg}`);
 							reject(new Error(errorMsg));
 						}
@@ -981,14 +981,14 @@ export class ValidateEnvironmentPanel {
 
 			// Use the new runCommand method which handles the complete command lifecycle
 			try {
-				const exitCode = await terminalMonitor.runCommand(installCommand);
-				ValidateEnvironmentPanel.log.log(`Python package installation completed with exit code: ${exitCode}`);
+				const result = await terminalMonitor.runCommand(installCommand);
+				ValidateEnvironmentPanel.log.log(`Python package installation completed with exit code: ${result.exitCode}`);
 
 				// Clean up the terminal monitor
 				await terminalMonitor.dispose();
 
 				// Auto-refresh validation if instance provided
-				if (instance && exitCode === 0) {
+				if (instance && result.exitCode === 0) {
 					ValidateEnvironmentPanel.log.log('Package installation successful, refreshing validation...');
 					setTimeout(() => {
 						instance._validateEnvironment();
@@ -996,10 +996,10 @@ export class ValidateEnvironmentPanel {
 				}
 
 				// Resolve or reject based on exit code
-				if (exitCode === 0) {
+				if (result.exitCode === 0) {
 					vscode.window.showInformationMessage('Python packages installed successfully!');
 				} else {
-					const errorMsg = `Installation failed with exit code ${exitCode}`;
+					const errorMsg = `Installation failed with exit code ${result.exitCode}`;
 					vscode.window.showErrorMessage(`Failed to install Python packages: ${errorMsg}`);
 					throw new Error(errorMsg);
 				}
@@ -1028,11 +1028,11 @@ export class ValidateEnvironmentPanel {
 			const terminalMonitor = new apTerminalMonitor(`EnvCheck-${key}`);
 
 			// Run the check command and get exit code
-			const exitCode = await terminalMonitor.runCommand(checkCommand);
+			const result = await terminalMonitor.runCommand(checkCommand);
 			await terminalMonitor.dispose();
 
 			// Exit code 0 means check passed, non-zero means failed
-			const passed = exitCode === 0;
+			const passed = result.exitCode === 0;
 
 			return {
 				available: passed,
@@ -1157,13 +1157,13 @@ export class ValidateEnvironmentPanel {
 			});
 
 			try {
-				const exitCode = await terminalMonitor.runCommand(fixMethod.command);
-				ValidateEnvironmentPanel.log.log(`Fix completed with exit code: ${exitCode}`);
+				const result = await terminalMonitor.runCommand(fixMethod.command);
+				ValidateEnvironmentPanel.log.log(`Fix completed with exit code: ${result.exitCode}`);
 
 				// Clean up the terminal monitor
 				await terminalMonitor.dispose();
 
-				if (exitCode === 0) {
+				if (result.exitCode === 0) {
 					vscode.window.showInformationMessage(`${envCheckName} fixed successfully!`);
 
 					// Auto-refresh validation after successful fix
@@ -1171,7 +1171,7 @@ export class ValidateEnvironmentPanel {
 						instance._validateEnvironment();
 					}, 1000); // Small delay to ensure fix has completed
 				} else {
-					const errorMsg = `Fix failed with exit code ${exitCode}`;
+					const errorMsg = `Fix failed with exit code ${result.exitCode}`;
 					vscode.window.showErrorMessage(`Failed to fix ${envCheckName}: ${errorMsg}`);
 					throw new Error(errorMsg);
 				}

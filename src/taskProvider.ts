@@ -143,18 +143,18 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 
 		// Use the terminalMonitor.runCommand method for better command lifecycle tracking
 		this.terminalMonitor.runCommand(this.taskCommand)
-			.then(async exitCode => {
-				APBuildPseudoterminal.log.log(`Shell execution ended with exit code: ${exitCode}`);
-				this.writeEmitter.fire(`Build completed with exit code: ${exitCode}\r\n`);
+			.then(async result => {
+				APBuildPseudoterminal.log.log(`Shell execution ended with exit code: ${result.exitCode}`);
+				this.writeEmitter.fire(`Build completed with exit code: ${result.exitCode}\r\n`);
 				// Redirect completion info to extension logger
 				apLog.channel.appendLine('[BUILD] ======== Build Completed ========');
 				apLog.channel.appendLine(`[BUILD] Task: ${this.definition.configName}`);
-				apLog.channel.appendLine(`[BUILD] Exit code: ${exitCode}`);
-				apLog.channel.appendLine(`[BUILD] Status: ${exitCode === 0 ? 'SUCCESS ✅' : 'FAILED ❌'}`);
+				apLog.channel.appendLine(`[BUILD] Exit code: ${result.exitCode}`);
+				apLog.channel.appendLine(`[BUILD] Status: ${result.exitCode === 0 ? 'SUCCESS ✅' : 'FAILED ❌'}`);
 				apLog.channel.appendLine('[BUILD] ===================================');
 
 				// Close the pseudoterminal with the actual exit code
-				this.closeEmitter.fire(exitCode || 0);
+				this.closeEmitter.fire(result.exitCode || 0);
 			})
 			.catch(error => {
 				const errorMsg = error instanceof Error ? error.message : String(error);

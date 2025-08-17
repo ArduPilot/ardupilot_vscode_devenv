@@ -80,6 +80,7 @@ export class apTerminalMonitor {
 	private eventPromises: Map<TerminalEventType, { resolve: (event: TerminalEvent) => void; reject: (reason: unknown) => void; }[]> = new Map(); // Promise handlers
 	private activeShellExecution: vscode.TerminalShellExecution | null = null;   // Current shell execution
 	private currentCommand: string | null = null;                                // Current command being tracked by runCommand
+	private commandOutput: string = ''; // Captured output for current command
 
 	/*
 	 * Constructor - Creates a new terminal monitor instance
@@ -146,6 +147,9 @@ export class apTerminalMonitor {
 
 			if (shouldHandle) {
 				monitor.activeShellExecution = event.execution;
+
+				// Reset command output for new execution
+				monitor.commandOutput = '';
 
 				// Emit shell execution start event to monitor
 				monitor.emitEvent({
@@ -218,6 +222,10 @@ export class apTerminalMonitor {
 	// Handle text data from shell execution stream
 	private handleShellExecutionData(data: string): void {
 		this.log.log(`Shell execution data: ${data.substring(0, 100)}${data.length > 100 ? '...' : ''}`);
+
+		// Capture output for current command
+		this.commandOutput += data;
+
 		this.handleTextReceived(data);
 	}
 
@@ -312,11 +320,6 @@ export class apTerminalMonitor {
 				this.ptyProcess = null;
 			}
 		});
-	}
-
-	private handleTerminalInput(data: string): void {
-		this.writeEmitter.fire(data);
-		this.handleTextReceived(data);
 	}
 
 	private handleTextReceived(text: string): void {
@@ -482,13 +485,14 @@ export class apTerminalMonitor {
 	/*
 	 * Run a command in the terminal and wait for completion
 	 * @param command - The command to execute
-	 * @returns Promise that resolves with the exit code
+	 * @param options - Command execution options
+	 * @returns Promise that resolves with object containing exitCode and output
 	 */
 	public async runCommand(command: string, options: {
 		nonblocking?: boolean,
 		onShellExecutionStart?: (event: TerminalEvent) => void,
 		onShellExecutionEnd?: (event: TerminalEvent) => void
-	} = {}): Promise<number> {
+	} = {}): Promise<{ exitCode: number; output: string }> {
 		// Ensure terminal is available, create one if needed
 		if (!this.terminal) {
 			this.log.log('Terminal not available, attempting to find or create one');
@@ -526,12 +530,18 @@ export class apTerminalMonitor {
 			// wait for shell execution to complete
 			const exitCode = (await this.waitForShellExecutionEnd()).exitCode;
 			if (typeof exitCode === 'number') {
-				return exitCode;
+				return {
+					exitCode,
+					output: this.commandOutput
+				};
 			}
 			throw new Error('Failed to get exit code');
 		} else {
-			// No events option is set, return 0
-			return 0;
+			// Non-blocking mode - return immediately with empty output
+			return {
+				exitCode: 0,
+				output: ''
+			};
 		}
 	}
 
@@ -611,6 +621,7 @@ export class apTerminalMonitor {
 		this.textCallbacks.length = 0;
 		this.activeShellExecution = null;
 		this.currentCommand = null;
+		this.commandOutput = '';
 
 		if (this.terminal) {
 			this.terminal.dispose();
