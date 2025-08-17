@@ -22,6 +22,9 @@ import { getFeaturesList, APTaskProvider } from './taskProvider';
 import * as cp from 'child_process';
 import { targetToBin } from './apBuildConfig';
 import { ValidateEnvironmentPanel, ValidateEnvironment } from './apEnvironmentValidator';
+import { apTerminalMonitor } from './apTerminalMonitor';
+import { ProgramUtils } from './apProgramUtils';
+import { TOOLS_REGISTRY } from './apToolsConfig';
 
 export class UIHooks {
 	_panel: vscode.WebviewPanel;
@@ -44,7 +47,7 @@ export class UIHooks {
 		this._disposables.forEach(d => d.dispose());
 	}
 
-	private _onMessage(message: Record<string, unknown>): void {
+	private async _onMessage(message: Record<string, unknown>): Promise<void> {
 		// call the listeners matching message.command
 		const command = message.command as string;
 		if (this.listeners[command]) {
@@ -97,16 +100,30 @@ export class UIHooks {
 		}
 	}
 
-	private getTasksList(): void {
+	private async getTasksList(): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (workspaceRoot === undefined) {
 			this._panel.webview.postMessage({ command: 'getTasksList', tasksList: undefined });
 			return;
 		}
 		const taskslistfile = path.join(workspaceRoot, 'tasklist.json');
-		if (!fs.existsSync(taskslistfile)) {
+		// try running ./waf generate_taskslist using apTerminalMonitor
+		const terminalMonitor = new apTerminalMonitor('Generate TasksList');
+		const pythonPath = (await ProgramUtils.findProgram(TOOLS_REGISTRY.PYTHON)).path;
+		if (pythonPath) {
+			try {
+				await terminalMonitor.runCommand(`${pythonPath} ${workspaceRoot}/waf generate_tasklist`);
+				terminalMonitor.dispose();
+			} catch (error) {
+				UIHooks.log(`Error generating tasks list: ${error}`);
+				vscode.window.showErrorMessage(`Error generating tasks list: ${error}`);
+				this._panel.webview.postMessage({ command: 'getTasksList', tasksList: undefined });
+			}
+		} else {
+			// Show error message that python wasn't found
+			UIHooks.log('Python interpreter not found. Please configure Python, Check Validate Environment Section.');
+			vscode.window.showErrorMessage('Python interpreter not found. Please configure Python, Check Validate Environment Section.');
 			this._panel.webview.postMessage({ command: 'getTasksList', tasksList: undefined });
-			return;
 		}
 		try {
 			const data = fs.readFileSync(taskslistfile, 'utf8');
