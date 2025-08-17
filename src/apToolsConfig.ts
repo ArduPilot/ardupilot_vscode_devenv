@@ -339,7 +339,8 @@ export const PYTHON_PACKAGES_REGISTRY = {
 	DRONECAN: { name: 'dronecan', description: 'DroneCAN protocol implementation' },
 	PYSERIAL: { name: 'pyserial', description: 'Serial communication library' },
 	SETUPTOOLS: { name: 'setuptools', description: 'Python package development utilities (provides pkg_resources)' },
-	MAVPROXY: { name: 'mavproxy', description: 'MAVLink proxy for communication' }
+	MAVPROXY: { name: 'mavproxy', description: 'MAVLink proxy for communication' },
+	GNUREADLINE: { name: 'gnureadline', description: 'GNU Readline library for command-line editing' }
 } as const;
 
 /**
