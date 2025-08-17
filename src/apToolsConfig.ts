@@ -390,8 +390,8 @@ export const ENV_CHECK_REGISTRY = {
 		description: 'User must be in dialout group to access serial devices',
 		required: true,
 		checks: {
-			linux: 'groups | grep -q dialout',
-			wsl: 'groups | grep -q dialout'
+			linux: 'groups $USER | grep -q dialout',
+			wsl: 'groups $USER | grep -q dialout'
 		},
 		fix_issue: {
 			linux: { type: 'command', command: 'sudo usermod -a -G dialout $USER && echo "Please log out and log back in for group changes to take effect"' },
