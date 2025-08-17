@@ -402,7 +402,7 @@ export const ENV_CHECK_REGISTRY = {
 		description: 'Homebrew is required for installing development tools on macOS',
 		required: true,
 		checks: {
-			darwin: 'command -v brew'
+			darwin: `exec ${process.env.SHELL || 'bash'} -l -c "command -v brew"`
 		},
 		fix_issue: {
 			darwin: { type: 'command', command: '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' }

@@ -173,8 +173,7 @@ export class ProgramUtils {
 	}
 
 	private static async getVersion(tool: apToolsConfig.ToolInfo): Promise<string | undefined> {
-		const shell = process.env.SHELL || '';
-		const sourceCommand = `source ${shell.includes('zsh') ? '~/.zshrc' : '~/.bashrc'} 2>/dev/null; ${await this.findToolPath(tool)} ${tool.findArgs?.args.join(' ')}`;
+		const sourceCommand = `${await this.findToolPath(tool)} ${tool.findArgs?.args.join(' ')}`;
 		const result = child_process.spawnSync(sourceCommand, { stdio: 'pipe', shell: true });
 		ProgramUtils.log.log(`Checking version for ${tool.name}: ${sourceCommand}:  ${result.stdout.toString().trim()}`);
 		if (result.status === 0) {
@@ -198,8 +197,7 @@ export class ProgramUtils {
 					this.log.log(`Using Python interpreter from MS Python extension: ${interpreterPath}`);
 
 					// Try using this interpreter
-					const shell = process.env.SHELL || '';
-					const sourceCommand = `source ${shell.includes('zsh') ? '~/.zshrc' : '~/.bashrc'} 2>/dev/null; ${interpreterPath} --version`;
+					const sourceCommand = `${interpreterPath} --version`;
 					const result = child_process.spawnSync(sourceCommand, { stdio: 'pipe', shell: true });
 					ProgramUtils.log.log(`Checking version for ${interpreterPath}: ${sourceCommand}: ${result.stdout.toString().trim()}`);
 					if (result.status === 0) {
@@ -295,10 +293,8 @@ export class ProgramUtils {
 	 */
 	private static async findCommandPath(command: string): Promise<string | undefined> {
 		try {
-			const shell = process.env.SHELL || '/bin/bash';
-
 			// Source rc file first to load environment, then run which/where
-			const commandToRun = `source ${shell.includes('zsh') ? '~/.zshrc' : '~/.bashrc'} 2>/dev/null; which ${command}`;
+			const commandToRun = `exec ${process.env.SHELL || 'bash'} -l -c "which ${command}"`;
 
 			const result = child_process.spawnSync(commandToRun, { stdio: 'pipe', shell: true });
 			ProgramUtils.log.log(`Running command: ${commandToRun} : ${result.stdout.toString().trim()}`);
