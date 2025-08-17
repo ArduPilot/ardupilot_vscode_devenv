@@ -430,6 +430,19 @@ export const ENV_CHECK_REGISTRY = {
 		fix_issue: {
 			darwin: { type: 'command', command: 'sudo softwareupdate --install-rosetta --agree-to-license' }
 		}
+	},
+	PYTHON_VENV_AVAILABLE: {
+		name: 'Python Virtual Environment Support',
+		description: 'Python venv package is required for creating isolated environments in Ubuntu',
+		required: true,
+		checks: {
+			linux: 'dpkg -l | grep -E "^ii\\s+python3(\\.\\d+)?-venv"',
+			wsl: 'dpkg -l | grep -E "^ii\\s+python3(\\.\\d+)?-venv"'
+		},
+		fix_issue: {
+			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y python3-venv' },
+			wsl: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y python3-venv' }
+		}
 	}
 } as const;
 
