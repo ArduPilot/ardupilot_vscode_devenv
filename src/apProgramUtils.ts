@@ -88,7 +88,7 @@ export class ProgramUtils {
 				} else {
 					// use which or where to find the tool
 					try {
-						const result = child_process.execSync(`which ${toolPath}`).toString().trim();
+						const result = child_process.spawnSync(`which ${toolPath}`, { stdio: 'pipe' }).stdout.toString().trim();
 						ProgramUtils.log.log(`which ${toolPath} : ${result}`);
 						if (result) {
 							return result; // Return the first matching path
@@ -357,7 +357,7 @@ export class ProgramUtils {
 	 */
 	private static findCommandPath(command: string): string {
 		try {
-			return child_process.execSync(`which ${command}`).toString().trim();
+			return child_process.spawnSync(`which ${command}`, { stdio: 'pipe' }).stdout.toString().trim();
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		} catch (error) {
 			return 'Unknown';
@@ -377,7 +377,7 @@ export class ProgramUtils {
 
 		// Check for WSL in release info
 		try {
-			const releaseInfo = child_process.execSync('cat /proc/version').toString();
+			const releaseInfo = child_process.spawnSync('cat /proc/version', { stdio: 'pipe' }).stdout.toString();
 			return releaseInfo.toLowerCase().includes('microsoft') || releaseInfo.toLowerCase().includes('wsl');
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		} catch (error) {
