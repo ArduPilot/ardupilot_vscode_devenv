@@ -179,7 +179,7 @@ export class ValidateEnvironmentPanel {
 			});
 			break;
 		case 'installTool':
-			ValidateEnvironmentPanel.installTool(message.toolId).catch(error => {
+			ValidateEnvironmentPanel.installTool(message.toolId, this).catch(error => {
 				ValidateEnvironmentPanel.log.log(`Tool installation failed: ${error}`);
 			});
 			break;
@@ -196,7 +196,7 @@ export class ValidateEnvironmentPanel {
 			break;
 		case 'fixEnvironmentIssue':
 			if (message.envCheckId) {
-				ValidateEnvironmentPanel.fixEnvironmentIssue(message.envCheckId).catch(error => {
+				ValidateEnvironmentPanel.fixEnvironmentIssue(message.envCheckId, this).catch(error => {
 					ValidateEnvironmentPanel.log.log(`Environment issue fix failed: ${error}`);
 				});
 			}
@@ -442,9 +442,10 @@ export class ValidateEnvironmentPanel {
 	/**
 	 * Installs a missing tool based on the tool ID and platform
 	 * @param toolId - The ID of the tool to install
+	 * @param instance - ValidateEnvironmentPanel instance for auto-refresh
 	 * @returns Promise that resolves on successful installation (exit code 0) or rejects on failure
 	 */
-	public static installTool(toolId: string): Promise<void> {
+	public static installTool(toolId: string, instance: ValidateEnvironmentPanel): Promise<void> {
 		const platform = process.platform;
 		const isWSL = ProgramUtils.isWSL();
 
@@ -509,6 +510,12 @@ export class ValidateEnvironmentPanel {
 							const tool = await ProgramUtils.findProgram(toolInfo);
 							if (tool.available) {
 								ValidateEnvironmentPanel.log.log(`${toolName} installed successfully at ${tool.info}`);
+
+								// Auto-refresh validation after successful installation
+								setTimeout(() => {
+									instance._validateEnvironment();
+								}, 1000); // Small delay to ensure installation has completed
+
 								resolve();
 							} else {
 								const errorMsg = `Installation succeeded but ${toolName} not found in PATH. Please check your installation.`;
@@ -1094,9 +1101,10 @@ export class ValidateEnvironmentPanel {
 	/**
 	 * Fixes an environment issue based on the environment check ID
 	 * @param envCheckId The ID of the environment check to fix
+	 * @param instance ValidateEnvironmentPanel instance for auto-refresh
 	 * @returns Promise that resolves on successful fix or rejects on failure
 	 */
-	public static async fixEnvironmentIssue(envCheckId: string): Promise<void> {
+	public static async fixEnvironmentIssue(envCheckId: string, instance: ValidateEnvironmentPanel): Promise<void> {
 		const platform = process.platform;
 		const isWSL = ProgramUtils.isWSL();
 
@@ -1157,6 +1165,11 @@ export class ValidateEnvironmentPanel {
 
 				if (exitCode === 0) {
 					vscode.window.showInformationMessage(`${envCheckName} fixed successfully!`);
+
+					// Auto-refresh validation after successful fix
+					setTimeout(() => {
+						instance._validateEnvironment();
+					}, 1000); // Small delay to ensure fix has completed
 				} else {
 					const errorMsg = `Fix failed with exit code ${exitCode}`;
 					vscode.window.showErrorMessage(`Failed to fix ${envCheckName}: ${errorMsg}`);
