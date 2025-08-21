@@ -47,7 +47,7 @@ export interface ProgramInfo {
  */
 export class ProgramUtils {
 	private static log = new apLog('ProgramUtils');
-
+	private static isWSLCache: boolean | undefined;
 	// find the tool path for the tool using the registry
 	private static async findToolPath(toolInfo: apToolsConfig.ToolInfo): Promise<string | undefined> {
 
@@ -327,12 +327,15 @@ export class ProgramUtils {
 		if (platform !== 'linux') {
 			return false;
 		}
-
+		if (this.isWSLCache !== undefined) {
+			return this.isWSLCache;
+		}
 		// Check for WSL in release info
 		try {
 			const releaseInfo = child_process.spawnSync('cat', ['/proc/version'], { stdio: 'pipe' }).stdout.toString();
 			ProgramUtils.log.log(`WSL release info: ${releaseInfo}`);
-			return releaseInfo.toLowerCase().includes('microsoft') || releaseInfo.toLowerCase().includes('wsl');
+			this.isWSLCache = releaseInfo.toLowerCase().includes('microsoft') || releaseInfo.toLowerCase().includes('wsl');
+			return this.isWSLCache;
 		} catch {
 			return false;
 		}
