@@ -177,9 +177,13 @@ export class ProgramUtils {
 	}
 
 	private static async getVersion(tool: apToolsConfig.ToolInfo): Promise<string | undefined> {
-		const sourceCommand = `${await this.findToolPath(tool)} ${tool.findArgs?.args.join(' ')}`;
-		const result = child_process.spawnSync(sourceCommand, { stdio: 'pipe', shell: true });
-		ProgramUtils.log.log(`Checking version for ${tool.name}: ${sourceCommand}:  ${result.stdout.toString().trim()}`);
+		const toolPath = await this.findToolPath(tool);
+		if (!toolPath) {
+			ProgramUtils.log.log(`Tool ${tool.name} not found`);
+			return undefined;
+		}
+		const result = child_process.spawnSync(toolPath, tool.findArgs?.args, { stdio: 'pipe' });
+		ProgramUtils.log.log(`Checking version for ${tool.name}: ${toolPath}:  ${result.stdout.toString().trim()}`);
 		if (result.status === 0) {
 			ProgramUtils.log.log(`Found version for ${tool.name}: ${result.stdout.toString().trim()}`);
 			// Use regex to extract version
@@ -201,9 +205,8 @@ export class ProgramUtils {
 					this.log.log(`Using Python interpreter from MS Python extension: ${interpreterPath}`);
 
 					// Try using this interpreter
-					const sourceCommand = `${interpreterPath} --version`;
-					const result = child_process.spawnSync(sourceCommand, { stdio: 'pipe', shell: true });
-					ProgramUtils.log.log(`Checking version for ${interpreterPath}: ${sourceCommand}: ${result.stdout.toString().trim()}`);
+					const result = child_process.spawnSync(interpreterPath, ['--version'], { stdio: 'pipe' });
+					ProgramUtils.log.log(`Checking version for ${interpreterPath}: ${interpreterPath} --version: ${result.stdout.toString().trim()}`);
 					if (result.status === 0) {
 						return {
 							command: interpreterPath,
@@ -327,11 +330,10 @@ export class ProgramUtils {
 
 		// Check for WSL in release info
 		try {
-			const releaseInfo = child_process.spawnSync('cat /proc/version', { stdio: 'pipe' }).stdout.toString();
+			const releaseInfo = child_process.spawnSync('cat', ['/proc/version'], { stdio: 'pipe' }).stdout.toString();
 			ProgramUtils.log.log(`WSL release info: ${releaseInfo}`);
 			return releaseInfo.toLowerCase().includes('microsoft') || releaseInfo.toLowerCase().includes('wsl');
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		} catch (error) {
+		} catch {
 			return false;
 		}
 	}
