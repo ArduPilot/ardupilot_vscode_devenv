@@ -369,7 +369,9 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		// Use lsusb for USB devices
 		const { error, stdout, stderr } = cp.spawnSync(lsusbCmd);
 		if (error) {
-			this.log.log(`Error executing lsusb: ${error.message} ${stderr}`);
+			if (error.message) {
+				this.log.log(`Error executing lsusb: ${error.message} ${stderr}`);
+			}
 			return [];
 		}
 
