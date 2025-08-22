@@ -17,6 +17,7 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as os from 'os';
+import { Worker } from 'worker_threads';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { TOOLS_REGISTRY } from './apToolsConfig';
@@ -415,15 +416,8 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		const devices: DeviceInfo[] = [];
 
 		try {
-			const { error, stdout } = cp.spawnSync('powershell.exe', ['-Command', psCommand], {
-				encoding: 'utf8',
-				maxBuffer: 1024 * 1024
-			});
-
-			if (error) {
-				this.log.log(`Error executing PowerShell from WSL: ${error.message}`);
-				return devices;
-			}
+			// Execute PowerShell command in worker thread to avoid blocking main thread
+			const stdout = await this.executePowerShellInWorker(psCommand);
 
 			const sections = stdout.split('\r\n\r\n');
 
@@ -462,6 +456,78 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 		}
 
 		return devices;
+	}
+
+	private async executePowerShellInWorker(command: string): Promise<string> {
+		return new Promise((resolve, reject) => {
+			// Create worker thread with inline PowerShell execution code
+			const worker = new Worker(`
+				const { parentPort } = require('worker_threads');
+				const { spawn } = require('child_process');
+
+				parentPort.on('message', ({ command }) => {
+					const ps = spawn('powershell.exe', ['-Command', command], {
+						stdio: 'pipe',
+						encoding: 'utf8'
+					});
+
+					let stdout = '';
+					let stderr = '';
+
+					ps.stdout.on('data', (data) => {
+						stdout += data.toString();
+					});
+
+					ps.stderr.on('data', (data) => {
+						stderr += data.toString();
+					});
+
+					ps.on('close', (code) => {
+						if (code === 0) {
+							parentPort.postMessage({ success: true, stdout });
+						} else {
+							parentPort.postMessage({ 
+								success: false, 
+								error: \`PowerShell exited with code \${code}: \${stderr}\`
+							});
+						}
+					});
+
+					ps.on('error', (error) => {
+						parentPort.postMessage({ 
+							success: false, 
+							error: \`PowerShell spawn error: \${error.message}\`
+						});
+					});
+
+					// Set timeout for long-running PowerShell commands
+					setTimeout(() => {
+						ps.kill();
+						parentPort.postMessage({ 
+							success: false, 
+							error: 'PowerShell command timed out after 30 seconds'
+						});
+					}, 30000);
+				});
+			`, { eval: true });
+
+			worker.on('message', (result) => {
+				worker.terminate();
+				if (result.success) {
+					resolve(result.stdout);
+				} else {
+					reject(new Error(result.error));
+				}
+			});
+
+			worker.on('error', (error) => {
+				worker.terminate();
+				reject(error);
+			});
+
+			// Send command to worker
+			worker.postMessage({ command });
+		});
 	}
 
 	private async getWSLDevices(): Promise<DeviceInfo[]> {
