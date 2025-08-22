@@ -23,6 +23,7 @@ import * as glob from 'fast-glob';
 import * as apToolsConfig from './apToolsConfig';
 import { apLog } from './apLog';
 import { TOOLS_REGISTRY } from './apToolsConfig';
+import { PythonExtension, Environment as PythonEnv} from '@vscode/python-extension';
 
 /**
  * Interface for program information
@@ -48,6 +49,8 @@ export interface ProgramInfo {
 export class ProgramUtils {
 	private static log = new apLog('ProgramUtils');
 	private static isWSLCache: boolean | undefined;
+	public static pythonEnv: PythonEnv | undefined;
+
 	// find the tool path for the tool using the registry
 	private static async findToolPath(toolInfo: apToolsConfig.ToolInfo): Promise<string | undefined> {
 
@@ -194,27 +197,36 @@ export class ProgramUtils {
 	}
 
 	private static async findVSCodeExtPython(): Promise<ProgramInfo> {
-		// Check if there's a Python interpreter configured via the Microsoft Python extension
 		try {
-			const pythonExtension = vscode.extensions.getExtension('ms-python.python');
-			if (pythonExtension && pythonExtension.isActive) {
-				const pythonApi = pythonExtension.exports;
-				const interpreterPath = pythonApi.settings.getExecutionDetails().execCommand[0];
+			const pythonApi = await PythonExtension.api();
+			await pythonApi.ready;
+			const environmentPath = pythonApi.environments.getActiveEnvironmentPath();
 
-				if (interpreterPath && fs.existsSync(interpreterPath)) {
-					this.log.log(`Using Python interpreter from MS Python extension: ${interpreterPath}`);
+			if (environmentPath && environmentPath.path) {
+				const environment = await pythonApi.environments.resolveEnvironment(environmentPath);
 
-					// Try using this interpreter
-					const result = child_process.spawnSync(interpreterPath, ['--version'], { stdio: 'pipe' });
-					ProgramUtils.log.log(`Checking version for ${interpreterPath}: ${interpreterPath} --version: ${result.stdout.toString().trim()}`);
-					if (result.status === 0) {
-						return {
-							command: interpreterPath,
-							path: interpreterPath,
-							info: 'Selected via Microsoft Python Extension',
-							isCustomPath: false,
-							available: true
-						};
+				if (environment && environment.executable && environment.executable.uri) {
+					const interpreterPath = environment.executable.uri.fsPath;
+					this.pythonEnv = environment;
+
+					if (fs.existsSync(interpreterPath)) {
+						this.log.log(`Using Python interpreter from Python extension: ${interpreterPath}`);
+
+						const result = child_process.spawnSync(interpreterPath, ['--version'], { stdio: 'pipe' });
+						ProgramUtils.log.log(`Checking version for ${interpreterPath}: ${interpreterPath} --version: ${result.stdout.toString().trim()}`);
+						if (result.status === 0) {
+							const versionMatch = result.stdout.toString().trim().match(/Python (\d+\.\d+\.\d+)/);
+							const version = versionMatch ? versionMatch[1] : result.stdout.toString().trim();
+
+							return {
+								command: interpreterPath,
+								path: interpreterPath,
+								version,
+								info: 'Selected via Microsoft Python Extension',
+								isCustomPath: false,
+								available: true
+							};
+						}
 					}
 				}
 			}
@@ -222,7 +234,6 @@ export class ProgramUtils {
 			this.log.log(`Error getting Python interpreter from extension: ${error}`);
 		}
 
-		// Return not available so caller can fall through to default logic
 		return { available: false, isCustomPath: false };
 	}
 
@@ -349,24 +360,11 @@ export class ProgramUtils {
 	public static async selectPythonInterpreter(): Promise<string | null> {
 		this.log.log('Opening Python interpreter selection dialog');
 
-		// Check if ms-python.python extension is installed and active
-		const pythonExtension = vscode.extensions.getExtension('ms-python.python');
-		if (!pythonExtension) {
-			vscode.window.showErrorMessage('Microsoft Python extension is not installed. Please install it to use this feature.');
-			return null;
-		}
-
-		if (!pythonExtension.isActive) {
-			this.log.log('Activating Python extension');
-			await pythonExtension.activate();
-		}
-
 		try {
 			// Show the interpreter picker
 			await vscode.commands.executeCommand('python.setInterpreter');
 
 			// Get the selected interpreter path after the user makes a selection
-			// Access the path via the Python extension's interpreterPath command
 			const interpreterPath = (await this.findVSCodeExtPython()).path;
 
 			if (interpreterPath) {
@@ -375,7 +373,7 @@ export class ProgramUtils {
 				// Save the selected interpreter path to the configuration
 				apToolsConfig.ToolsConfig.setToolPath('PYTHON', interpreterPath);
 
-				return interpreterPath; // Return the path of the selected interpreter
+				return interpreterPath;
 			} else {
 				this.log.log('No Python interpreter configured');
 				return null;

@@ -372,6 +372,7 @@
   },
   "dependencies": {
     "@vscode-elements/elements": "^1.7.1",
+    "@vscode/python-extension": "^1.0.6",
     "fast-glob": "^3.3.3",
     "simple-git": "^3.27.0",
     "source-map-support": "^0.5.21"

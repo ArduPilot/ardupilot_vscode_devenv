@@ -16,6 +16,7 @@
 
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
+import { ProgramUtils } from './apProgramUtils';
 
 /*
  * Terminal Monitor API for ArduPilot VS Code Extension
@@ -27,6 +28,15 @@ import { apLog } from './apLog';
  * - Promise-based waiting for specific events
  * - Static management of multiple terminal monitors
  */
+
+class TimeoutError extends Error {
+	name = 'TimeoutError' as const;
+
+	constructor(message?: string) {
+		super(message);
+		Object.setPrototypeOf(this, TimeoutError.prototype);
+	}
+}
 
 // Types of terminal events that can be monitored
 export enum TerminalEventType {
@@ -288,9 +298,50 @@ export class apTerminalMonitor {
 
 		this.setupTerminalListeners();
 
-		// Send the command after 3 second to allow terminal setup
-		// TODO: replace this with a proper mechanism to catch python venv activation
-		await new Promise(resolve => setTimeout(resolve, 2000));
+		if (ProgramUtils.pythonEnv && ProgramUtils.pythonEnv.environment?.type === 'VirtualEnvironment') {
+			// Wait for source activate command and wait for it to finish
+			this.log.log('Virtual environment detected, waiting for activation command...');
+
+			const startTime = Date.now();
+			const timeoutMs = 3000;
+			let activationCommandDetected = false;
+
+			while (Date.now() - startTime < timeoutMs && !activationCommandDetected) {
+				const remainingTime = timeoutMs - (Date.now() - startTime);
+				if (remainingTime <= 0) break;
+				let startEvent: TerminalEvent;
+				try {
+					startEvent = await this.waitForEvent(TerminalEventType.SHELL_EXECUTION_START, remainingTime);
+				} catch (error) {
+					if (error instanceof Error) {
+						this.log.log(`Error waiting for shell execution start: ${error.message}`);
+					}
+					continue;
+				}
+				if (startEvent.commandLine &&
+					startEvent.commandLine.includes('source') &&
+					startEvent.commandLine.includes('activate')) {
+					this.log.log(`Detected activation command: ${startEvent.commandLine}`);
+					await this.waitForShellExecutionEnd();
+					this.log.log('Virtual environment activation completed');
+					activationCommandDetected = true;
+				} else {
+					this.log.log(`Other command detected: ${startEvent.commandLine}, continuing to wait...`);
+				}
+			}
+
+			if (!activationCommandDetected) {
+				this.log.log('No activation command detected within 3 seconds, running it ourselves...');
+				let pythonPath = ProgramUtils.pythonEnv.environment.folderUri;
+				// check pythonPath is dir
+				const stat = await vscode.workspace.fs.stat(pythonPath);
+				if (stat.type !== vscode.FileType.Directory) {
+					// get directory of the file
+					pythonPath = vscode.Uri.parse(pythonPath.fsPath.substring(0, pythonPath.fsPath.lastIndexOf('/')));
+				}
+				this.terminal.sendText(`source ${pythonPath.fsPath}/activate`, true);
+			}
+		}
 	}
 
 	public findExistingTerminal(): vscode.Terminal | null {
@@ -372,7 +423,7 @@ export class apTerminalMonitor {
 		return new Promise((resolve, reject) => {
 			const timeoutId = timeoutMs ? setTimeout(() => {
 				this.removePromiseHandlers(eventType, resolve, reject);
-				reject(new Error(`Timeout waiting for ${eventType} event after ${timeoutMs}ms`));
+				reject(new TimeoutError(`Timeout waiting for ${eventType} event after ${timeoutMs}ms`));
 			}, timeoutMs) : null;
 
 			const wrappedResolve = (event: TerminalEvent) => {
@@ -581,11 +632,15 @@ export class apTerminalMonitor {
 				await this.waitForShellExecutionEnd(retryInterval);
 				this.log.log(`Cleanup succeeded on attempt ${attempt}`);
 				return true; // Success - process terminated cleanly
-			} catch (timeoutError) {
-				this.log.log(`Cleanup attempt ${attempt} timed out: ${timeoutError}`);
-				if (attempt === maxRetries) {
-					this.log.log('All cleanup attempts failed');
-					return false; // All retries exhausted
+			} catch (error) {
+				if (error instanceof Error && error.name === 'TimeoutError') {
+					this.log.log(`Cleanup attempt ${attempt} timed out: ${error}`);
+					if (attempt === maxRetries) {
+						this.log.log('All cleanup attempts failed');
+						return false; // All retries exhausted
+					}
+				} else {
+					throw error;
 				}
 				// Continue to next retry
 			}
