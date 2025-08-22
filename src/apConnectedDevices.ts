@@ -194,7 +194,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	}
 
 	private startAutoRefresh(): void {
-		this.refreshTimer = setInterval(() => {
+		this.refreshTimer = setTimeout(() => {
 			const previousDevicePaths = new Set(apConnectedDevices.connectedDevicesList.keys());
 			// get children and see if there's been a new device added or removed
 			// compare with the static list if so trigger change event,
@@ -210,6 +210,8 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			}
 			).catch(error => {
 				this.log.log(`Error refreshing devices: ${error}`);
+			}).finally(() => {
+				this.startAutoRefresh();
 			});
 		}, 1000);
 	}
