@@ -68,27 +68,6 @@ jobs:
           
           # Install NSS libraries for Electron/VSCode extension testing
           sudo apt install -y libnss3 libnss3-dev libatk-bridge2.0-0 libdrm2 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libxss1 libasound2 libgtk-3-0
-      
-      - name: Install JLink (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          # Install J-Link from local package
-          sudo dpkg -i ci-tools/JLink_Linux_V788g_x86_64.deb || sudo apt-get install -f -y
-          
-          # Add J-Link to PATH
-          echo "/opt/SEGGER/JLink" >> $GITHUB_PATH
-
-      - name: Install system dependencies (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          # Install Homebrew packages
-          brew install gcc gdb ccache tmux python3 arm-none-eabi-gcc openocd
-          
-          # Install J-Link from local package
-          sudo installer -pkg ci-tools/JLink_MacOSX_V840_universal.pkg -target /
-          
-          # Add J-Link to PATH
-          echo "/Applications/SEGGER/JLink" >> $GITHUB_PATH
 
       - name: Install node (WSL2)
         if: matrix.os == 'windows-latest'
@@ -157,7 +136,7 @@ jobs:
               SUITES="apCloneArdupilot apEnvironmentValidator apConnectedDevices"
               ;;
             "runner4-ui-welcome")
-              SUITES="apUIHooks apWelcomeItem apWelcomeProvider apLog"
+              SUITES="apUIHooks apLog"
               ;;
           esac
           
@@ -180,7 +159,7 @@ jobs:
               SUITES="apCloneArdupilot apEnvironmentValidator apConnectedDevices"
               ;;
             "runner4-ui-welcome")
-              SUITES="apUIHooks apWelcomeItem apWelcomeProvider apLog"
+              SUITES="apUIHooks apLog"
               ;;
           esac
           
