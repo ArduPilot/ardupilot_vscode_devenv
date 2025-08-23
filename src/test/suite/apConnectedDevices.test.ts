@@ -14,6 +14,7 @@ import {
 import { APExtensionContext } from '../../extension';
 import { getApExtApi } from './common';
 import { ProgramUtils } from '../../apProgramUtils';
+import { apTerminalMonitor } from '../../apTerminalMonitor';
 
 suite('apConnectedDevices Test Suite', () => {
 	let workspaceFolder: vscode.WorkspaceFolder | undefined;
@@ -52,11 +53,11 @@ suite('apConnectedDevices Test Suite', () => {
 		});
 
 		test('should start auto-refresh timer on construction', () => {
-			const setIntervalSpy = sandbox.spy(global, 'setInterval');
+			const setTimeoutSpy = sandbox.spy(global, 'setTimeout');
 			const newProvider = new apConnectedDevices();
 
-			assert(setIntervalSpy.calledOnce);
-			assert.strictEqual(setIntervalSpy.firstCall.args[1], 1000); // 1 second interval
+			assert(setTimeoutSpy.calledOnce);
+			assert.strictEqual(setTimeoutSpy.firstCall.args[1], 1000); // 1 second interval
 
 			newProvider.dispose();
 		});
@@ -146,16 +147,16 @@ suite('apConnectedDevices Test Suite', () => {
 
 	suite('Device Detection', () => {
 		test('should handle empty device list gracefully', async () => {
-			// Mock child_process.exec to return empty result
-			// Handle both simple callback and options with callback variants
-			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
-				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
-				if (callback) {
-					// Use setTimeout to avoid blocking the event loop during tests
-					setTimeout(() => callback(null, '', ''), 0);
-				}
-				return {} as cp.ChildProcess;
-			});
+			// Mock child_process.spawnSync to return empty result
+			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
+				error: undefined,
+				stdout: '',
+				stderr: '',
+				status: 0,
+				signal: null,
+				pid: 12345,
+				output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+			}));
 
 			const children = await provider.getChildren();
 			assert(Array.isArray(children));
@@ -171,16 +172,16 @@ suite('apConnectedDevices Test Suite', () => {
 
 			provider.setIsWSL(false);
 
-			// Mock child_process.exec to return error
-			// Handle both simple callback and options with callback variants
-			sandbox.stub(cp, 'exec').callsFake((_command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
-				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
-				if (callback) {
-					// Use setTimeout to avoid blocking the event loop during tests
-					setTimeout(() => callback(new Error('Device detection failed'), '', ''), 0);
-				}
-				return {} as cp.ChildProcess;
-			});
+			// Mock child_process.spawnSync to return error
+			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
+				error: new Error('Device detection failed'),
+				stdout: '',
+				stderr: '',
+				status: 1,
+				signal: null,
+				pid: 12345,
+				output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+			}));
 
 			const children = await provider.getChildren();
 			assert(Array.isArray(children));
@@ -197,6 +198,13 @@ suite('apConnectedDevices Test Suite', () => {
 
 			provider.setIsWSL(false);
 
+			// Mock ProgramUtils.findProgram for LSUSB
+			sandbox.stub(ProgramUtils, 'findProgram').resolves({
+				available: true,
+				path: '/usr/bin/lsusb',
+				isCustomPath: false
+			});
+
 			// Mock lsusb output with multiple CubePilot devices
 			const mockLsusbOutput = `Bus 001 Device 003: ID 2dae:1016 CubePilot CubeOrangePlus
 Bus 001 Device 004: ID 2dae:1011 CubePilot CubeOrange
@@ -205,48 +213,63 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			// Mock ls /dev/tty* to return multiple serial devices
 			const mockDeviceList = '/dev/ttyACM0\n/dev/ttyACM1\n/dev/ttyUSB0';
 
-			// Mock child_process.exec for lsusb
-			// Handle both simple callback and options with callback variants
-			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
-				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
-				if (callback) {
-					setTimeout(() => {
-						if (command === 'lsusb') {
-							callback(null, mockLsusbOutput, '');
-						} else if (command.includes('ls /dev/tty')) {
-							callback(null, mockDeviceList, '');
-						} else {
-							callback(null, '', '');
-						}
-					}, 0);
+			// Mock child_process.spawnSync for lsusb and ls commands
+			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
+				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
+					return {
+						error: undefined,
+						stdout: mockLsusbOutput,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(mockLsusbOutput, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
+					return {
+						error: undefined,
+						stdout: mockDeviceList,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(mockDeviceList, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else if (command === 'udevadm') {
+					const devicePath = args && args[2] ? args[2].replace('--name=', '') : '';
+					let stdout = '';
+
+					if (devicePath === '/dev/ttyACM0') {
+						// CubeOrangePlus
+						stdout = 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n';
+					} else if (devicePath === '/dev/ttyACM1') {
+						// CubeOrange
+						stdout = 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n';
+					} else if (devicePath === '/dev/ttyUSB0') {
+						// Generic device
+						stdout = 'ID_VENDOR_ID=1234\nID_MODEL_ID=5678\n';
+					}
+
+					return {
+						error: undefined,
+						stdout,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(stdout, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else {
+					return {
+						error: undefined,
+						stdout: '',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+					};
 				}
-				return {} as cp.ChildProcess;
-			});
-
-			// Mock cp.spawnSync for udevadm to return matching devices
-			sandbox.stub(cp, 'spawnSync').callsFake((_command: string, args?: readonly string[]) => {
-				const devicePath = args && args[2] ? args[2].replace('--name=', '') : '';
-				let stdout = '';
-
-				if (devicePath === '/dev/ttyACM0') {
-					// CubeOrangePlus
-					stdout = 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n';
-				} else if (devicePath === '/dev/ttyACM1') {
-					// CubeOrange
-					stdout = 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n';
-				} else if (devicePath === '/dev/ttyUSB0') {
-					// Generic device
-					stdout = 'ID_VENDOR_ID=1234\nID_MODEL_ID=5678\n';
-				}
-
-				return {
-					pid: 12345,
-					output: [null, Buffer.from(stdout, 'utf8'), Buffer.from('', 'utf8')],
-					stdout: Buffer.from(stdout, 'utf8'),
-					stderr: Buffer.from('', 'utf8'),
-					status: 0,
-					signal: null
-				};
 			});
 
 			const children = await provider.getChildren();
@@ -292,36 +315,62 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 
 			provider.setIsWSL(false);
 
+			// Mock ProgramUtils.findProgram for LSUSB
+			sandbox.stub(ProgramUtils, 'findProgram').resolves({
+				available: true,
+				path: '/usr/bin/lsusb',
+				isCustomPath: false
+			});
+
 			// Simulate a device that creates multiple serial ports (like CubeOrange with multiple interfaces)
 			const mockLsusbOutput = 'Bus 001 Device 003: ID 2dae:1011 CubePilot CubeOrange';
 			const mockDeviceList = '/dev/ttyACM0\n/dev/ttyACM1';
 
-			// Handle both simple callback and options with callback variants
-			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
-				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
-				if (callback) {
-					setTimeout(() => {
-						if (command === 'lsusb') {
-							callback(null, mockLsusbOutput, '');
-						} else if (command.includes('ls /dev/tty')) {
-							callback(null, mockDeviceList, '');
-						} else {
-							callback(null, '', '');
-						}
-					}, 0);
+			// Mock child_process.spawnSync for lsusb, ls and udevadm commands
+			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
+				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
+					return {
+						error: undefined,
+						stdout: mockLsusbOutput,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(mockLsusbOutput, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
+					return {
+						error: undefined,
+						stdout: mockDeviceList,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(mockDeviceList, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else if (command === 'udevadm') {
+					// Both serial ports belong to the same USB device
+					return {
+						error: undefined,
+						stdout: 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n', 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else {
+					return {
+						error: undefined,
+						stdout: '',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+					};
 				}
-				return {} as cp.ChildProcess;
 			});
-
-			// Both serial ports belong to the same USB device
-			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
-				pid: 12345,
-				output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n', 'utf8'), Buffer.from('', 'utf8')],
-				stdout: Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n', 'utf8'),
-				stderr: Buffer.from('', 'utf8'),
-				status: 0,
-				signal: null
-			}));
 
 			const children = await provider.getChildren();
 
@@ -352,18 +401,28 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			provider.setIsWSL(false);
 
 			// Mock ioreg command to return error (Darwin-specific)
-			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
-				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
-				if (callback) {
-					setTimeout(() => {
-						if (command.includes('ioreg')) {
-							callback(new Error('ioreg command failed'), '', '');
-						} else {
-							callback(null, '', '');
-						}
-					}, 0);
+			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
+				if (command === 'ioreg') {
+					return {
+						error: new Error('ioreg command failed'),
+						stdout: '',
+						stderr: '',
+						status: 1,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else {
+					return {
+						error: undefined,
+						stdout: '',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+					};
 				}
-				return {} as cp.ChildProcess;
 			});
 
 			const children = await provider.getChildren();
@@ -407,21 +466,33 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 
 			const mockSerialPorts = '/dev/cu.usbmodem1234\n/dev/tty.usbmodem1234';
 
-			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
-				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
-				if (callback) {
-					setTimeout(() => {
-						if (command.includes('ioreg')) {
-							callback(null, mockIoregOutput, '');
-						} else if (command.includes('ls /dev/')) {
-							callback(null, mockSerialPorts, '');
-						} else {
-							callback(null, '', '');
-						}
-					}, 0);
+			// Mock ioreg command with spawnSync and ls command with execSync
+			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
+				if (command === 'ioreg') {
+					return {
+						error: undefined,
+						stdout: mockIoregOutput,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(mockIoregOutput, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else {
+					return {
+						error: undefined,
+						stdout: '',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+					};
 				}
-				return {} as cp.ChildProcess;
 			});
+
+			// Mock execSync for getDarwinSerialPorts
+			sandbox.stub(cp, 'execSync').returns(mockSerialPorts);
 
 			const children = await provider.getChildren();
 			assert(Array.isArray(children));
@@ -432,48 +503,67 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 		test('should detect devices in WSL mode', async () => {
 			provider.setIsWSL(true);
 
+			// Mock ProgramUtils.findProgram for LSUSB
+			sandbox.stub(ProgramUtils, 'findProgram').resolves({
+				available: true,
+				path: '/usr/bin/lsusb',
+				isCustomPath: false
+			});
+
 			// Mock Linux devices (first attempt)
 			const mockLsusbOutput = 'Bus 001 Device 003: ID 2dae:1016 CubePilot CubeOrangePlus';
 			const mockDeviceList = '/dev/ttyACM0';
 
 			// Mock Windows PowerShell devices (second attempt)
-			const mockPowerShellOutput = `DeviceID : USB\\VID_2DAE&PID_1011\\5&123456&0&2
-FriendlyName : CubeOrange (COM3)
-Manufacturer : CubePilot
+			const mockPowerShellOutput = 'DeviceID : USB\\VID_2DAE&PID_1011\\5&123456&0&2\r\nFriendlyName : CubeOrange (COM3)\r\nManufacturer : CubePilot\r\n\r\nDeviceID : USB\\VID_1234&PID_5678\\6&789012&0&3\r\nFriendlyName : Generic Serial Device (COM4)\r\nManufacturer : Generic Inc';
 
-DeviceID : USB\\VID_1234&PID_5678\\6&789012&0&3
-FriendlyName : Generic Serial Device (COM4)
-Manufacturer : Generic Inc`;
-
-			let execCallCount = 0;
-			// Handle both simple callback and options with callback variants
-			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
-				execCallCount++;
-				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
-				if (callback) {
-					setTimeout(() => {
-						if (command === 'lsusb') {
-							callback(null, mockLsusbOutput, '');
-						} else if (command.includes('ls /dev/tty')) {
-							callback(null, mockDeviceList, '');
-						} else if (command.includes('powershell.exe')) {
-							callback(null, mockPowerShellOutput, '');
-						} else {
-							callback(null, '', '');
-						}
-					}, 0);
+			// Mock child_process.spawnSync for WSL test
+			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
+				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
+					return {
+						error: undefined,
+						stdout: mockLsusbOutput,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(mockLsusbOutput, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
+					return {
+						error: undefined,
+						stdout: mockDeviceList,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(mockDeviceList, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else if (command === 'udevadm') {
+					return {
+						error: undefined,
+						stdout: 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else {
+					return {
+						error: undefined,
+						stdout: '',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+					};
 				}
-				return {} as cp.ChildProcess;
 			});
 
-			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
-				pid: 12345,
-				output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'), Buffer.from('', 'utf8')],
-				stdout: Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'),
-				stderr: Buffer.from('', 'utf8'),
-				status: 0,
-				signal: null
-			}));
+			// Mock the PowerShell worker execution
+			sandbox.stub(provider as any, 'executePowerShellInWorker').resolves(mockPowerShellOutput);
 
 			const children = await provider.getChildren();
 
@@ -493,31 +583,47 @@ Manufacturer : Generic Inc`;
 			provider.setIsWSL(true);
 
 			// Mock Windows PowerShell devices to succeed
-			const mockPowerShellOutput = `DeviceID : USB\\VID_2DAE&PID_1011\\5&123456&0&2
-FriendlyName : CubeOrange (COM3)
-Manufacturer : CubePilot`;
+			const mockPowerShellOutput = 'DeviceID : USB\\VID_2DAE&PID_1011\\5&123456&0&2\r\nFriendlyName : CubeOrange (COM3)\r\nManufacturer : CubePilot';
 
 			// Mock lsusb to fail but PowerShell to succeed
-			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
-				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
-				if (callback) {
-					setTimeout(() => {
-						if (command === 'lsusb') {
-							// Simulate lsusb failure
-							callback(new Error('lsusb command failed'), '', 'lsusb: error');
-						} else if (command.includes('ls /dev/tty')) {
-							// Simulate no devices found in Linux
-							callback(new Error('No such file or directory'), '', '');
-						} else if (command.includes('powershell.exe')) {
-							// PowerShell succeeds
-							callback(null, mockPowerShellOutput, '');
-						} else {
-							callback(null, '', '');
-						}
-					}, 0);
+			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
+				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
+					// Simulate lsusb failure
+					return {
+						error: new Error('lsusb command failed'),
+						stdout: '',
+						stderr: 'lsusb: error',
+						status: 1,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('lsusb: error', 'utf8')]
+					};
+				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
+					// Simulate no devices found in Linux
+					return {
+						error: new Error('No such file or directory'),
+						stdout: '',
+						stderr: '',
+						status: 2,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else {
+					return {
+						error: undefined,
+						stdout: '',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+					};
 				}
-				return {} as cp.ChildProcess;
 			});
+
+			// Mock the PowerShell worker execution to succeed
+			sandbox.stub(provider as any, 'executePowerShellInWorker').resolves(mockPowerShellOutput);
 
 			const children = await provider.getChildren();
 
@@ -532,40 +638,74 @@ Manufacturer : CubePilot`;
 		test('should handle partial WSL detection failures - PowerShell fails, lsusb succeeds', async () => {
 			provider.setIsWSL(true);
 
+			// Mock ProgramUtils.findProgram for LSUSB
+			sandbox.stub(ProgramUtils, 'findProgram').resolves({
+				available: true,
+				path: '/usr/bin/lsusb',
+				isCustomPath: false
+			});
+
 			// Mock Linux devices to succeed
 			const mockLsusbOutput = 'Bus 001 Device 003: ID 2dae:1016 CubePilot CubeOrangePlus';
 			const mockDeviceList = '/dev/ttyACM0';
 
 			// Mock PowerShell to fail but lsusb to succeed
-			sandbox.stub(cp, 'exec').callsFake((command: string, optionsOrCallback: any, callbackOrUndefined?: any) => {
-				const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackOrUndefined;
-				if (callback) {
-					setTimeout(() => {
-						if (command === 'lsusb') {
-							// lsusb succeeds
-							callback(null, mockLsusbOutput, '');
-						} else if (command.includes('ls /dev/tty')) {
-							// Linux device listing succeeds
-							callback(null, mockDeviceList, '');
-						} else if (command.includes('powershell.exe')) {
-							// Simulate PowerShell failure
-							callback(new Error('PowerShell access denied'), '', 'Access denied');
-						} else {
-							callback(null, '', '');
-						}
-					}, 0);
+			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
+				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
+					// lsusb succeeds
+					return {
+						error: undefined,
+						stdout: mockLsusbOutput,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(mockLsusbOutput, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
+					// Linux device listing succeeds
+					return {
+						error: undefined,
+						stdout: mockDeviceList,
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from(mockDeviceList, 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else if (command === 'powershell.exe') {
+					// Simulate PowerShell failure
+					return {
+						error: new Error('PowerShell access denied'),
+						stdout: '',
+						stderr: 'Access denied',
+						status: 1,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('Access denied', 'utf8')]
+					};
+				} else if (command === 'udevadm') {
+					return {
+						error: undefined,
+						stdout: 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'), Buffer.from('', 'utf8')]
+					};
+				} else {
+					return {
+						error: undefined,
+						stdout: '',
+						stderr: '',
+						status: 0,
+						signal: null,
+						pid: 12345,
+						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
+					};
 				}
-				return {} as cp.ChildProcess;
 			});
-
-			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
-				pid: 12345,
-				output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'), Buffer.from('', 'utf8')],
-				stdout: Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'),
-				stderr: Buffer.from('', 'utf8'),
-				status: 0,
-				signal: null
-			}));
 
 			const children = await provider.getChildren();
 
@@ -732,18 +872,18 @@ Manufacturer : CubePilot`;
 				isMavproxyConnected: false
 			};
 
-			// Mock ProgramUtils.findMavproxy to return available MAVProxy
-			sandbox.stub(ProgramUtils, 'findMavproxy').resolves({ available: true, path: '/usr/bin/mavproxy.py', isCustomPath: false });
+			// Mock ProgramUtils.findProgram to return available MAVProxy
+			sandbox.stub(ProgramUtils, 'findProgram').resolves({ available: true, path: '/usr/bin/mavproxy.py', isCustomPath: false });
 
-			// Mock terminal creation
-			const mockTerminal = {
-				dispose: sandbox.stub(),
-				show: sandbox.stub(),
-				sendText: sandbox.stub()
-			} as any;
+			// Mock ProgramUtils.checkPythonPackage to return available mavproxy package
+			sandbox.stub(ProgramUtils, 'checkPythonPackage').resolves({ available: true, path: 'mavproxy.py', isCustomPath: false });
 
-			sandbox.stub(vscode.window, 'createTerminal').returns(mockTerminal);
-			sandbox.stub(vscode.window, 'onDidCloseTerminal').returns({ dispose: sandbox.stub() } as any);
+			// Mock apTerminalMonitor instead of VS Code terminal API
+			const mockTerminalMonitor = {
+				runCommand: sandbox.stub().resolves({ exitCode: 0, output: '' })
+			};
+
+			sandbox.stub(apTerminalMonitor.prototype, 'runCommand').callsFake(mockTerminalMonitor.runCommand);
 
 			// Mock UI inputs to prevent blocking
 			sandbox.stub(vscode.window, 'showInputBox').resolves('115200');
@@ -751,9 +891,15 @@ Manufacturer : CubePilot`;
 			// Execute command
 			await vscode.commands.executeCommand('connected-devices.connectMAVProxy', mockDevice);
 
-			// Verify terminal was created and used
-			assert(mockTerminal.sendText.calledOnce);
-			assert(mockTerminal.show.calledOnce);
+			// Verify terminal monitor was used
+			assert(mockTerminalMonitor.runCommand.calledOnce);
+
+			// Check that the command contains the expected elements
+			const calledCommand = mockTerminalMonitor.runCommand.getCall(0).args[0];
+			assert(calledCommand.includes('mavproxy.py'));
+			assert(calledCommand.includes('--master=/dev/ttyACM0'));
+			assert(calledCommand.includes('--baudrate=115200'));
+			assert(calledCommand.includes('--console'));
 		});
 
 		test('should handle disconnectMAVProxy command', async () => {
