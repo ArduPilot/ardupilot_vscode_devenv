@@ -73,9 +73,15 @@ suite('apLaunch Test Suite', () => {
 			show: sandbox.stub(),
 			dispose: sandbox.stub()
 		};
+		// Make createTerminal call show automatically (as the real implementation does)
+		mockTerminalMonitor.createTerminal.callsFake(async () => {
+			mockTerminalMonitor.show();
+			return Promise.resolve();
+		});
 		sandbox.stub(apTerminalMonitor.prototype, 'runCommand').callsFake(mockTerminalMonitor.runCommand);
 		sandbox.stub(apTerminalMonitor.prototype, 'createTerminal').callsFake(mockTerminalMonitor.createTerminal);
 		sandbox.stub(apTerminalMonitor.prototype, 'show').callsFake(mockTerminalMonitor.show);
+		sandbox.stub(apTerminalMonitor.prototype, 'dispose').callsFake(mockTerminalMonitor.dispose);
 
 		// Mock ProgramUtils.PYTHON to prevent actual Python detection
 		sandbox.stub(ProgramUtils, 'PYTHON').resolves('/usr/bin/python3');
@@ -461,7 +467,11 @@ suite('apLaunch Test Suite', () => {
 	suite('Session Cleanup', () => {
 		test('should clean up tmux session when debug session terminates', async () => {
 			const mockCleanupTerminal = createMockTerminal();
-			const mockDebugTerminal = { dispose: sandbox.stub() };
+			// Create a mock apTerminalMonitor with the sendInterruptSignal method
+			const mockDebugTerminal = {
+				dispose: sandbox.stub(),
+				sendInterruptSignal: sandbox.stub()
+			};
 
 			sandbox.stub(vscode.window, 'createTerminal').returns(mockCleanupTerminal);
 			const findProgramStub = sandbox.stub(ProgramUtils, 'findProgram');
@@ -483,6 +493,7 @@ suite('apLaunch Test Suite', () => {
 			// Manually call the handler for testing
 			await (provider as any).handleDebugSessionTermination(mockSession);
 
+			assert(mockDebugTerminal.sendInterruptSignal.calledTwice, 'Should call sendInterruptSignal twice');
 			assert(mockDebugTerminal.dispose.called);
 			assert.strictEqual((provider as any).tmuxSessionName, undefined);
 			assert.strictEqual((provider as any).debugSessionTerminal, undefined);
