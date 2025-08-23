@@ -435,7 +435,7 @@ suite('E2E: ArduPilot Build', function() {
 		const sitlBuildRoot = path.join(ardupilotDir, 'build', 'sitl');
 		const sitlDeleted = await waitForDirectoryDeletion(sitlBuildRoot, 3000);
 		console.log(`DEBUG: SITL build directory deleted: ${sitlDeleted} (${sitlBuildRoot})`);
-		const sitlTask = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
+		const sitlTask = await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 		if (!sitlTask) {
 			throw new Error('Failed to create SITL task');
 		}
@@ -464,7 +464,7 @@ suite('E2E: ArduPilot Build', function() {
 		const cubeOrangeDeleted = await waitForDirectoryDeletion(cubeOrangeBuildRoot, 3000);
 		console.log(`DEBUG: CubeOrange build directory deleted: ${cubeOrangeDeleted} (${cubeOrangeBuildRoot})`);
 
-		const cubeOrangeTask = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'copter', 'cubeorange-copter');
+		const cubeOrangeTask = await APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'copter', 'cubeorange-copter');
 		if (!cubeOrangeTask) {
 			throw new Error('Failed to create CubeOrange+ task');
 		}
