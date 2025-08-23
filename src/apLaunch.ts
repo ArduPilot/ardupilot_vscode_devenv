@@ -70,11 +70,109 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	private tmuxSessionName: string | undefined;
 	private debugSessionTerminal: apTerminalMonitor | undefined;
 	private workspaceFolder: vscode.WorkspaceFolder;
+	private simVehicleCommand: string | null = null; // The exact sim_vehicle.py command executed
 
 	constructor(workspaceFolder: vscode.WorkspaceFolder) {
 		this.workspaceFolder = workspaceFolder;
 		// Register a debug session termination listener
 		vscode.debug.onDidTerminateDebugSession(this.handleDebugSessionTermination.bind(this));
+	}
+
+	/*
+	 * Find sim_vehicle.py process PID using shell command
+	 * @param simVehicleCommand - The exact sim_vehicle.py command that was executed
+	 * @returns PID of the sim_vehicle.py process or null if not found
+	 */
+	private findSimVehicleProcess(simVehicleCommand: string): number | null {
+		try {
+			APLaunchConfigurationProvider.log.log('DEBUG: Searching for sim_vehicle.py processes');
+			APLaunchConfigurationProvider.log.log(`DEBUG: Target command: ${simVehicleCommand}`);
+
+			// First, get all sim_vehicle.py process PIDs
+			const pgrepResult = spawnSync('pgrep', ['-f', 'sim_vehicle.py'], { encoding: 'utf8' });
+
+			if (pgrepResult.status !== 0) {
+				APLaunchConfigurationProvider.log.log('DEBUG: No sim_vehicle.py processes found');
+				return null;
+			}
+
+			const pids = pgrepResult.stdout.trim().split('\n').filter(line => line.trim() !== '');
+			if (pids.length === 0) {
+				APLaunchConfigurationProvider.log.log('DEBUG: No sim_vehicle.py process PIDs found');
+				return null;
+			}
+
+			APLaunchConfigurationProvider.log.log(`DEBUG: Found ${pids.length} sim_vehicle.py processes: ${pids.join(', ')}`);
+
+			// Now check each PID to find the one with our exact command
+			for (const pidStr of pids) {
+				const pid = parseInt(pidStr, 10);
+				if (isNaN(pid)) continue;
+
+				// Get the full command line for this PID
+				const psResult = spawnSync('ps', ['-p', pid.toString(), '-o', 'args='], { encoding: 'utf8' });
+
+				if (psResult.status === 0 && psResult.stdout) {
+					const processCommand = psResult.stdout.trim();
+					APLaunchConfigurationProvider.log.log(`DEBUG: PID ${pid} command: ${processCommand}`);
+
+					// Check if this matches our target command
+					if (this.isCommandMatch(processCommand, simVehicleCommand)) {
+						APLaunchConfigurationProvider.log.log(`DEBUG: Found matching sim_vehicle.py process with PID: ${pid}`);
+						return pid;
+					}
+				}
+			}
+
+			APLaunchConfigurationProvider.log.log('DEBUG: No matching sim_vehicle.py process found for our command');
+			return null;
+		} catch (error) {
+			APLaunchConfigurationProvider.log.log(`DEBUG: Error finding sim_vehicle.py process: ${error}`);
+			return null;
+		}
+	}
+
+	/*
+	 * Check if the running command matches our expected command
+	 * @param processCommand - Command line from ps output
+	 * @param expectedCommand - Command we originally executed
+	 * @returns true if commands match, false otherwise
+	 */
+	private isCommandMatch(processCommand: string, expectedCommand: string): boolean {
+		// Normalize commands for comparison (remove extra whitespace)
+		const normalizeCmd = (cmd: string) => cmd.trim().replace(/\s+/g, ' ');
+		const normalizedProcess = normalizeCmd(processCommand);
+		const normalizedExpected = normalizeCmd(expectedCommand);
+
+		// Check if the process command contains the key parts of our expected command
+		// We look for sim_vehicle.py and the main arguments
+		return normalizedProcess.includes('sim_vehicle.py') &&
+			normalizedProcess.includes(normalizedExpected.replace(/^.*sim_vehicle\.py\s+/, ''));
+	}
+
+	/*
+	 * Send graceful shutdown signal to sim_vehicle.py process
+	 * @param pid - Process ID of sim_vehicle.py
+	 * @returns true if signal was sent successfully, false otherwise
+	 */
+	private sendGracefulShutdownSignal(pid: number): boolean {
+		try {
+			APLaunchConfigurationProvider.log.log(`DEBUG: Sending SIGTERM to sim_vehicle.py process ${pid}`);
+
+			// Send SIGINT signal for graceful shutdown
+			const result = spawnSync('kill', ['-INT', pid.toString()]);
+
+			if (result.status === 0) {
+				APLaunchConfigurationProvider.log.log(`DEBUG: Successfully sent SIGINT to process ${pid}`);
+				return true;
+			} else {
+				APLaunchConfigurationProvider.log.log(`DEBUG: Failed to send SIGINT to process ${pid} (exit code: ${result.status})`);
+				return false;
+			}
+		} catch (error) {
+			APLaunchConfigurationProvider.log.log(`DEBUG: Error sending signal to process ${pid}: ${error}`);
+			return false;
+		}
 	}
 
 	/*
@@ -218,92 +316,6 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	}
 
 	/*
-	 * Kill any existing ardupilot_sitl* tmux sessions
-	 * This ensures a clean environment before starting new debugging sessions
-	 */
-	private async killExistingArduPilotSessions(): Promise<void> {
-		const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
-		if (!tmux.available || !tmux.path) {
-			APLaunchConfigurationProvider.log.log('DEBUG: tmux not available, skipping session cleanup');
-			return;
-		}
-
-		return new Promise((resolve) => {
-			if (!tmux.path) {
-				resolve();
-				return;
-			}
-
-			// First, list all tmux sessions to find ardupilot_sitl* sessions
-			const listProcess = spawn(tmux.path, ['list-sessions', '-F', '#{session_name}']);
-
-			let output = '';
-			listProcess.stdout?.on('data', (data: Buffer) => {
-				output += data.toString();
-			});
-
-			listProcess.on('close', (code: number | null) => {
-				if (code !== 0) {
-					APLaunchConfigurationProvider.log.log('DEBUG: No existing tmux sessions found or tmux list-sessions failed');
-					resolve();
-					return;
-				}
-
-				const sessionNames = output.trim().split('\n')
-					.filter(line => line.trim() !== '')
-					.filter(sessionName => sessionName.startsWith('ardupilot_sitl_'));
-
-				if (sessionNames.length === 0) {
-					APLaunchConfigurationProvider.log.log('DEBUG: No existing ardupilot_sitl* sessions found');
-					resolve();
-					return;
-				}
-
-				APLaunchConfigurationProvider.log.log(`DEBUG: Found ${sessionNames.length} existing ardupilot_sitl* sessions to kill: ${sessionNames.join(', ')}`);
-
-				// Kill each ardupilot_sitl* session
-				let killCount = 0;
-				const totalSessions = sessionNames.length;
-
-				const checkComplete = () => {
-					killCount++;
-					if (killCount === totalSessions) {
-						APLaunchConfigurationProvider.log.log('DEBUG: All existing ardupilot_sitl* sessions killed');
-						resolve();
-					}
-				};
-
-				sessionNames.forEach(sessionName => {
-					if (!tmux.path) {
-						checkComplete();
-						return;
-					}
-					const killProcess = spawn(tmux.path, ['kill-session', '-t', sessionName]);
-
-					killProcess.on('close', (killCode: number | null) => {
-						if (killCode === 0) {
-							APLaunchConfigurationProvider.log.log(`DEBUG: Killed tmux session: ${sessionName}`);
-						} else {
-							APLaunchConfigurationProvider.log.log(`DEBUG: Failed to kill tmux session: ${sessionName} (exit code: ${killCode})`);
-						}
-						checkComplete();
-					});
-
-					killProcess.on('error', (error: Error) => {
-						APLaunchConfigurationProvider.log.log(`DEBUG: Error killing tmux session ${sessionName}: ${error}`);
-						checkComplete();
-					});
-				});
-			});
-
-			listProcess.on('error', (error: Error) => {
-				APLaunchConfigurationProvider.log.log(`DEBUG: Error listing tmux sessions: ${error}`);
-				resolve();
-			});
-		});
-	}
-
-	/*
 	 * Register a tmux session to track for cleanup
 	 * @param sessionName - Name of the tmux session to register
 	 */
@@ -384,18 +396,34 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 			APLaunchConfigurationProvider.log.log(`DEBUG: Debug session terminated for type '${session.configuration.type}', cleaning up tmux session: ${this.tmuxSessionName}`);
 			APLaunchConfigurationProvider.log.log(`DEBUG: Debug session configuration: ${JSON.stringify(session.configuration, null, 2)}`);
 
-			const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
-			if (tmux.path) {
-				// Unregister the session from tracking
-				APLaunchConfigurationProvider.killSpecificSession(tmux.path, this.tmuxSessionName);
+			// try gracefully closing sim_vehicle.py by sending Ctrl+C 2 times
+			for (let i = 0; i < 2; i++) {
+				this.debugSessionTerminal?.sendInterruptSignal();
+				await new Promise(resolve => setTimeout(resolve, 1000));
 			}
 
-			// Close the debug session terminal as well
-			this.debugSessionTerminal?.dispose();
+			// Try to find and gracefully shutdown sim_vehicle.py process
+			if (this.simVehicleCommand) {
+				const simVehiclePid = this.findSimVehicleProcess(this.simVehicleCommand);
+				if (simVehiclePid) {
+					APLaunchConfigurationProvider.log.log(`DEBUG: sim_vehicle.py process ${simVehiclePid} is still running`);
+					vscode.window.showErrorMessage('Failed to shut down sim_vehicle.py gracefully, try killing the process manually.');
+					return;
+				}
+			}
+			// force dispose
+			await this.debugSessionTerminal?.dispose(true);
+
+			const tmux = await ProgramUtils.findProgram(TOOLS_REGISTRY.TMUX);
+			if (tmux.path) {
+				// Kill the tmux session
+				await APLaunchConfigurationProvider.killSpecificSession(tmux.path, this.tmuxSessionName);
+			}
 
 			// Reset the session tracking variables
 			this.tmuxSessionName = undefined;
 			this.debugSessionTerminal = undefined;
+			this.simVehicleCommand = null;
 		}
 	}
 
@@ -563,6 +591,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					const tmuxPath = tmux.path;
 					const tmuxCommand = `"${tmuxPath}" new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
 					const simVehicleCmd = `${await ProgramUtils.PYTHON()} ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
+					this.simVehicleCommand = simVehicleCmd; // Store the command for cleanup
 					APLaunchConfigurationProvider.log.log(`DEBUG: Running SITL simulation: ${simVehicleCmd}`);
 
 					// Start the SITL simulation in a terminal using apTerminalMonitor
@@ -642,12 +671,12 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					const tmuxPath = tmux.path;
 					const tmuxCommand = `"${tmuxPath}" new-session -s "${this.tmuxSessionName}" -n "SimVehicle"`;
 					const simVehicleCmd = `export TMUX_PREFIX="gdbserver localhost:${gdbPort}" && ${await ProgramUtils.PYTHON()} ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${apConfig.simVehicleCommand || ''}`;
+					this.simVehicleCommand = simVehicleCmd; // Store the command for cleanup
 					APLaunchConfigurationProvider.log.log(`DEBUG: Running SITL simulation with gdbserver: ${simVehicleCmd}`);
 
 					// Start the SITL simulation in a terminal using apTerminalMonitor
 					this.debugSessionTerminal = new apTerminalMonitor('ArduPilot SITL');
-					this.debugSessionTerminal.createTerminal();
-					this.debugSessionTerminal.show();
+					await this.debugSessionTerminal.createTerminal();
 					await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
 					// we push following commands back to back without waiting, as most of them will run till debugging is over.
 					// Check if tmux session already exists before creating it
@@ -691,8 +720,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 			} else {
 				// For physical board builds, run the upload command
 				this.debugSessionTerminal = new apTerminalMonitor('ArduPilot Upload');
-				this.debugSessionTerminal.createTerminal();
-				this.debugSessionTerminal.show();
+				await this.debugSessionTerminal.createTerminal();
 				await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
 
 				const uploadCommand = `${await ProgramUtils.PYTHON()} ${apConfig.waffile} ${apConfig.target} --upload`;

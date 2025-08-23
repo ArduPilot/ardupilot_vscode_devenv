@@ -649,9 +649,16 @@ export class apTerminalMonitor {
 		return false; // Should never reach here, but just in case
 	}
 
-	public async dispose(): Promise<void> {
+	public sendInterruptSignal(): void {
+		this.log.log('Sending interrupt signal to terminal');
+		if (this.terminal) {
+			this.terminal.sendText('\x03'); // Send Ctrl+C
+		}
+	}
+
+	public async dispose(forceDispose: boolean = false): Promise<void> {
 		// If there are active shell executions, attempt to clean them up first
-		if (this.hasActiveShellExecution()) {
+		if (this.hasActiveShellExecution() && !forceDispose) {
 			this.log.log('Active shell execution detected, attempting cleanup');
 
 			const cleanupSucceeded = await this.interruptAndWaitForCleanup();
