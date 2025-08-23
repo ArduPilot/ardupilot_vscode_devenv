@@ -13,7 +13,9 @@ module.exports = {
 	parserOptions: {
 		// Allows using a newer version of TypeScript than what
 		// @typescript-eslint/parser officially supports
-		warnOnUnsupportedTypeScriptVersion: false
+		warnOnUnsupportedTypeScriptVersion: false,
+		project: './tsconfig.json',
+		tsconfigRootDir: __dirname
 	},
 	rules: {
 		'semi': [2, 'always'],
@@ -21,12 +23,13 @@ module.exports = {
 		'@typescript-eslint/no-explicit-any': 1,
 		'@typescript-eslint/explicit-module-boundary-types': 2,
 		'@typescript-eslint/no-non-null-assertion': 1,
+		'@typescript-eslint/no-floating-promises': 'error',
 		'indent': ['error', 'tab'],
 		'linebreak-style': ['error', 'unix'],
 		'quotes': ['error', 'single'],
 		'no-trailing-spaces': 'error',
 		'eol-last': 'error',
 		'no-multiple-empty-lines': ['error', { 'max': 1 }],
-		'space-infix-ops': 'error'
+		'space-infix-ops': 'error',
 	}
 };

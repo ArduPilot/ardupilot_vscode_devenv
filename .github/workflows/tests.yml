@@ -136,7 +136,7 @@ jobs:
               SUITES="apCloneArdupilot apEnvironmentValidator apConnectedDevices"
               ;;
             "runner4-ui-welcome")
-              SUITES="apUIHooks apLog"
+              SUITES="apUIHooks apLog apCommonUtils"
               ;;
           esac
           

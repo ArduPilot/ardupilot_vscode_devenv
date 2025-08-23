@@ -1,15 +1,16 @@
 {
 	"compilerOptions": {
 		"module": "commonjs",
-		"target": "es2019",
+		"target": "es2022",
 		"lib": [
-			"ES2019",
+			"ES2022",
 			"DOM"
 		],
 		"outDir": "out",
 		"sourceMap": true,
 		"strict": true,
-		"rootDir": "src"
+		"rootDir": "src",
+		"experimentalDecorators": true
 	},
 	"include": [
 		"src"
