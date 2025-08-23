@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-/* cSpell:words apenv eabi openocd */
+/* cSpell:words apenv eabi openocd mavproxy empy pymavlink */
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as sinon from 'sinon';
 import { ToolsConfig } from '../../apToolsConfig';
+import * as apToolsConfig from '../../apToolsConfig';
 import { APExtensionContext } from '../../extension';
 import { getApExtApi } from './common';
 
@@ -71,9 +72,9 @@ suite('apToolsConfig Test Suite', () => {
 		test('should load existing configuration successfully', () => {
 			const mockConfig = {
 				toolPaths: {
-					'python': '/usr/bin/python3',
-					'gcc': '/usr/bin/arm-none-eabi-gcc',
-					'gdb': '/usr/bin/arm-none-eabi-gdb'
+					'GCC': '/usr/bin/gcc',
+					'ARM_GCC': '/usr/bin/arm-none-eabi-gcc',
+					'GDB': '/usr/bin/arm-none-eabi-gdb'
 				}
 			};
 
@@ -82,9 +83,9 @@ suite('apToolsConfig Test Suite', () => {
 
 			ToolsConfig.loadConfig();
 
-			assert.strictEqual(ToolsConfig.getToolPath('python'), '/usr/bin/python3');
-			assert.strictEqual(ToolsConfig.getToolPath('gcc'), '/usr/bin/arm-none-eabi-gcc');
-			assert.strictEqual(ToolsConfig.getToolPath('gdb'), '/usr/bin/arm-none-eabi-gdb');
+			assert.strictEqual(ToolsConfig.getToolPath('GCC'), '/usr/bin/gcc');
+			assert.strictEqual(ToolsConfig.getToolPath('ARM_GCC'), '/usr/bin/arm-none-eabi-gcc');
+			assert.strictEqual(ToolsConfig.getToolPath('GDB'), '/usr/bin/arm-none-eabi-gdb');
 		});
 
 		test('should handle malformed JSON configuration gracefully', () => {
@@ -112,16 +113,10 @@ suite('apToolsConfig Test Suite', () => {
 			assert.deepStrictEqual(allPaths, {});
 		});
 
-		test('should return undefined for non-existent tool paths', () => {
-			ToolsConfig.loadConfig();
-
-			assert.strictEqual(ToolsConfig.getToolPath('nonexistent'), undefined);
-		});
-
 		test('should return immutable copy of all tool paths', () => {
 			const mockConfig = {
 				toolPaths: {
-					'python': '/usr/bin/python3'
+					'GCC': '/usr/bin/gcc'
 				}
 			};
 
@@ -134,7 +129,7 @@ suite('apToolsConfig Test Suite', () => {
 			allPaths['python'] = '/modified/path';
 
 			// Original should remain unchanged
-			assert.strictEqual(ToolsConfig.getToolPath('python'), '/usr/bin/python3');
+			assert.strictEqual(ToolsConfig.getToolPath('GCC'), '/usr/bin/gcc');
 		});
 	});
 
@@ -144,10 +139,10 @@ suite('apToolsConfig Test Suite', () => {
 			sandbox.stub(fs, 'existsSync').returns(true); // .vscode directory exists
 			sandbox.stub(fs, 'mkdirSync');
 
-			const toolPath = '/custom/bin/python';
-			ToolsConfig.setToolPath('python', toolPath);
+			const toolPath = '/custom/bin/gcc';
+			ToolsConfig.setToolPath('GCC', toolPath);
 
-			assert.strictEqual(ToolsConfig.getToolPath('python'), toolPath);
+			assert.strictEqual(ToolsConfig.getToolPath('GCC'), toolPath);
 			assert(writeFileSyncStub.calledOnce);
 		});
 
@@ -157,12 +152,12 @@ suite('apToolsConfig Test Suite', () => {
 			sandbox.stub(fs, 'mkdirSync');
 
 			// Set a tool path first
-			ToolsConfig.setToolPath('python', '/usr/bin/python');
-			assert.strictEqual(ToolsConfig.getToolPath('python'), '/usr/bin/python');
+			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
+			assert.strictEqual(ToolsConfig.getToolPath('GCC'), '/usr/bin/gcc');
 
 			// Remove it
-			ToolsConfig.removeToolPath('python');
-			assert.strictEqual(ToolsConfig.getToolPath('python'), undefined);
+			ToolsConfig.removeToolPath('GCC');
+			assert.strictEqual(ToolsConfig.getToolPath('GCC'), undefined);
 			assert(writeFileSyncStub.calledTwice);
 		});
 
@@ -172,40 +167,40 @@ suite('apToolsConfig Test Suite', () => {
 			sandbox.stub(fs, 'mkdirSync');
 
 			const tools = {
-				'python': '/usr/bin/python3',
-				'gcc': '/usr/bin/arm-none-eabi-gcc',
-				'gdb': '/usr/bin/arm-none-eabi-gdb',
-				'openocd': '/usr/bin/openocd'
+				'GCC': '/usr/bin/gcc',
+				'ARM_GCC': '/usr/bin/arm-none-eabi-gcc',
+				'GDB': '/usr/bin/arm-none-eabi-gdb',
+				'OPENOCD': '/usr/bin/openocd'
 			};
 
 			// Set multiple tool paths
 			Object.entries(tools).forEach(([tool, toolPath]) => {
-				ToolsConfig.setToolPath(tool, toolPath);
+				ToolsConfig.setToolPath(tool as apToolsConfig.ToolID, toolPath);
 			});
 
 			// Verify all are set correctly
 			Object.entries(tools).forEach(([tool, expectedPath]) => {
-				assert.strictEqual(ToolsConfig.getToolPath(tool), expectedPath);
+				assert.strictEqual(ToolsConfig.getToolPath(tool as apToolsConfig.ToolID), expectedPath);
 			});
 
 			const allPaths = ToolsConfig.getAllToolPaths();
 			assert.deepStrictEqual(allPaths, tools);
 		});
 
-		test('should handle empty and special characters in paths', () => {
+		test('should handle special characters in paths', () => {
 			const writeFileSyncStub = sandbox.stub(fs, 'writeFileSync');
 			sandbox.stub(fs, 'existsSync').returns(true);
 			sandbox.stub(fs, 'mkdirSync');
 
 			const specialPaths = {
-				'tool-with-dashes': '/path/with spaces/tool',
-				'tool_with_underscores': '/path/with-special@chars/tool',
-				'tool.with.dots': '/path/with/unicode/�o�l/tool'
+				'GCC': '/path/with spaces/gcc',
+				'ARM_GCC': '/path/with-special@chars/gcc',
+				'MAVPROXY': '/path/with/unicode/tool'
 			};
 
 			Object.entries(specialPaths).forEach(([tool, toolPath]) => {
-				ToolsConfig.setToolPath(tool, toolPath);
-				assert.strictEqual(ToolsConfig.getToolPath(tool), toolPath);
+				ToolsConfig.setToolPath(tool as apToolsConfig.ToolID, toolPath);
+				assert.strictEqual(ToolsConfig.getToolPath(tool as apToolsConfig.ToolID), toolPath);
 			});
 		});
 	});
@@ -219,13 +214,13 @@ suite('apToolsConfig Test Suite', () => {
 			sandbox.stub(fs, 'existsSync').returns(true);
 			sandbox.stub(fs, 'mkdirSync');
 
-			ToolsConfig.setToolPath('python', '/usr/bin/python3');
+			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
 			assert(writeFileSyncStub.calledOnce);
 			const savedConfig = JSON.parse(savedContent);
 			assert.deepStrictEqual(savedConfig, {
 				toolPaths: {
-					'python': '/usr/bin/python3'
+					'GCC': '/usr/bin/gcc'
 				}
 			});
 		});
@@ -239,7 +234,7 @@ suite('apToolsConfig Test Suite', () => {
 				return !pathStr.includes('.vscode');
 			});
 
-			ToolsConfig.setToolPath('python', '/usr/bin/python3');
+			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
 			assert(mkdirSyncStub.calledOnce);
 			const mkdirCall = mkdirSyncStub.getCall(0);
@@ -272,8 +267,8 @@ suite('apToolsConfig Test Suite', () => {
 		test('should preserve existing configuration when loading', () => {
 			const existingConfig = {
 				toolPaths: {
-					'python': '/existing/python',
-					'gcc': '/existing/gcc'
+					'GCC': '/existing/gcc',
+					'ARM_GCC': '/existing/arm-gcc'
 				}
 			};
 
@@ -285,12 +280,12 @@ suite('apToolsConfig Test Suite', () => {
 			// Add a new tool
 			const writeFileSyncStub = sandbox.stub(fs, 'writeFileSync');
 			sandbox.stub(fs, 'mkdirSync');
-			ToolsConfig.setToolPath('gdb', '/new/gdb');
+			ToolsConfig.setToolPath('GDB', '/new/gdb');
 
 			// Should preserve existing tools
-			assert.strictEqual(ToolsConfig.getToolPath('python'), '/existing/python');
-			assert.strictEqual(ToolsConfig.getToolPath('gcc'), '/existing/gcc');
-			assert.strictEqual(ToolsConfig.getToolPath('gdb'), '/new/gdb');
+			assert.strictEqual(ToolsConfig.getToolPath('GCC'), '/existing/gcc');
+			assert.strictEqual(ToolsConfig.getToolPath('ARM_GCC'), '/existing/arm-gcc');
+			assert.strictEqual(ToolsConfig.getToolPath('GDB'), '/new/gdb');
 		});
 	});
 
@@ -355,7 +350,7 @@ suite('apToolsConfig Test Suite', () => {
 			sandbox = sinon.createSandbox();
 			sandbox.stub(fs, 'existsSync').returns(true);
 			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
-				toolPaths: { 'python': '/new/python' }
+				toolPaths: { 'GCC': '/new/gcc' }
 			}));
 
 			// Trigger file change
@@ -364,7 +359,7 @@ suite('apToolsConfig Test Suite', () => {
 			}
 
 			// Configuration should be reloaded
-			assert.strictEqual(ToolsConfig.getToolPath('python'), '/new/python');
+			assert.strictEqual(ToolsConfig.getToolPath('GCC'), '/new/gcc');
 		});
 
 		test('should notify callbacks when configuration changes', () => {
@@ -452,7 +447,7 @@ suite('apToolsConfig Test Suite', () => {
 			const showErrorMessageStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
 			// Should not throw
-			ToolsConfig.setToolPath('python', '/usr/bin/python');
+			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
 			assert(showErrorMessageStub.calledOnce);
 			assert(showErrorMessageStub.getCall(0).args[0].includes('Failed to save tool configuration'));
@@ -465,7 +460,7 @@ suite('apToolsConfig Test Suite', () => {
 			const showErrorMessageStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
 			// Should not throw
-			ToolsConfig.setToolPath('python', '/usr/bin/python');
+			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
 			assert(showErrorMessageStub.calledOnce);
 		});
@@ -486,8 +481,8 @@ suite('apToolsConfig Test Suite', () => {
 			// Create a test configuration
 			const testConfig = {
 				toolPaths: {
-					'test-python': '/test/bin/python',
-					'test-gcc': '/test/bin/gcc'
+					'GCC': '/test/bin/gcc',
+					'ARM_GCC': '/test/bin/arm-gcc'
 				}
 			};
 
@@ -497,17 +492,17 @@ suite('apToolsConfig Test Suite', () => {
 				// Load the real configuration
 				ToolsConfig.loadConfig();
 
-				assert.strictEqual(ToolsConfig.getToolPath('test-python'), '/test/bin/python');
-				assert.strictEqual(ToolsConfig.getToolPath('test-gcc'), '/test/bin/gcc');
+				assert.strictEqual(ToolsConfig.getToolPath('GCC'), '/test/bin/gcc');
+				assert.strictEqual(ToolsConfig.getToolPath('ARM_GCC'), '/test/bin/arm-gcc');
 
 				// Modify and save
-				ToolsConfig.setToolPath('test-gdb', '/test/bin/gdb');
+				ToolsConfig.setToolPath('GDB', '/test/bin/gdb');
 
 				// Reload and verify persistence
 				ToolsConfig.loadConfig();
-				assert.strictEqual(ToolsConfig.getToolPath('test-python'), '/test/bin/python');
-				assert.strictEqual(ToolsConfig.getToolPath('test-gcc'), '/test/bin/gcc');
-				assert.strictEqual(ToolsConfig.getToolPath('test-gdb'), '/test/bin/gdb');
+				assert.strictEqual(ToolsConfig.getToolPath('GCC'), '/test/bin/gcc');
+				assert.strictEqual(ToolsConfig.getToolPath('ARM_GCC'), '/test/bin/arm-gcc');
+				assert.strictEqual(ToolsConfig.getToolPath('GDB'), '/test/bin/gdb');
 
 			} finally {
 				// Clean up
@@ -539,11 +534,11 @@ suite('apToolsConfig Test Suite', () => {
 
 			// Simulate concurrent tool path updates
 			const promises = [
-				Promise.resolve(ToolsConfig.setToolPath('python', '/usr/bin/python')),
-				Promise.resolve(ToolsConfig.setToolPath('gcc', '/usr/bin/gcc')),
-				Promise.resolve(ToolsConfig.setToolPath('gdb', '/usr/bin/gdb')),
-				Promise.resolve(ToolsConfig.removeToolPath('python')),
-				Promise.resolve(ToolsConfig.setToolPath('openocd', '/usr/bin/openocd'))
+				Promise.resolve(ToolsConfig.setToolPath('GCC', '/usr/bin/gcc')),
+				Promise.resolve(ToolsConfig.setToolPath('GCC', '/usr/bin/gcc')),
+				Promise.resolve(ToolsConfig.setToolPath('GDB', '/usr/bin/gdb')),
+				Promise.resolve(ToolsConfig.removeToolPath('GCC')),
+				Promise.resolve(ToolsConfig.setToolPath('OPENOCD', '/usr/bin/openocd'))
 			];
 
 			await Promise.all(promises);
@@ -552,10 +547,61 @@ suite('apToolsConfig Test Suite', () => {
 			assert(writeFileSyncStub.callCount >= 5);
 
 			// Final state should be consistent
-			assert.strictEqual(ToolsConfig.getToolPath('python'), undefined);
-			assert.strictEqual(ToolsConfig.getToolPath('gcc'), '/usr/bin/gcc');
-			assert.strictEqual(ToolsConfig.getToolPath('gdb'), '/usr/bin/gdb');
-			assert.strictEqual(ToolsConfig.getToolPath('openocd'), '/usr/bin/openocd');
+			assert.strictEqual(ToolsConfig.getToolPath('GCC'), undefined);
+			assert.strictEqual(ToolsConfig.getToolPath('GDB'), '/usr/bin/gdb');
+			assert.strictEqual(ToolsConfig.getToolPath('OPENOCD'), '/usr/bin/openocd');
+		});
+	});
+
+	suite('Registry Architecture', () => {
+		test('should have consistent TOOLS_REGISTRY structure', () => {
+			// Verify each tool has required properties
+			for (const [toolKey, toolInfo] of Object.entries(apToolsConfig.TOOLS_REGISTRY)) {
+				assert(toolInfo.name, `${toolKey} should have a name`);
+				assert(toolInfo.paths, `${toolKey} should have paths`);
+				assert((toolInfo as apToolsConfig.ToolInfo).id === toolKey, `${toolKey} should have id field set to key`);
+
+				// Check that tool has at least one platform path
+				const hasLinux = 'linux' in toolInfo.paths;
+				const hasDarwin = 'darwin' in toolInfo.paths;
+				const hasWSL = 'wsl' in toolInfo.paths;
+				assert(hasLinux || hasDarwin || hasWSL, `${toolKey} should have at least one platform path`);
+			}
+		});
+
+		test('should provide type-safe tool access', () => {
+			// Test that registry keys provide compile-time safety
+			const gccTool = apToolsConfig.TOOLS_REGISTRY.GCC;
+			assert.strictEqual(gccTool.name, 'GCC');
+		});
+
+		test('should have consistent PYTHON_PACKAGES_REGISTRY structure', () => {
+			// Verify each package has required properties
+			for (const [packageKey, packageInfo] of Object.entries(apToolsConfig.PYTHON_PACKAGES_REGISTRY)) {
+				assert(packageInfo.name, `${packageKey} should have a name`);
+				assert(packageInfo.description, `${packageKey} should have a description`);
+			}
+		});
+	});
+
+	suite('Registry Helpers', () => {
+		test('should provide tool IDs list', () => {
+			const toolIds = apToolsConfig.ToolsRegistryHelpers.getToolIdsList();
+
+			assert(Array.isArray(toolIds));
+			assert(toolIds.includes('GCC'));
+			assert(toolIds.includes('ARM_GCC'));
+			assert(toolIds.includes('MAVPROXY'));
+		});
+
+		test('should format Python packages for installation', () => {
+			const packages = apToolsConfig.ToolsRegistryHelpers.getPythonPackagesForInstallation();
+
+			assert(Array.isArray(packages));
+			// Check that packages are formatted correctly with versions where specified
+			assert(packages.some(pkg => pkg === 'empy==3.3.4'));
+			assert(packages.some(pkg => pkg === 'future'));
+			assert(packages.some(pkg => pkg === 'pymavlink'));
 		});
 	});
 });
