@@ -12,6 +12,7 @@ import { CloneArdupilot } from '../../apCloneArdupilot';
 import { apLog } from '../../apLog';
 import { ValidateEnvironmentPanel } from '../../apEnvironmentValidator';
 import { getApExtApi } from '../suite/common';
+import { ToolsRegistryHelpers } from '../../apToolsConfig';
 
 suite('E2E: Tool Installation and ArduPilot Clone', function() {
 	// Extended timeout for actual installations and cloning
@@ -76,8 +77,7 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 		// Phase 1: Tool Installation and Detection Testing
 		console.log('DEBUG: Phase 1 - Installing and testing all tools...');
 
-		// Get all available tool IDs
-		const allToolIds = Object.values(ProgramUtils.ToolId);
+		const allToolIds = ToolsRegistryHelpers.getToolIdsList();
 		console.log(`DEBUG: Found ${allToolIds.length} tool IDs to test: ${allToolIds.join(', ')}`);
 
 		// Mock error message tracking
