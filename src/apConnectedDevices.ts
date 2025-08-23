@@ -960,7 +960,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			}
 
 			mavproxyCommand = `"${mavproxy.path}" --master=${devicePath} --baudrate=${baudRate} --console`;
-		} else if (await ProgramUtils.checkPythonPackage('mavproxy')) {
+		} else if ((await ProgramUtils.checkPythonPackage('mavproxy')).available) {
 			mavproxyCommand = `mavproxy.py --master=${devicePath} --baudrate=${baudRate} --console`;
 		}
 
