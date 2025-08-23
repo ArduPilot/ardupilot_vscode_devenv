@@ -17,6 +17,7 @@
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
+import { fireAndForget } from './apCommonUtils';
 
 /*
  * Terminal Monitor API for ArduPilot VS Code Extension
@@ -173,13 +174,9 @@ export class apTerminalMonitor {
 				const stream = event.execution.read();
 
 				// Process the async stream in background
-				(async () => {
-					try {
-						for await (const data of stream) {
-							monitor.handleShellExecutionData(data);
-						}
-					} catch (error) {
-						monitor.log.log(`Error reading shell execution stream: ${error}`);
+				fireAndForget('processAsyncStream', { apLog: monitor.log }, async () => {
+					for await (const data of stream) {
+						monitor.handleShellExecutionData(data);
 					}
 				})();
 			} else {
@@ -622,10 +619,7 @@ export class apTerminalMonitor {
 		for (let attempt = 1; attempt <= maxRetries; attempt++) {
 			this.log.log(`Cleanup attempt ${attempt}/${maxRetries}`);
 
-			// Send Ctrl+C signal to interrupt running processes
-			if (this.terminal) {
-				this.terminal.sendText('\x03'); // \x03 is Ctrl+C
-			}
+			this.sendInterruptSignal();
 
 			try {
 				// Wait for shell execution to end with retry interval timeout

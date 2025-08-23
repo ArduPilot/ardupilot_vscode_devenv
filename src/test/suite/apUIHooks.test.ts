@@ -272,7 +272,7 @@ suite('apUIHooks Test Suite', () => {
 	});
 
 	suite('extractFeatures Method', () => {
-		test('should return error when no workspace folder', () => {
+		test('should return error when no workspace folder', async () => {
 			// Override the default stub for this specific test case
 			(uiHooks as any).extractFeatures.restore();
 			sandbox.stub(uiHooks, 'extractFeatures').callsFake(async () => {
@@ -287,7 +287,7 @@ suite('apUIHooks Test Suite', () => {
 			// Reset the postMessage spy to clear any previous calls
 			mockWebview.postMessage.resetHistory();
 
-			uiHooks.extractFeatures({ board: 'sitl', target: 'copter' });
+			await uiHooks.extractFeatures({ board: 'sitl', target: 'copter' });
 
 			assert(mockWebview.postMessage.calledOnce);
 			assert(mockWebview.postMessage.calledWith({
@@ -297,7 +297,7 @@ suite('apUIHooks Test Suite', () => {
 			}));
 		});
 
-		test('should return error when board or target missing', () => {
+		test('should return error when board or target missing', async () => {
 			// Override the default stub for this specific test case
 			(uiHooks as any).extractFeatures.restore();
 			sandbox.stub(uiHooks, 'extractFeatures').callsFake(async () => {
@@ -313,7 +313,7 @@ suite('apUIHooks Test Suite', () => {
 			// Reset the postMessage spy to clear any previous calls
 			mockWebview.postMessage.resetHistory();
 
-			uiHooks.extractFeatures({ board: 'sitl' }); // missing target
+			await uiHooks.extractFeatures({ board: 'sitl' }); // missing target
 
 			assert(mockWebview.postMessage.calledOnce);
 			assert(mockWebview.postMessage.calledWith({
@@ -323,7 +323,7 @@ suite('apUIHooks Test Suite', () => {
 			}));
 		});
 
-		test('should return error when binary file not found', () => {
+		test('should return error when binary file not found', async () => {
 			// Override the default stub for this specific test case
 			(uiHooks as any).extractFeatures.restore();
 			sandbox.stub(uiHooks, 'extractFeatures').callsFake(async () => {
@@ -340,7 +340,7 @@ suite('apUIHooks Test Suite', () => {
 			// Reset the postMessage spy to clear any previous calls
 			mockWebview.postMessage.resetHistory();
 
-			uiHooks.extractFeatures({ board: 'sitl', target: 'copter' });
+			await uiHooks.extractFeatures({ board: 'sitl', target: 'copter' });
 
 			assert(mockWebview.postMessage.calledOnce);
 			assert(mockWebview.postMessage.calledWith({
@@ -350,7 +350,7 @@ suite('apUIHooks Test Suite', () => {
 			}));
 		});
 
-		test('should successfully extract features for SITL target', () => {
+		test('should successfully extract features for SITL target', async () => {
 			const mockWorkspaceFolder = { uri: { fsPath: '/mock/workspace' } };
 			const mockFeatures = ['GPS_TYPE', 'COMPASS_ENABLE'];
 
@@ -368,7 +368,7 @@ suite('apUIHooks Test Suite', () => {
 			// Reset the postMessage spy to clear any previous calls
 			mockWebview.postMessage.resetHistory();
 
-			uiHooks.extractFeatures({ board: 'sitl', target: 'copter' });
+			await uiHooks.extractFeatures({ board: 'sitl', target: 'copter' });
 
 			assert(mockWebview.postMessage.calledWith({
 				command: 'extractFeatures',
@@ -478,10 +478,10 @@ suite('apUIHooks Test Suite', () => {
 			}));
 		});
 
-		test('should handle missing workspace folder', () => {
+		test('should handle missing workspace folder', async () => {
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
 
-			uiHooks.getBuildCommands({
+			await uiHooks.getBuildCommands({
 				board: 'sitl',
 				target: 'copter'
 			});

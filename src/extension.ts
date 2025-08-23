@@ -52,7 +52,7 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	ToolsConfig.initialize(_context);
 
 	// Configure venv-ardupilot as default Python interpreter if available
-	ProgramUtils.configureVenvArdupilot();
+	await ProgramUtils.configureVenvArdupilot();
 
 	// Register process event handlers for cleanup as fallback
 	const cleanupHandler = async () => {

@@ -165,7 +165,7 @@ export const TOOLS_REGISTRY = {
 				'JLinkGDBServerCLExe',
 				'/mnt/c/Program Files/SEGGER/JLink*/JLinkGDBServerCL.exe',
 				'/mnt/c/Program Files (x86)/SEGGER/JLink*/JLinkGDBServerCL.exe',
-				'/opt/SEGGER/JLink*/JLinkGDBServerCLExe'
+				'/opt/SEGGER/JLink*/JLinkGDBServerCLExe',
 			],
 			darwin: [
 				'JLinkGDBServerCLExe',

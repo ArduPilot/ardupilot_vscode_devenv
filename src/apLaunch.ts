@@ -17,7 +17,7 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as vscode from 'vscode';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { targetToBin } from './apBuildConfig';
@@ -598,11 +598,19 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					this.debugSessionTerminal = new apTerminalMonitor('ArduPilot SITL');
 					await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
 					// we push following commands back to back without waiting, as most of them will run till debugging is over.
-					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
+					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`).catch(error => {
+						APLaunchConfigurationProvider.log.log(`Failed to create tmux session: ${error}`);
+					});
 					await new Promise(resolve => setTimeout(resolve, 1000)); // Give tmux a moment to start
-					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`);
-					this.debugSessionTerminal.runCommand(`"${tmuxPath}" set mouse on`);
-					this.debugSessionTerminal.runCommand(simVehicleCmd);
+					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`).catch(error => {
+						APLaunchConfigurationProvider.log.log(`Failed to create tmux session: ${error}`);
+					});
+					this.debugSessionTerminal.runCommand(`"${tmuxPath}" set mouse on`).catch(error => {
+						APLaunchConfigurationProvider.log.log(`Failed to set mouse on: ${error}`);
+					});
+					this.debugSessionTerminal.runCommand(simVehicleCmd).catch(error => {
+						APLaunchConfigurationProvider.log.log(`Failed to start SITL simulation: ${error}`);
+					}); // we don't await here as this is the main command that will start the simulation
 
 					// Wait for ArduPilot process to start and get its PID
 					try {
@@ -680,11 +688,19 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
 					// we push following commands back to back without waiting, as most of them will run till debugging is over.
 					// Check if tmux session already exists before creating it
-					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`, { nonblocking: true });
+					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`, { nonblocking: true }).catch(error => {
+						APLaunchConfigurationProvider.log.log(`Failed to create tmux session: ${error}`);
+					});
 					await new Promise(resolve => setTimeout(resolve, 1000)); // Give tmux a moment to start
-					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`, { nonblocking: true });
-					this.debugSessionTerminal.runCommand(`"${tmuxPath}" set mouse on`);
-					this.debugSessionTerminal.runCommand(simVehicleCmd); // we don't await here as this is the main command that will start the simulation
+					this.debugSessionTerminal.runCommand(`if ! "${tmuxPath}" has-session -t "${this.tmuxSessionName}" 2>/dev/null; then ${tmuxCommand}; fi`, { nonblocking: true }).catch(error => {
+						APLaunchConfigurationProvider.log.log(`Failed to create tmux session: ${error}`);
+					});
+					this.debugSessionTerminal.runCommand(`"${tmuxPath}" set mouse on`).catch(error => {
+						APLaunchConfigurationProvider.log.log(`Failed to set mouse on: ${error}`);
+					});
+					this.debugSessionTerminal.runCommand(simVehicleCmd).catch(error => {
+						APLaunchConfigurationProvider.log.log(`Failed to start SITL simulation: ${error}`);
+					}); // we don't await here as this is the main command that will start the simulation
 
 					// Create a debug configuration for the C++ debugger
 					const cppDebugConfig = {
@@ -726,7 +742,9 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				const uploadCommand = `${await ProgramUtils.PYTHON()} ${apConfig.waffile} ${apConfig.target} --upload`;
 				APLaunchConfigurationProvider.log.log(`Running upload command: ${uploadCommand}`);
 
-				this.debugSessionTerminal.runCommand(uploadCommand);
+				this.debugSessionTerminal.runCommand(uploadCommand).catch(error => {
+					APLaunchConfigurationProvider.log.log(`Failed to run upload command: ${error}`);
+				});
 			}
 
 			// If we're here and we're not debugging, return undefined

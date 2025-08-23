@@ -25,18 +25,20 @@ import { ValidateEnvironmentPanel, ValidateEnvironment } from './apEnvironmentVa
 import { apTerminalMonitor } from './apTerminalMonitor';
 import { ProgramUtils } from './apProgramUtils';
 import { TOOLS_REGISTRY } from './apToolsConfig';
+import { FireAndForget } from './apCommonUtils';
 
 export class UIHooks {
 	_panel: vscode.WebviewPanel;
 	_disposables: vscode.Disposable[] = [];
 	listeners: { [event: string]: ((data: Record<string, unknown>) => void)[] } = {};
-	private static log = new apLog('uiHooks').log;
+	private static logger = new apLog('uiHooks');
+	private static log = UIHooks.logger.log;
 
 	constructor(panel: vscode.WebviewPanel, private _extensionUri: vscode.Uri) {
 		this._panel = panel;
 		this._panel.webview.onDidReceiveMessage(
 			message => {
-				this._onMessage(message);
+				void this._onMessage(message);
 			},
 			null,
 			this._disposables);
@@ -47,6 +49,7 @@ export class UIHooks {
 		this._disposables.forEach(d => d.dispose());
 	}
 
+	@FireAndForget({ apLog: UIHooks.logger })
 	private async _onMessage(message: Record<string, unknown>): Promise<void> {
 		// call the listeners matching message.command
 		const command = message.command as string;
@@ -66,25 +69,25 @@ export class UIHooks {
 
 		switch (command) {
 		case 'getTasksList':
-			this.getTasksList();
+			void this.getTasksList();
 			break;
 		case 'build':
 			// unhandled here
 			break;
 		case 'getFeaturesList':
-			this.getFeaturesList();
+			void this.getFeaturesList();
 			break;
 		case 'extractFeatures':
-			this.extractFeatures(message);
+			void this.extractFeatures(message);
 			break;
 		case 'getConfigureOptions':
-			this.getConfigureOptions();
+			void this.getConfigureOptions();
 			break;
 		case 'getSITLOptions':
-			this.getSITLOptions();
+			void this.getSITLOptions();
 			break;
 		case 'getBuildCommands':
-			this.getBuildCommands(message);
+			void this.getBuildCommands(message);
 			break;
 		case 'close':
 			this._panel.dispose();
@@ -100,6 +103,7 @@ export class UIHooks {
 		}
 	}
 
+	@FireAndForget({ apLog: UIHooks.logger, showErrorPopup: true })
 	private async getTasksList(): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (workspaceRoot === undefined) {
@@ -113,7 +117,9 @@ export class UIHooks {
 		if (pythonPath) {
 			try {
 				await terminalMonitor.runCommand(`${pythonPath} ${workspaceRoot}/waf generate_tasklist`);
-				terminalMonitor.dispose();
+				terminalMonitor.dispose().catch(error => {
+					UIHooks.log(`Error disposing terminal monitor: ${error}`);
+				});
 			} catch (error) {
 				UIHooks.log(`Error generating tasks list: ${error}`);
 				vscode.window.showErrorMessage(`Error generating tasks list: ${error}`);
@@ -134,11 +140,13 @@ export class UIHooks {
 		}
 	}
 
+	@FireAndForget({ apLog: UIHooks.logger, showErrorPopup: true })
 	public async getFeaturesList(): Promise<void> {
 		const featuresList = await getFeaturesList(this._extensionUri);
 		this._panel.webview.postMessage({ command: 'getFeaturesList', featuresList });
 	}
 
+	@FireAndForget({ apLog: UIHooks.logger, showErrorPopup: true })
 	public async extractFeatures(message: Record<string, unknown>): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
@@ -229,6 +237,7 @@ export class UIHooks {
 		this.listeners[event].push(listener);
 	}
 
+	@FireAndForget({ apLog: UIHooks.logger, showErrorPopup: true })
 	public async getConfigureOptions(): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
@@ -306,6 +315,7 @@ export class UIHooks {
 		}
 	}
 
+	@FireAndForget({ apLog: UIHooks.logger, showErrorPopup: true })
 	public async getSITLOptions(): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
@@ -484,6 +494,7 @@ export class UIHooks {
 		return options;
 	}
 
+	@FireAndForget({ apLog: UIHooks.logger, showErrorPopup: true })
 	public async getBuildCommands(message: Record<string, unknown>): Promise<void> {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {

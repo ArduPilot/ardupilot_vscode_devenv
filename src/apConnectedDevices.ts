@@ -318,14 +318,16 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 
 		// Handle devices that have been removed
 		const devicesToRemove: string[] = [];
-		apConnectedDevices.connectedDevicesList.forEach((device, path) => {
+		apConnectedDevices.connectedDevicesList.forEach(async (device, path) => {
 			if (!currentDevicePaths.has(path)) {
 				// Device is no longer connected
 				devicesToRemove.push(path);
 
 				// If it was connected to MAVProxy, clean up
 				if (device.isMavproxyConnected) {
-					this.disconnectDevice(device);
+					this.disconnectDevice(device).catch(
+						(error) => this.log.log(`Error disconnecting device ${device.path}: ${error}`)
+					);
 				}
 			}
 		});
@@ -509,7 +511,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			`, { eval: true });
 
 			worker.on('message', (result) => {
-				worker.terminate();
+				worker.terminate().catch(err => this.log.log(`Error terminating worker: ${err}`));
 				if (result.success) {
 					resolve(result.stdout);
 				} else {
@@ -518,7 +520,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			});
 
 			worker.on('error', (error) => {
-				worker.terminate();
+				worker.terminate().catch(err => this.log.log(`Error terminating worker: ${err}`));
 				reject(error);
 			});
 
@@ -976,7 +978,10 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 					this.handleTerminalClosed(device.path);
 				}
 			}
-		);
+		).catch((error) => {
+			vscode.window.showErrorMessage(`Error starting MAVProxy: ${error}`);
+			this.log.log(`Error starting MAVProxy: ${error}`);
+		});
 
 		this.log.log(`Started MAVProxy connection to ${devicePath} at ${baudRate} baud using ${this.isWSL ? 'mavproxy.exe (WSL)' : 'mavproxy.py'}`);
 	}
@@ -1018,6 +1023,8 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 				this.setMavproxyConnection(devicePath, false);
 				this.refresh();
 			}
+		}).catch(error => {
+			this.log.log(`Error refreshing device state for ${devicePath}: ${error}`);
 		});
 
 		this.log.log(`Terminal closed for device ${devicePath}`);

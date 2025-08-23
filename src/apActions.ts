@@ -22,6 +22,7 @@ import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { ProgramUtils } from './apProgramUtils';
 import { TOOLS_REGISTRY } from './apToolsConfig';
 import { targetToVehicleType } from './apLaunch';
+import { FireAndForget } from './apCommonUtils';
 
 // Interface for launch configuration
 interface LaunchConfiguration {
@@ -186,7 +187,8 @@ async function updateCppProperties(boardName: string): Promise<void> {
 
 // TreeItem representing an action
 export class apActionItem extends vscode.TreeItem {
-	private static log = new apLog('apActionItem').log;
+	private static logger = new apLog('apActionItem');
+	private static log = apActionItem.logger.log;
 
 	constructor(
 		private _actionsProvider: apActionsProvider,
@@ -245,7 +247,7 @@ export class apActionItem extends vscode.TreeItem {
 			this.uploadFirmware();
 			break;
 		case 'run':
-			this.runFirmware();
+			void this.runFirmware();
 			break;
 		case 'configure':
 			this.configure();
@@ -427,6 +429,7 @@ export class apActionItem extends vscode.TreeItem {
 		}
 	}
 
+	@FireAndForget({ apLog: apActionItem.logger, showErrorPopup: true })
 	private async runFirmware(): Promise<void> {
 		if (!activeConfiguration) {
 			vscode.window.showErrorMessage('No active configuration selected');
@@ -505,7 +508,7 @@ export class apActionItem extends vscode.TreeItem {
 
 	private configure(): void {
 		// Show quick pick to select a configuration
-		this._actionsProvider.showConfigurationSelector();
+		void this._actionsProvider.showConfigurationSelector();
 	}
 }
 
@@ -513,29 +516,31 @@ export class apActionItem extends vscode.TreeItem {
 export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> {
 	private _onDidChangeTreeData: vscode.EventEmitter<apActionItem | undefined> = new vscode.EventEmitter<apActionItem | undefined>();
 	readonly onDidChangeTreeData: vscode.Event<apActionItem | undefined> = this._onDidChangeTreeData.event;
-	private log = new apLog('apActionsProvider');
+	private static logger = new apLog('apActionsProvider');
+	private log = apActionsProvider.logger.log;
+
 	public context: vscode.ExtensionContext;
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
-		this.log.log('apActionsProvider constructor');
+		this.log('apActionsProvider constructor');
 
 		// Listen for task events to detect when tasks are started/ended
 		vscode.tasks.onDidStartTask(e => {
 			const taskDef = e.execution.task.definition;
 			if (taskDef.type === 'ardupilot') {
-				this.log.log(`Task started: ${taskDef.configName}`);
+				this.log(`Task started: ${taskDef.configName}`);
 				activeConfiguration = e.execution.task;
 				this.refresh();
 			}
 		});
 
 		// Try to find a default active configuration
-		this.loadDefaultActiveConfiguration();
+		void this.loadDefaultActiveConfiguration();
 	}
 
 	refresh(): void {
-		this.log.log('Refreshing actions view');
+		this.log('Refreshing actions view');
 		this._onDidChangeTreeData.fire(undefined);
 		vscode.commands.executeCommand('apBuildConfig.refreshEntry');
 	}
@@ -545,6 +550,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 	}
 
 	// Load the default active configuration from workspace settings or tasks
+	@FireAndForget({ apLog: apActionsProvider.logger, showErrorPopup: true })
 	private async loadDefaultActiveConfiguration(): Promise<void> {
 		// Check if we have a saved active configuration
 		const taskConfig = vscode.workspace.getConfiguration('ardupilot');
@@ -563,7 +569,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 
 			if (matchingTask) {
 				setActiveConfiguration(matchingTask);
-				this.log.log(`Loaded active configuration: ${activeConfigName}`);
+				this.log(`Loaded active configuration: ${activeConfigName}`);
 				this.refresh();
 				return;
 			}
@@ -577,11 +583,12 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 
 		if (arduPilotTasks.length > 0) {
 			setActiveConfiguration(arduPilotTasks[0]);
-			this.log.log(`Using default configuration: ${activeConfiguration?.definition.configName}`);
+			this.log(`Using default configuration: ${activeConfiguration?.definition.configName}`);
 			this.refresh();
 		}
 	}
 
+	@FireAndForget({ apLog: apActionsProvider.logger, showErrorPopup: true })
 	async showConfigurationSelector(): Promise<void> {
 		// Fetch all available tasks
 		const tasks = await vscode.tasks.fetchTasks();
@@ -615,7 +622,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 		if (selected) {
 			// Set the selected task as active
 			setActiveConfiguration(selected.task);
-			this.log.log(`Set active configuration to: ${selected.label}`);
+			this.log(`Set active configuration to: ${selected.label}`);
 
 			// Save the selection to workspace settings if workspace is available
 			if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
@@ -626,10 +633,10 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 						vscode.ConfigurationTarget.Workspace
 					);
 				} catch (error) {
-					this.log.log(`Error saving active configuration: ${error}`);
+					this.log(`Error saving active configuration: ${error}`);
 				}
 			} else {
-				this.log.log('No workspace available to save active configuration');
+				this.log('No workspace available to save active configuration');
 			}
 
 			this.refresh();
@@ -637,7 +644,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 	}
 
 	getChildren(): Thenable<apActionItem[]> {
-		this.log.log('Getting action items');
+		this.log('Getting action items');
 
 		const actionItems: apActionItem[] = [];
 

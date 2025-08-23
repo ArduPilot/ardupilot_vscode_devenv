@@ -29,6 +29,7 @@ import { apTerminalMonitor } from './apTerminalMonitor';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { FireAndForget } from './apCommonUtils';
 
 export class ValidateEnvironment extends apWelcomeItem {
 	static log = new apLog('validateEnvironment');
@@ -51,8 +52,8 @@ export class ValidateEnvironment extends apWelcomeItem {
 	];
 
 	constructor(
-		public readonly label: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState
+		label: string,
+		collapsibleState: vscode.TreeItemCollapsibleState
 	) {
 		super(label, collapsibleState);
 		vscode.commands.registerCommand('apValidateEnv', () => ValidateEnvironment.run());
@@ -152,20 +153,20 @@ export class ValidateEnvironmentPanel {
 			this._sendToolsList();
 			this._sendPythonPackagesList();
 			this._sendEnvChecksList();
-			this._validateEnvironment();
+			void this._validateEnvironment();
 		}, 500);
 	}
 
 	private _onReceiveMessage(message: {command: string, toolId: string, toolName: string, envCheckId?: string}): void {
 		switch (message.command) {
 		case 'checkEnvironment':
-			this._validateEnvironment();
+			void this._validateEnvironment();
 			break;
 		case 'configureToolPath':
-			this._configureToolPath(message.toolId, message.toolName);
+			void this._configureToolPath(message.toolId, message.toolName);
 			break;
 		case 'resetAllPaths':
-			this._resetAllToolPaths();
+			void this._resetAllToolPaths();
 			break;
 		case 'launchWSL':
 			this._launchWSL();
@@ -266,146 +267,151 @@ export class ValidateEnvironmentPanel {
 	}
 
 	private async _validateEnvironment(): Promise<void> {
-		// First check if the platform is supported
-		this._checkPlatform();
+		try {
+			// First check if the platform is supported
+			this._checkPlatform();
 
-		// If we're on Windows, don't proceed with tool validation
-		if (process.platform === 'win32') {
-			return;
-		}
-
-		// Registry-driven tool validation - iterate through all tools
-		const toolChecks: Array<{ key: string; toolInfo: apToolsConfig.ToolInfo; promise: Promise<ProgramInfo> }> = [];
-
-		// Iterate through registry and create checks for supported tools
-		for (const [toolKey, toolInfo] of Object.entries(apToolsConfig.TOOLS_REGISTRY)) {
-			// Skip tools not supported on current platform
-			if (!this._isToolSupportedOnPlatform(toolInfo)) {
-				continue;
+			// If we're on Windows, don't proceed with tool validation
+			if (process.platform === 'win32') {
+				return;
 			}
 
-			// Special handling for ccache (has custom validation logic)
-			if (toolKey === 'CCACHE') {
+			// Registry-driven tool validation - iterate through all tools
+			const toolChecks: Array<{ key: string; toolInfo: apToolsConfig.ToolInfo; promise: Promise<ProgramInfo> }> = [];
+
+			// Iterate through registry and create checks for supported tools
+			for (const [toolKey, toolInfo] of Object.entries(apToolsConfig.TOOLS_REGISTRY)) {
+				// Skip tools not supported on current platform
+				if (!this._isToolSupportedOnPlatform(toolInfo)) {
+					continue;
+				}
+
+				// Special handling for ccache (has custom validation logic)
+				if (toolKey === 'CCACHE') {
+					toolChecks.push({
+						key: toolKey,
+						toolInfo,
+						promise: this._checkCCache().catch((error: unknown) => ({
+							available: false,
+							isCustomPath: false,
+							info: error instanceof Error ? error.message : String(error)
+						}))
+					});
+					continue;
+				}
+
+				// Standard tool validation using registry
 				toolChecks.push({
 					key: toolKey,
 					toolInfo,
-					promise: this._checkCCache().catch((error: unknown) => ({
+					promise: ProgramUtils.findProgram(toolInfo).catch((error: unknown) => ({
 						available: false,
 						isCustomPath: false,
 						info: error instanceof Error ? error.message : String(error)
 					}))
 				});
-				continue;
 			}
 
-			// Standard tool validation using registry
-			toolChecks.push({
-				key: toolKey,
-				toolInfo,
-				promise: ProgramUtils.findProgram(toolInfo).catch((error: unknown) => ({
-					available: false,
-					isCustomPath: false,
-					info: error instanceof Error ? error.message : String(error)
-				}))
-			});
-		}
+			// Environment checks using registry
+			const platform = process.platform;
+			const isWSL = ProgramUtils.isWSL();
+			const envChecks: Array<{ key: string; info: apToolsConfig.EnvCheckInfo; checkCommand: string }> = [];
 
-		// Environment checks using registry
-		const platform = process.platform;
-		const isWSL = ProgramUtils.isWSL();
-		const envChecks: Array<{ key: string; info: apToolsConfig.EnvCheckInfo; checkCommand: string }> = [];
+			// Get environment checks for current platform
+			for (const [key, info] of Object.entries(apToolsConfig.ENV_CHECK_REGISTRY)) {
+				let checkCommand: string | undefined;
 
-		// Get environment checks for current platform
-		for (const [key, info] of Object.entries(apToolsConfig.ENV_CHECK_REGISTRY)) {
-			let checkCommand: string | undefined;
+				if (isWSL && 'wsl' in info.checks && info.checks.wsl) {
+					checkCommand = info.checks.wsl;
+				} else if (platform === 'linux' && 'linux' in info.checks && info.checks.linux) {
+					checkCommand = info.checks.linux;
+				} else if (platform === 'darwin' && 'darwin' in info.checks && info.checks.darwin) {
+					checkCommand = info.checks.darwin;
+				}
 
-			if (isWSL && 'wsl' in info.checks && info.checks.wsl) {
-				checkCommand = info.checks.wsl;
-			} else if (platform === 'linux' && 'linux' in info.checks && info.checks.linux) {
-				checkCommand = info.checks.linux;
-			} else if (platform === 'darwin' && 'darwin' in info.checks && info.checks.darwin) {
-				checkCommand = info.checks.darwin;
+				if (checkCommand) {
+					envChecks.push({
+						key,
+						info: info as apToolsConfig.EnvCheckInfo,
+						checkCommand
+					});
+				}
 			}
 
-			if (checkCommand) {
-				envChecks.push({
-					key,
-					info: info as apToolsConfig.EnvCheckInfo,
-					checkCommand
-				});
+			const envCheckPromises = envChecks.map(({ key, info, checkCommand }) =>
+				this._runEnvironmentCheck(key, info, checkCommand)
+			);
+
+			// Python package checks
+			const pythonPackagesCheck = ProgramUtils.checkAllPythonPackages();
+
+			// Await all tool checks, environment checks, and Python packages
+			const [toolResults, envCheckResults, pythonPackagesResult] = await Promise.all([
+				Promise.all(toolChecks.map(check => check.promise)),
+				Promise.all(envCheckPromises),
+				pythonPackagesCheck.catch(() => [])
+			]);
+
+			// Report tool results to webview using registry keys as IDs
+			for (let i = 0; i < toolChecks.length; i++) {
+				const toolCheck = toolChecks[i];
+				const result = toolResults[i];
+
+				// Report using registry key as tool ID
+				this._reportToolStatus(toolCheck.key, result);
 			}
-		}
 
-		const envCheckPromises = envChecks.map(({ key, info, checkCommand }) =>
-			this._runEnvironmentCheck(key, info, checkCommand)
-		);
+			// Report environment check results
+			for (let i = 0; i < envChecks.length; i++) {
+				const envCheck = envChecks[i];
+				const result = envCheckResults[i];
 
-		// Python package checks
-		const pythonPackagesCheck = ProgramUtils.checkAllPythonPackages();
-
-		// Await all tool checks, environment checks, and Python packages
-		const [toolResults, envCheckResults, pythonPackagesResult] = await Promise.all([
-			Promise.all(toolChecks.map(check => check.promise)),
-			Promise.all(envCheckPromises),
-			pythonPackagesCheck.catch(() => [])
-		]);
-
-		// Report tool results to webview using registry keys as IDs
-		for (let i = 0; i < toolChecks.length; i++) {
-			const toolCheck = toolChecks[i];
-			const result = toolResults[i];
-
-			// Report using registry key as tool ID
-			this._reportToolStatus(toolCheck.key, result);
-		}
-
-		// Report environment check results
-		for (let i = 0; i < envChecks.length; i++) {
-			const envCheck = envChecks[i];
-			const result = envCheckResults[i];
-
-			// Report using registry key as environment check ID
-			this._reportEnvCheckStatus(envCheck.key, result);
-		}
-
-		// Report Python packages results
-		for (const {packageName, result} of pythonPackagesResult) {
-			this._reportPackageStatus(packageName, result);
-		}
-
-		// Check if any Python packages are missing to show install button
-		const hasMissingPackages = pythonPackagesResult.some(({result}) => !result.available);
-		this._updateInstallPackagesButton(hasMissingPackages);
-
-		// Generate summary - collect results for required tools (non-optional)
-		const summaryResults: ProgramInfo[] = [];
-		for (let i = 0; i < toolChecks.length; i++) {
-			const toolCheck = toolChecks[i];
-			const result = toolResults[i];
-
-			// Include only non-optional tools in summary
-			if (!toolCheck.toolInfo.optional) {
-				summaryResults.push(result);
+				// Report using registry key as environment check ID
+				this._reportEnvCheckStatus(envCheck.key, result);
 			}
-		}
 
-		// Collect environment check results for required checks
-		const envCheckSummaryResults: ProgramInfo[] = [];
-		for (let i = 0; i < envChecks.length; i++) {
-			const envCheck = envChecks[i];
-			const result = envCheckResults[i];
-
-			// Include only required environment checks in summary
-			if (envCheck.info.required !== false) {
-				envCheckSummaryResults.push(result);
+			// Report Python packages results
+			for (const {packageName, result} of pythonPackagesResult) {
+				this._reportPackageStatus(packageName, result);
 			}
-		}
 
-		// Only generate summary if we have actual environment check results
+			// Check if any Python packages are missing to show install button
+			const hasMissingPackages = pythonPackagesResult.some(({result}) => !result.available);
+			this._updateInstallPackagesButton(hasMissingPackages);
 
-		// Ensure we have results for all environment checks before showing summary
-		if (envChecks.length === 0 || envCheckResults.length === envChecks.length) {
-			this._generateSummary(summaryResults, envCheckSummaryResults);
+			// Generate summary - collect results for required tools (non-optional)
+			const summaryResults: ProgramInfo[] = [];
+			for (let i = 0; i < toolChecks.length; i++) {
+				const toolCheck = toolChecks[i];
+				const result = toolResults[i];
+
+				// Include only non-optional tools in summary
+				if (!toolCheck.toolInfo.optional) {
+					summaryResults.push(result);
+				}
+			}
+
+			// Collect environment check results for required checks
+			const envCheckSummaryResults: ProgramInfo[] = [];
+			for (let i = 0; i < envChecks.length; i++) {
+				const envCheck = envChecks[i];
+				const result = envCheckResults[i];
+
+				// Include only required environment checks in summary
+				if (envCheck.info.required !== false) {
+					envCheckSummaryResults.push(result);
+				}
+			}
+
+			// Only generate summary if we have actual environment check results
+
+			// Ensure we have results for all environment checks before showing summary
+			if (envChecks.length === 0 || envCheckResults.length === envChecks.length) {
+				this._generateSummary(summaryResults, envCheckSummaryResults);
+			}
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to validate environment: ${(error as Error).message ?? String(error)}`);
+			ValidateEnvironmentPanel.log.log(`Error validating environment: ${(error as Error).stack ?? String(error)}`);
 		}
 	}
 
@@ -513,7 +519,7 @@ export class ValidateEnvironmentPanel {
 
 								// Auto-refresh validation after successful installation
 								setTimeout(() => {
-									instance._validateEnvironment();
+									void instance._validateEnvironment();
 								}, 1000); // Small delay to ensure installation has completed
 
 								resolve();
@@ -750,71 +756,77 @@ export class ValidateEnvironmentPanel {
 	 * @param toolName The display name of the tool
 	 */
 	private async _configureToolPath(toolId: string, toolName: string): Promise<void> {
-		// Get the existing tool info to use its directory as default location
-		const toolInfo = apToolsConfig.TOOLS_REGISTRY[toolId as apToolsConfig.ToolID];
-		if (!toolInfo) {
-			vscode.window.showErrorMessage(`Tool '${toolId}' not found in registry`);
-			return;
-		}
-		const existingToolInfo = await ProgramUtils.findProgram(toolInfo);
-		const existingToolPath = existingToolInfo.path;
-
-		// Show open file dialog to select the tool executable
-		const options: vscode.OpenDialogOptions = {
-			canSelectMany: false,
-			openLabel: `Select ${toolName} Executable`,
-			filters: {
-				'Executable Files': ['*'],
-				'All Files': ['*']
+		try {
+			// Get the existing tool info to use its directory as default location
+			const toolInfo = apToolsConfig.TOOLS_REGISTRY[toolId as apToolsConfig.ToolID];
+			if (!toolInfo) {
+				vscode.window.showErrorMessage(`Tool '${toolId}' not found in registry`);
+				return;
 			}
-		};
+			const existingToolInfo = await ProgramUtils.findProgram(toolInfo);
+			const existingToolPath = existingToolInfo.path;
 
-		// If there's an existing tool path, set the default URI to its directory
-		// Otherwise, open the home directory
-		if (existingToolPath && fs.existsSync(existingToolPath)) {
-			const toolDir = path.dirname(existingToolPath);
-			options.defaultUri = vscode.Uri.file(toolDir);
-		} else {
-			const homeDir = os.homedir();
-			options.defaultUri = vscode.Uri.file(homeDir);
-		}
-
-		const fileUri = await vscode.window.showOpenDialog(options);
-		if (fileUri && fileUri.length > 0) {
-			const filePath = fileUri[0].fsPath;
-
-			try {
-				// Verify the file exists and is executable
-				const stat = fs.statSync(filePath);
-
-				if (!stat.isFile()) {
-					vscode.window.showErrorMessage(`${filePath} is not a file.`);
-					return;
+			// Show open file dialog to select the tool executable
+			const options: vscode.OpenDialogOptions = {
+				canSelectMany: false,
+				openLabel: `Select ${toolName} Executable`,
+				filters: {
+					'Executable Files': ['*'],
+					'All Files': ['*']
 				}
+			};
 
-				// Save the custom path in the configuration
-				apToolsConfig.ToolsConfig.setToolPath(toolId as apToolsConfig.ToolID, filePath);
-
-				// Notify the webview that configuration was saved
-				this._panel.webview.postMessage({
-					command: 'configurationSaved'
-				});
-
-				// Show success message
-				vscode.window.showInformationMessage(`Custom path for ${toolName} saved successfully.`);
-
-				// Run validation again to check with the new path
-				this._validateEnvironment();
-
-			} catch (error) {
-				vscode.window.showErrorMessage(`Error configuring custom path: ${error}`);
+			// If there's an existing tool path, set the default URI to its directory
+			// Otherwise, open the home directory
+			if (existingToolPath && fs.existsSync(existingToolPath)) {
+				const toolDir = path.dirname(existingToolPath);
+				options.defaultUri = vscode.Uri.file(toolDir);
+			} else {
+				const homeDir = os.homedir();
+				options.defaultUri = vscode.Uri.file(homeDir);
 			}
+
+			const fileUri = await vscode.window.showOpenDialog(options);
+			if (fileUri && fileUri.length > 0) {
+				const filePath = fileUri[0].fsPath;
+
+				try {
+					// Verify the file exists and is executable
+					const stat = fs.statSync(filePath);
+
+					if (!stat.isFile()) {
+						vscode.window.showErrorMessage(`${filePath} is not a file.`);
+						return;
+					}
+
+					// Save the custom path in the configuration
+					apToolsConfig.ToolsConfig.setToolPath(toolId as apToolsConfig.ToolID, filePath);
+
+					// Notify the webview that configuration was saved
+					this._panel.webview.postMessage({
+						command: 'configurationSaved'
+					});
+
+					// Show success message
+					vscode.window.showInformationMessage(`Custom path for ${toolName} saved successfully.`);
+
+					// Run validation again to check with the new path
+					void this._validateEnvironment();
+
+				} catch (error) {
+					vscode.window.showErrorMessage(`Error configuring custom path: ${error}`);
+				}
+			}
+		} catch (error) {
+			vscode.window.showErrorMessage(`Error configuring custom path: ${error}`);
+			ValidateEnvironmentPanel.log.log(`Error configuring custom path for ${toolName}: ${(error as Error).stack ?? String(error)}`);
 		}
 	}
 
 	/**
 	 * Resets all custom tool paths
 	 */
+	@FireAndForget({ apLog: ValidateEnvironmentPanel.log })
 	private async _resetAllToolPaths(): Promise<void> {
 		// Confirm with the user
 		vscode.window.showWarningMessage(
@@ -839,7 +851,7 @@ export class ValidateEnvironmentPanel {
 				vscode.window.showInformationMessage('All custom tool paths have been reset.');
 
 				// Run validation again to check with default paths
-				this._validateEnvironment();
+				void this._validateEnvironment();
 			}
 		});
 	}
@@ -875,7 +887,7 @@ export class ValidateEnvironmentPanel {
 				vscode.window.showInformationMessage(`Python interpreter set to: ${interpreterPath}`);
 
 				// Refresh the validation to show the new interpreter
-				this._validateEnvironment();
+				void this._validateEnvironment();
 			}
 		} catch (error) {
 			ValidateEnvironmentPanel.log.log(`Error selecting Python interpreter: ${error}`);
@@ -991,7 +1003,7 @@ export class ValidateEnvironmentPanel {
 				if (instance && result.exitCode === 0) {
 					ValidateEnvironmentPanel.log.log('Package installation successful, refreshing validation...');
 					setTimeout(() => {
-						instance._validateEnvironment();
+						void instance._validateEnvironment();
 					}, 1000); // Small delay to ensure pip install has completed
 				}
 
@@ -1165,7 +1177,7 @@ export class ValidateEnvironmentPanel {
 
 					// Auto-refresh validation after successful fix
 					setTimeout(() => {
-						instance._validateEnvironment();
+						void instance._validateEnvironment();
 					}, 1000); // Small delay to ensure fix has completed
 				} else {
 					const errorMsg = `Fix failed with exit code ${result.exitCode}`;
