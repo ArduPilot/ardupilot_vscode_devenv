@@ -536,7 +536,10 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 		});
 
 		// Try to find a default active configuration
-		void this.loadDefaultActiveConfiguration();
+		this.loadDefaultActiveConfiguration().catch(err => {
+			this.log(`Error loading default active configuration: ${err}`);
+			vscode.window.showErrorMessage(`Error loading default active configuration: ${err.message ?? err}`);
+		});
 	}
 
 	refresh(): void {
@@ -550,7 +553,6 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 	}
 
 	// Load the default active configuration from workspace settings or tasks
-	@FireAndForget({ apLog: apActionsProvider.logger, showErrorPopup: true })
 	private async loadDefaultActiveConfiguration(): Promise<void> {
 		// Check if we have a saved active configuration
 		const taskConfig = vscode.workspace.getConfiguration('ardupilot');
