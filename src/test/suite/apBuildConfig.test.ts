@@ -55,8 +55,8 @@ suite('apBuildConfig Test Suite', () => {
 	suite('apBuildConfig', () => {
 		let mockTask: vscode.Task | undefined;
 
-		setup(() => {
-			mockTask = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
+		setup(async () => {
+			mockTask = await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 		});
 
 		test('should create build config item with correct properties', () => {
@@ -74,11 +74,11 @@ suite('apBuildConfig Test Suite', () => {
 			assert.strictEqual(buildConfig.contextValue, 'apBuildConfig');
 		});
 
-		test('should switch between active configurations correctly', () => {
+		test('should switch between active configurations correctly', async () => {
 			// Create multiple tasks with different configurations using getOrCreateBuildConfig
-			const mockTask1 = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
-			const mockTask2 = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane', 'CubeOrange-plane');
-			const mockTask3 = APTaskProvider.getOrCreateBuildConfig('CubeOrangePlus', 'rover', 'CubeOrangePlus-rover');
+			const mockTask1 = await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
+			const mockTask2 = await APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane', 'CubeOrange-plane');
+			const mockTask3 = await APTaskProvider.getOrCreateBuildConfig('CubeOrangePlus', 'rover', 'CubeOrangePlus-rover');
 
 			assert.ok(mockTask1, 'mockTask1 should be created');
 			assert.ok(mockTask2, 'mockTask2 should be created');
@@ -260,8 +260,8 @@ suite('apBuildConfig Test Suite', () => {
 			assert.strictEqual(buildConfigProvider.context, mockContext);
 		});
 
-		test('should return correct tree item', () => {
-			const mockTask = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
+		test('should return correct tree item', async () => {
+			const mockTask = await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 			assert.ok(mockTask, 'mockTask should be created');
 
 			const buildConfig = new apBuildConfig(
@@ -399,8 +399,8 @@ suite('apBuildConfig Test Suite', () => {
 
 	suite('Configuration State Management', () => {
 		test('should handle configuration changes', async () => {
-			const mockTask1 = APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
-			const mockTask2 = APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane', 'CubeOrange-plane');
+			const mockTask1 = await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
+			const mockTask2 = await APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane', 'CubeOrange-plane');
 
 			assert.ok(mockTask1, 'mockTask1 should be created');
 			assert.ok(mockTask2, 'mockTask2 should be created');
