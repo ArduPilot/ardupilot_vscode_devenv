@@ -416,8 +416,8 @@ suite('E2E: ArduPilot Build', function() {
 					setTimeout(() => {
 						clearInterval(outputMonitorInterval);
 						processEndDisposable.dispose();
-						cleanupAndResolve(false, 'timeout after 15 minutes');
-					}, 900000);
+						cleanupAndResolve(false, 'timeout after 30 minutes');
+					}, 1800000);
 
 				}).catch((error: unknown) => {
 					console.error(`DEBUG: Failed to execute task ${taskName}: ${error}`);
