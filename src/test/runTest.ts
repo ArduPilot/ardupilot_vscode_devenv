@@ -4,8 +4,42 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { runTests, downloadAndUnzipVSCode, resolveCliArgsFromVSCodeExecutablePath } from '@vscode/test-electron';
 import * as fg from 'fast-glob';
+import * as os from 'os';
 
 const execAsync = promisify(exec);
+
+async function cleanupTempDirectory(tempDir: string, ardupilotDir: string): Promise<void> {
+	console.log(`Cleaning up temporary directory except ArduPilot: ${tempDir}`);
+
+	if (!fs.existsSync(tempDir)) {
+		return;
+	}
+
+	try {
+		// Get all items in temp directory
+		const items = fs.readdirSync(tempDir);
+
+		for (const item of items) {
+			const itemPath = path.join(tempDir, item);
+			const ardupilotDirName = path.basename(ardupilotDir);
+
+			// Skip the ArduPilot directory
+			if (item === ardupilotDirName) {
+				continue;
+			}
+
+			// Remove everything else
+			console.log(`Removing: ${itemPath}`);
+			if (fs.statSync(itemPath).isDirectory()) {
+				fs.rmSync(itemPath, { recursive: true, force: true });
+			} else {
+				fs.unlinkSync(itemPath);
+			}
+		}
+	} catch (error) {
+		console.warn(`Failed to clean up temp directory: ${error}`);
+	}
+}
 
 async function installExtension(vscodeExecutablePath: string, extensionId: string): Promise<void> {
 	console.log(`Installing extension: ${extensionId}`);
@@ -114,20 +148,54 @@ async function main() {
 				continue;
 			}
 			console.log(`Running test file: ${testFile}`);
+
+			// Create fresh temporary directory for each test suite
+			const tempDir = path.join(os.tmpdir(), `ardupilot-tests-${currentTestSuiteName}-${Date.now()}`);
+
+			// Clean up any existing temp directory
+			if (fs.existsSync(tempDir)) {
+				fs.rmSync(tempDir, { recursive: true, force: true });
+			}
+			fs.mkdirSync(tempDir, { recursive: true });
+
+			console.log(`Using temporary user directory: ${tempDir}`);
+
+			// Clean up temp directory except ArduPilot before running tests
+			await cleanupTempDirectory(tempDir, workspacePath);
+
 			// Set the TEST_SUITE environment variable to filter tests
 			process.env.TEST_SUITE = currentTestSuiteName;
-			// Run the test file
-			await runTests({
-				extensionDevelopmentPath,
-				extensionTestsPath: extensionTestsPath,
-				vscodeExecutablePath,
-				// Additional launch arguments
-				launchArgs: [
-					'--disable-workspace-trust', // Disable workspace trust prompt
-					workspacePath // Open the ArduPilot workspace
-				],
-			});
-			console.log(`Test file ${testFile} completed.`);
+
+			try {
+				// Run the test file
+				await runTests({
+					extensionDevelopmentPath,
+					extensionTestsPath: extensionTestsPath,
+					vscodeExecutablePath,
+					// Additional launch arguments
+					launchArgs: [
+						'--disable-gpu',
+						'--disable-dev-shm-usage',
+						'--no-sandbox',
+						'--disable-web-security',
+						'--disable-features=VizDisplayCompositor',
+						'--disable-background-timer-throttling',
+						'--disable-backgrounding-occluded-windows',
+						'--disable-renderer-backgrounding',
+						'--enable-unsafe-swiftshader',
+						'--disable-workspace-trust',
+						'--user-data-dir', tempDir, // Use isolated temporary directory for user data
+						workspacePath // Open the ArduPilot workspace
+					],
+				});
+				console.log(`Test file ${testFile} completed.`);
+			} finally {
+				// Clean up temporary directory after test completes
+				console.log(`Cleaning up temporary directory: ${tempDir}`);
+				if (fs.existsSync(tempDir)) {
+					fs.rmSync(tempDir, { recursive: true, force: true });
+				}
+			}
 		}
 	} catch (err) {
 		console.error('Failed to run tests:', err);
