@@ -162,13 +162,21 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 				}
 			}
 
-			// Verify installation result with findTool
+			// Verify installation result with findProgram
 			if (installationResults[toolId].installed) {
 				console.log(`DEBUG: Verifying installation for tool: ${toolId}`);
 				try {
-					const toolInfo = await ProgramUtils.findTool(toolId);
-					installationResults[toolId].installed = toolInfo.available;
-					console.log(`DEBUG: Tool ${toolId} verification - available: ${toolInfo.available}, path: ${toolInfo.path}`);
+					const { ToolsRegistryHelpers } = await import('../../apToolsConfig');
+					const allTools = ToolsRegistryHelpers.getAllTools();
+					const toolInfo = allTools.find(tool => tool.key === toolId);
+					if (toolInfo) {
+						const programInfo = await ProgramUtils.findProgram(toolInfo);
+						installationResults[toolId].installed = programInfo.available;
+						console.log(`DEBUG: Tool ${toolId} verification - available: ${programInfo.available}, path: ${programInfo.path}`);
+					} else {
+						console.log(`DEBUG: Tool ${toolId} not found in registry`);
+						installationResults[toolId].installed = false;
+					}
 				} catch (error) {
 					console.log(`DEBUG: Post-installation verification failed for ${toolId}: ${error}`);
 					installationResults[toolId].installed = false;
@@ -211,7 +219,7 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 		}
 
 		// Verify that we have at least some critical tools for the build process
-		const criticalTools = [ProgramUtils.ToolId.PYTHON, ProgramUtils.ToolId.GCC, ProgramUtils.ToolId.ARM_GCC];
+		const criticalTools = ['PYTHON', 'GCC', 'ARM_GCC'];
 		const availableCriticalTools = criticalTools.filter(toolId => {
 			const result = installationResults[toolId];
 			return result && (result.installed || result.supported);
