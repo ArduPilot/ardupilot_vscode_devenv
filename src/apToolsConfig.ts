@@ -162,6 +162,7 @@ export const TOOLS_REGISTRY = {
 		webUrl: 'https://www.segger.com/',
 		paths: {
 			linux: [
+				'JLinkGDBServerCLExe',
 				'/mnt/c/Program Files/SEGGER/JLink*/JLinkGDBServerCL.exe',
 				'/mnt/c/Program Files (x86)/SEGGER/JLink*/JLinkGDBServerCL.exe',
 				'/opt/SEGGER/JLink*/JLinkGDBServerCLExe'
