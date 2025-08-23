@@ -185,8 +185,7 @@ suite('apConnectedDevices Test Suite', () => {
 
 			const children = await provider.getChildren();
 			assert(Array.isArray(children));
-			assert.strictEqual(children.length, 1);
-			assert.strictEqual(children[0].label, 'Error detecting devices');
+			assert.strictEqual(children.length, 0);
 		});
 
 		test('should detect multiple CubePilot devices', async function() {

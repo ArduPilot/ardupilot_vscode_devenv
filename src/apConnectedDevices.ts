@@ -246,12 +246,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			});
 		} catch (error) {
 			this.log.log(`Error getting devices: ${error}`);
-			return [new ConnectedDeviceItem('Error detecting devices', vscode.TreeItemCollapsibleState.None, {
-				path: 'error',
-				vendorId: '',
-				productId: '',
-				manufacturer: String(error)
-			})];
+			return [];
 		}
 	}
 
