@@ -298,7 +298,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 					customBuildCommand: 'custom build'
 				}
 			} as unknown as vscode.Task;
-			getOrCreateBuildConfigStub.returns(mockTask);
+			getOrCreateBuildConfigStub.resolves(mockTask);
 
 			// Create panel and simulate build message with override
 			apBuildConfigPanel.createOrShow(mockExtensionUri);
