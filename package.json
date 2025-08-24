@@ -332,6 +332,7 @@
     "watch": "tsc -b -w",
     "lint": "eslint src --ext ts",
     "lint:fix": "eslint src --ext ts --fix",
+    "prepare": "husky",
     "package": "npm run compile && vsce package --out ardupilot-devenv.vsix",
     "test": "npm run compile && node ./out/test/runTest.js",
     "test:machine": "npm run compile && node ./out/test/runTest.js",
@@ -366,6 +367,7 @@
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^8.38.0",
+    "husky": "^9.1.7",
     "sinon": "^20.0.0",
     "typescript": "^4.0.2"
   },
