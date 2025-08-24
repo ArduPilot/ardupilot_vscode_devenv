@@ -105,7 +105,8 @@ export const TOOLS_REGISTRY = {
 			wsl: ['python.exe']
 		},
 		installCommands: {
-			wsl: { type: 'url', url: 'https://www.python.org/downloads/windows/' },
+			// Run python.exe, then regardless of its exit code, check python.exe --version every 10s (6 times), if we get a version, exit 0 else exit 1
+			wsl: { type: 'command', command: 'bash -c "python.exe; for i in {1..6}; do python.exe --version && exit 0; sleep 10; done; exit 1"' },
 		},
 		findArgs: {
 			args: ['--version']
