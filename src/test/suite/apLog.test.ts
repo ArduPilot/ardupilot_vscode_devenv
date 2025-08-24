@@ -98,6 +98,9 @@ suite('apLog Test Suite', () => {
 		});
 
 		test('should reuse existing channel on subsequent access', () => {
+			// Explicitly reset the channel to ensure clean state
+			(apLog as any)._channel = undefined;
+
 			let channelCreateCount = 0;
 
 			(vscode.window as any).createOutputChannel = (name: string) => {
