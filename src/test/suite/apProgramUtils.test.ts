@@ -123,11 +123,14 @@ suite('apProgramUtils Test Suite', () => {
 		});
 
 		test('should continue searching paths when which fails', async () => {
-			// Arrange: platform darwin, tool paths: ['nonexistent', '/usr/bin/python3']
+			// Arrange: platform agnostic, tool paths: ['nonexistent', '/usr/bin/python3']
 			const tool: apToolsConfig.ToolInfo = {
 				name: 'TestTool',
 				description: 'Test tool',
-				paths: { darwin: ['nonexistent', '/usr/bin/python3'] },
+				paths: {
+					darwin: ['nonexistent', '/usr/bin/python3'],
+					linux: ['nonexistent', '/usr/bin/python3']
+				},
 				findArgs: { args: ['--version'] }
 			};
 
