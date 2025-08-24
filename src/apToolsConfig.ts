@@ -445,6 +445,17 @@ export const ENV_CHECK_REGISTRY = {
 			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y python3-venv' },
 			wsl: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y python3-venv' }
 		}
+	},
+	PYSERIAL_WIN_INSTALLED: {
+		name: 'PySerial (Windows)',
+		description: 'Install PySerial for Windows',
+		required: true,
+		checks: {
+			wsl: 'pip.exe show pyserial'
+		},
+		fix_issue: {
+			wsl: { type: 'command', command: 'pip.exe install pyserial' }
+		}
 	}
 } as const;
 
