@@ -188,7 +188,23 @@ export class UIHooks {
 			if (board.toLowerCase().includes('sitl')) {
 				nm = 'nm'; // Use 'nm' for SITL targets
 			}
-			const result = cp.spawnSync(`${await ProgramUtils.PYTHON()}`, [extractFeaturesScript, '--nm', nm, binaryFile]);
+			const result = cp.spawnSync(
+				`${await ProgramUtils.PYTHON()}`,
+				[extractFeaturesScript, '--nm', nm, binaryFile],
+				{ timeout: 60000, killSignal: 'SIGKILL' }
+			);
+			if (result.error) {
+				UIHooks.log(`extract_features.py error: ${result.error.message}`);
+				this._panel.webview.postMessage({
+					command: 'extractFeatures',
+					features: [],
+					error: result.error.message && result.error.message.includes('ETIMEDOUT')
+						? 'Timed out after 60 seconds while extracting features'
+						: `Failed to extract features: ${result.error.message}`
+				});
+				vscode.window.showErrorMessage(`Failed to extract features: ${result.error.message}`);
+				return;
+			}
 			if (result.status !== 0) {
 				UIHooks.log(`extract_features.py failed: ${result.stderr?.toString()}`);
 				this._panel.webview.postMessage({
