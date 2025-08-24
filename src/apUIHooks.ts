@@ -184,9 +184,22 @@ export class UIHooks {
 				});
 				return;
 			}
-			let nm = 'arm-none-eabi-nm';
+			const armToolchain = await ProgramUtils.findProgram(TOOLS_REGISTRY.ARM_GCC);
+			let nm = undefined;
+			if (armToolchain?.path) {
+				nm = path.join(path.dirname(armToolchain.path), 'arm-none-eabi-nm');
+			}
+
 			if (board.toLowerCase().includes('sitl')) {
 				nm = 'nm'; // Use 'nm' for SITL targets
+			}
+			if (!nm) {
+				this._panel.webview.postMessage({
+					command: 'extractFeatures',
+					features: [],
+					error: 'nm tool not found'
+				});
+				return;
 			}
 			const result = cp.spawnSync(
 				`${await ProgramUtils.PYTHON()}`,
