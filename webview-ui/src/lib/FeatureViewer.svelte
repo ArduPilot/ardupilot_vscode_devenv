@@ -206,6 +206,9 @@
   
   function getFeatureState(feature: any): 'enabled' | 'disabled' | 'default' {
     // Use the exact label from build_options.py with spaces replaced by hyphens
+    if (!feature.label) {
+      return 'default';
+    }
     const configOption = feature.label.replace(/\s+/g, '-');
     return featureStates.get(configOption) || 'default';
   }
