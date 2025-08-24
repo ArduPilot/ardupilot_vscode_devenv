@@ -116,7 +116,10 @@ export const TOOLS_REGISTRY = {
 		name: 'MAVProxy',
 		description: 'Install MAVProxy via pip',
 		paths: {
-			wsl: ['mavproxy.exe']
+			wsl: ['mavproxy.exe',
+				'/mnt/c/Program Files (x86)/MAVProxy/mavproxy.exe',
+				'/mnt/c/Program Files/MAVProxy/mavproxy.exe',
+			]
 		},
 		installCommands: {
 			wsl: { type: 'url', url: 'https://firmware.ardupilot.org/Tools/MAVProxy/' }
