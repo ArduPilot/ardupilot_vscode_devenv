@@ -103,7 +103,7 @@ suite('apCommonUtils Test Suite', () => {
 			}, 10);
 		});
 
-		test('should show popup by default', async (done) => {
+		test('should show popup by default', (done) => {
 			const options: FireAndForgetOptions = {
 				apLog: mockLog as unknown as apLog
 			};
@@ -116,7 +116,7 @@ suite('apCommonUtils Test Suite', () => {
 			}
 
 			const instance = new TestClass();
-			await instance.throwError();
+			void instance.throwError();
 
 			setTimeout(() => {
 				assert.ok(showErrorMessageStub.calledOnce);
