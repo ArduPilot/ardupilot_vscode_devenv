@@ -1,0 +1,40 @@
+name: Lint
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            webview-ui/package-lock.json
+
+      - name: Install npm dependencies (root)
+        run: npm ci
+
+      - name: Run lint (root)
+        run: npm run lint
+
+      - name: Install npm dependencies (webview-ui)
+        run: npm ci
+        working-directory: webview-ui
+
+      - name: Run lint (webview-ui)
+        run: npm run lint
+        working-directory: webview-ui
+
+
