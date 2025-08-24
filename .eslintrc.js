@@ -20,7 +20,7 @@ module.exports = {
 	rules: {
 		'semi': [2, 'always'],
 		'@typescript-eslint/no-unused-vars': 2,
-		'@typescript-eslint/no-explicit-any': 1,
+		'@typescript-eslint/no-explicit-any': 2,
 		'@typescript-eslint/explicit-module-boundary-types': 2,
 		'@typescript-eslint/no-non-null-assertion': 1,
 		'@typescript-eslint/no-floating-promises': 'error',
