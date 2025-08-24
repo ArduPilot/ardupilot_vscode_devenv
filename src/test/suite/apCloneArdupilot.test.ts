@@ -41,7 +41,7 @@ suite('apCloneArdupilot Test Suite', () => {
 				return Promise.resolve();
 			}) as any);
 
-			CloneArdupilot.run();
+			void CloneArdupilot.run();
 
 			// Wait for async operation
 			await new Promise(resolve => setTimeout(resolve, 100));
@@ -71,7 +71,7 @@ suite('apCloneArdupilot Test Suite', () => {
 				return Promise.resolve(true);
 			});
 
-			CloneArdupilot.run();
+			void CloneArdupilot.run();
 
 			// Wait for async operations
 			await new Promise(resolve => setTimeout(resolve, 100));
@@ -177,7 +177,7 @@ suite('apCloneArdupilot Test Suite', () => {
 			} as any);
 
 			// Execute the actual clone
-			CloneArdupilot.run();
+			void CloneArdupilot.run();
 
 			// Wait for the actual clone to complete by polling for completion
 			console.log('Waiting for clone to complete...');

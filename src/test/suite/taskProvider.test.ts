@@ -934,7 +934,7 @@ suite('APTaskProvider Test Suite', () => {
 
 			// Test with no workspace
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
-			APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
+			void APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
 			assert(showErrorStub.calledWith('No workspace folder is open.'));
 		});

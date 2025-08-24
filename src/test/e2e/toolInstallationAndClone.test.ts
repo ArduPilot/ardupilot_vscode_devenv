@@ -272,7 +272,7 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 
 			// Execute the actual apCloneArdupilot.run() method
 			console.log('DEBUG: apCloneArdupilot.run() initiated');
-			CloneArdupilot.run();
+			void CloneArdupilot.run();
 
 			// Wait for clone completion with timeout
 			const cloneSuccess = await Promise.race([
