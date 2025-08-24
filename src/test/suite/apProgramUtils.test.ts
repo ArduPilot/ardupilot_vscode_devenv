@@ -121,6 +121,61 @@ suite('apProgramUtils Test Suite', () => {
 			assert.strictEqual(result.path, customPath);
 			assert.strictEqual(result.isCustomPath, true);
 		});
+
+		test('should continue searching paths when which fails', async () => {
+			// Arrange: platform darwin, tool paths: ['nonexistent', '/usr/bin/python3']
+			const tool: apToolsConfig.ToolInfo = {
+				name: 'TestTool',
+				description: 'Test tool',
+				paths: { darwin: ['nonexistent', '/usr/bin/python3'] },
+				findArgs: { args: ['--version'] }
+			};
+
+			// Stub existsSync so only '/usr/bin/python3' exists
+			const existsStub = sandbox.stub(fs, 'existsSync');
+			existsStub.withArgs('/usr/bin/python3').returns(true);
+			existsStub.callsFake(() => false);
+
+			// Stub child_process: make `which nonexistent` fail, and version check on '/usr/bin/python3' succeed
+			const spawnStub = sandbox.stub(child_process, 'spawnSync');
+			spawnStub.callsFake((cmd: any, args?: any) => {
+				if (typeof cmd === 'string' && cmd.includes('which nonexistent')) {
+					return {
+						pid: 123,
+						output: [null, Buffer.from(''), Buffer.from('')],
+						stdout: Buffer.from(''),
+						stderr: Buffer.from(''),
+						status: 1,
+						signal: null
+					} as any;
+				}
+				if (cmd === '/usr/bin/python3' && Array.isArray(args) && args.includes('--version')) {
+					return {
+						pid: 123,
+						output: [null, Buffer.from('Python 3.11.0'), Buffer.from('')],
+						stdout: Buffer.from('Python 3.11.0'),
+						stderr: Buffer.from(''),
+						status: 0,
+						signal: null
+					} as any;
+				}
+				return {
+					pid: 123,
+					output: [null, Buffer.from(''), Buffer.from('')],
+					stdout: Buffer.from(''),
+					stderr: Buffer.from(''),
+					status: 1,
+					signal: null
+				} as any;
+			});
+
+			// Act
+			const result = await (ProgramUtils as any).findProgram(tool);
+
+			// Assert: it should find '/usr/bin/python3' and not exit early
+			assert.strictEqual(result.available, true);
+			assert.strictEqual(result.path, '/usr/bin/python3');
+		});
 	});
 
 	suite('PYTHON() Convenience Method', () => {

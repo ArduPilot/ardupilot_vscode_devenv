@@ -92,7 +92,10 @@ export class ProgramUtils {
 				} else if (!toolPath.includes('/')) {
 					// use which or where to find the tool
 					try {
-						return await this.findCommandPath(toolPath);
+						const found = await this.findCommandPath(toolPath);
+						if (found) {
+							return found;
+						}
 					} catch (error) {
 						// Ignore errors, continue searching
 						ProgramUtils.log.log(`Error finding tool ${toolPath}: ${error}`);
