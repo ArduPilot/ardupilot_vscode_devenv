@@ -78,13 +78,25 @@
 
     if (overrideEnabled) {
       // For override mode, validate custom commands
-      if (!customConfigureCommand.trim() || !customBuildCommand.trim()) {
+      // Note: We need to get the actual values from the DOM since vsc-change events don't fire reliably
+      const configureTextArea = document.getElementById('configure-command') as any;
+      const buildTextArea = document.getElementById('build-command') as any;
+      
+      const actualConfigureValue = configureTextArea?.value || customConfigureCommand || '';
+      const actualBuildValue = buildTextArea?.value || customBuildCommand || '';
+      
+      
+      if (!actualConfigureValue || !actualConfigureValue.trim() || !actualBuildValue || !actualBuildValue.trim()) {
         alert("Both configure and build commands are required when override is enabled");
         return;
       }
+      
+      // Update the bound variables with the actual values for sending to backend
+      customConfigureCommand = actualConfigureValue;
+      customBuildCommand = actualBuildValue;
     } else {
       // For standard mode, validate board and target
-      if (!board || !target) {
+      if (!board || !board.trim() || !target || !target.trim()) {
         alert("Board and target are required");
         return;
       }
@@ -92,7 +104,7 @@
 
     // Combine feature config and extra config
     const combinedConfig = [featureConfig, extraConfig]
-      .filter(config => config.trim())
+      .filter(config => config && config.trim())
       .join(' ');
     
     console.log("Build request data:", {
@@ -229,12 +241,12 @@
           ? "Edit Build Configuration"
           : "Create a new build configuration"}
       </h1>
-      <div class="config-form" class:disabled={overrideEnabled}>
-        <ConfigName
-          bind:value={configName}
-          label="Configuration Name:"
-          id="configName"
-        />
+      <ConfigName
+        bind:value={configName}
+        label="Configuration Name:"
+        id="configName"
+      />
+      <div class="board-target-config" class:disabled={overrideEnabled}>
         <BoardsList
           bind:value={board}
           boards={tasksList.getBoards()}
@@ -301,13 +313,13 @@
     margin-bottom: 30px;
   }
 
-  .config-form.disabled {
+  .board-target-config.disabled {
     opacity: 0.5;
     pointer-events: none;
     position: relative;
   }
 
-  .config-form.disabled::after {
+  .board-target-config.disabled::after {
     content: '';
     position: absolute;
     top: 0;

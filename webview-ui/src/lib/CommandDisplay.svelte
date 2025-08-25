@@ -41,17 +41,37 @@
 
   $effect(() => {
     if (configureTextArea) {
-      configureTextArea.addEventListener("vsc-change", (e: any) => {
-        customConfigureCommand = e.detail.value;
-      });
+      const handleConfigureChange = (e: any) => {
+        // Guard against undefined values from spurious vsc-change events
+        if (e.detail.value !== undefined) {
+          customConfigureCommand = e.detail.value;
+        }
+      };
+      
+      configureTextArea.addEventListener("vsc-change", handleConfigureChange);
+      
+      // Cleanup function to remove listener when effect re-runs
+      return () => {
+        configureTextArea.removeEventListener("vsc-change", handleConfigureChange);
+      };
     }
   });
 
   $effect(() => {
     if (buildTextArea) {
-      buildTextArea.addEventListener("vsc-change", (e: any) => {
-        customBuildCommand = e.detail.value;
-      });
+      const handleBuildChange = (e: any) => {
+        // Guard against undefined values from spurious vsc-change events
+        if (e.detail.value !== undefined) {
+          customBuildCommand = e.detail.value;
+        }
+      };
+      
+      buildTextArea.addEventListener("vsc-change", handleBuildChange);
+      
+      // Cleanup function to remove listener when effect re-runs  
+      return () => {
+        buildTextArea.removeEventListener("vsc-change", handleBuildChange);
+      };
     }
   });
 
@@ -62,24 +82,13 @@
     }
   });
 
-  // Update text area values when custom commands change
-  $effect(() => {
-    if (configureTextArea) {
-      configureTextArea.value = customConfigureCommand;
-    }
-  });
 
-  $effect(() => {
-    if (buildTextArea) {
-      buildTextArea.value = customBuildCommand;
-    }
-  });
 
   // Request build commands whenever configuration changes (only when not overridden)
   $effect(() => {
     if (!overrideEnabled && board && target) {
       const combinedConfig = [featureConfig, extraConfig]
-        .filter(config => config.trim())
+        .filter(config => config && config.trim())
         .join(' ');
       
       vscodeHooks.request("getBuildCommands", {
