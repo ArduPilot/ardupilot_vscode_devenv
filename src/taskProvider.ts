@@ -486,7 +486,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 
 		if (definition.overrideEnabled && definition.customConfigureCommand && definition.customBuildCommand) {
 			// For override mode, use custom commands and a generic build directory
-			taskCommand = `cd ../../ && ${definition.customConfigureCommand} && ${definition.customBuildCommand}`;
+			taskCommand = `${definition.customConfigureCommand} && ${definition.customBuildCommand}`;
 			buildDir = workspaceRoot.uri.fsPath; // Use workspace root as working directory
 		} else {
 			// For standard mode, use generated commands and board-specific build directory
