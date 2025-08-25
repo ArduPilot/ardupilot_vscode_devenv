@@ -1,0 +1,43 @@
+
+# Lint only tracked files that are staged to be committed
+staged_files="$(git diff --name-only --cached --diff-filter=ACMR --)"
+
+if [ -z "$staged_files" ]; then
+  exit 0
+fi
+
+# Filter: root TypeScript files under src/
+root_files="$(printf "%s\n" "$staged_files" | grep -E '^src/.*\.ts$' || true)"
+
+# Filter: webview UI files under webview-ui/src/ (ts, svelte)
+webview_files="$(printf "%s\n" "$staged_files" | grep -E '^webview-ui/src/.*\.(ts|svelte)$' || true)"
+
+# Run ESLint for root files, if any
+if [ -n "$root_files" ]; then
+  echo "Running ESLint on root staged files"
+  # Use local eslint binary to avoid interactive npx behavior
+  ./node_modules/.bin/eslint --ext .ts $(printf "%s " $root_files)
+  if [ $? -ne 0 ]; then
+    echo "ESLint failed for root files"
+    exit 1
+  fi
+fi
+
+# Run ESLint for webview-ui files, if any
+if [ -n "$webview_files" ]; then
+  echo "Running ESLint on webview-ui staged files"
+  (
+    cd webview-ui || exit 1
+    # Strip prefix to make paths relative to webview-ui
+    rel_files="$(printf "%s\n" "$webview_files" | sed 's#^webview-ui/##')"
+    ./node_modules/.bin/eslint --ext .ts,.svelte $(printf "%s " $rel_files)
+  )
+  if [ $? -ne 0 ]; then
+    echo "ESLint failed for webview-ui files"
+    exit 1
+  fi
+fi
+
+exit 0
+
+
