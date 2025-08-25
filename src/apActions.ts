@@ -673,7 +673,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 			const def = activeConfiguration.definition as ArdupilotTaskDefinition;
 			const isSITL = !def.overrideEnabled && def.configure && def.configure.toLowerCase().startsWith('sitl');
 
-			// Add Build action
+			// Add Build action (available for all configurations)
 			actionItems.push(new apActionItem(
 				this,
 				'Build Firmware',
@@ -683,36 +683,39 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 				activeConfiguration
 			));
 
-			// Add Debug action
-			actionItems.push(new apActionItem(
-				this,
-				'Debug',
-				vscode.TreeItemCollapsibleState.None,
-				'debug',
-				`Debug firmware for ${def.configName}`,
-				activeConfiguration
-			));
+			// Only add Debug and Upload/Run actions for non-overridden configurations
+			if (!def.overrideEnabled) {
+				// Add Debug action
+				actionItems.push(new apActionItem(
+					this,
+					'Debug',
+					vscode.TreeItemCollapsibleState.None,
+					'debug',
+					`Debug firmware for ${def.configName}`,
+					activeConfiguration
+				));
 
-			// Add Upload action for hardware configurations or Run for SITL
-			if (isSITL) {
-				actionItems.push(new apActionItem(
-					this,
-					'Run SITL',
-					vscode.TreeItemCollapsibleState.None,
-					'run',
-					`Run SITL simulation for ${def.target}`,
-					activeConfiguration
-				));
-			} else {
-				const boardName = def.configure || 'unknown board';
-				actionItems.push(new apActionItem(
-					this,
-					'Upload to Board',
-					vscode.TreeItemCollapsibleState.None,
-					'upload',
-					`Upload firmware to ${boardName}`,
-					activeConfiguration
-				));
+				// Add Upload action for hardware configurations or Run for SITL
+				if (isSITL) {
+					actionItems.push(new apActionItem(
+						this,
+						'Run SITL',
+						vscode.TreeItemCollapsibleState.None,
+						'run',
+						`Run SITL simulation for ${def.target}`,
+						activeConfiguration
+					));
+				} else {
+					const boardName = def.configure || 'unknown board';
+					actionItems.push(new apActionItem(
+						this,
+						'Upload to Board',
+						vscode.TreeItemCollapsibleState.None,
+						'upload',
+						`Upload firmware to ${boardName}`,
+						activeConfiguration
+					));
+				}
 			}
 		}
 

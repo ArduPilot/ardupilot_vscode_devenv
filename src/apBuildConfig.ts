@@ -50,14 +50,22 @@ export class apBuildConfig extends vscode.TreeItem {
 		if (this.task && this.task.definition) {
 			const taskDef = this.task.definition as ArdupilotTaskDefinition;
 
-			// Set the description to include the target name
-			this.description = taskDef.target;
+			// Set the description based on override status
+			if (taskDef.overrideEnabled) {
+				this.description = 'overridden';
+			} else {
+				this.description = taskDef.target;
+			}
 
 			// Check if this is the active configuration using configName
 			if (activeConfiguration && taskDef.configName === activeConfiguration.definition.configName) {
 				// Highlight active configuration with blue check circle
 				this.iconPath = new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('terminal.ansiBlue'));
-				this.description = `${taskDef.target} (Active)`;
+				if (taskDef.overrideEnabled) {
+					this.description = 'overridden (Active)';
+				} else {
+					this.description = `${taskDef.target} (Active)`;
+				}
 				this.contextValue = 'apBuildConfigActive';
 			} else {
 				this.contextValue = 'apBuildConfig';
