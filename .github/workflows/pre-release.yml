@@ -2,7 +2,7 @@ name: Pre-release to Marketplace on Push to Master
 
 on:
   workflow_run:
-    workflows: ["Tests"]
+    workflows: ["Tests", "E2E Tests", "Lint"]
     types:
       - completed
     branches:
