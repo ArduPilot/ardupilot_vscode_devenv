@@ -189,12 +189,17 @@ export class ProgramUtils {
 			return undefined;
 		}
 		const result = child_process.spawnSync(toolPath, tool.findArgs?.args, { stdio: 'pipe' });
-		ProgramUtils.log.log(`Checking version for ${tool.name}: ${toolPath}:  ${result.stdout.toString().trim()}`);
+		const stdoutStr = result.stdout ? result.stdout.toString().trim() : '';
+		const stderrStr = result.stderr ? result.stderr.toString().trim() : '';
+		const combinedForLog = stdoutStr || stderrStr;
+		ProgramUtils.log.log(`Checking version for ${tool.name}: ${toolPath}:  ${combinedForLog}`);
 		if (result.status === 0) {
-			ProgramUtils.log.log(`Found version for ${tool.name}: ${result.stdout.toString().trim()}`);
+			// Some tools (e.g., openocd, python) may print version to stderr
+			const output = stdoutStr || stderrStr;
+			ProgramUtils.log.log(`Found version for ${tool.name}: ${output}`);
 			// Use regex to extract version
-			const versionMatch = result.stdout.toString().trim().match(tool.findArgs?.versionRegex ?? /(\d+\.\d+\.\d+)/);
-			return versionMatch ? versionMatch[1] : result.stdout.toString().trim();
+			const versionMatch = output.match(tool.findArgs?.versionRegex ?? /(\d+\.\d+\.\d+)/);
+			return versionMatch ? versionMatch[1] : output;
 		}
 		return undefined;
 	}

@@ -145,15 +145,26 @@ export const TOOLS_REGISTRY = {
 	},
 	OPENOCD: {
 		name: 'OpenOCD',
-		description: 'Install OpenOCD for debugging',
+		description: 'Download and install ChibiOSRT7 optimised OpenOCD for debugging',
 		optional: true,
 		paths: {
-			linux: ['openocd'],
-			darwin: ['openocd']
+			linux: ['/opt/openocd-ardupilot/bin/openocd'],
+			darwin: ['/opt/openocd-ardupilot/bin/openocd'],
+			wsl: ['/opt/openocd-ardupilot/bin/openocd.exe']
 		},
 		installCommands: {
-			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y openocd' },
-			darwin: { type: 'command', command: 'brew install openocd' }
+			linux: {
+				type: 'command',
+				command: 'sudo mkdir -p /opt/openocd-ardupilot && cd /tmp && ARCH=$(uname -m | sed \'s/x86_64/x86_64/;s/aarch64/aarch64/\') && DOWNLOAD_URL=$(curl -s https://api.github.com/repos/bugobliterator/openocd/releases/latest | grep "browser_download_url.*linux-${ARCH}.tar.gz" | cut -d \'"\' -f 4) && curl -L -o openocd.tar.gz $DOWNLOAD_URL && sudo tar -xzf openocd.tar.gz -C /opt/openocd-ardupilot && rm openocd.tar.gz'
+			},
+			darwin: {
+				type: 'command',
+				command: 'sudo mkdir -p /opt/openocd-ardupilot && cd /tmp && ARCH=$(uname -m | sed \'s/x86_64/x86_64/;s/arm64/arm64/\') && DOWNLOAD_URL=$(curl -s https://api.github.com/repos/bugobliterator/openocd/releases/latest | grep "browser_download_url.*darwin-${ARCH}.tar.gz" | cut -d \'"\' -f 4) && curl -L -o openocd.tar.gz $DOWNLOAD_URL && sudo tar -xzf openocd.tar.gz -C /opt/openocd-ardupilot && rm openocd.tar.gz'
+			},
+			wsl: {
+				type: 'command',
+				command: 'sudo mkdir -p /opt/openocd-ardupilot && cd /tmp && DOWNLOAD_URL=$(curl -s https://api.github.com/repos/bugobliterator/openocd/releases/latest | grep "browser_download_url.*windows-x86_64.tar.gz" | cut -d \'"\' -f 4) && curl -L -o openocd.tar.gz $DOWNLOAD_URL && sudo tar -xzf openocd.tar.gz -C /opt/openocd-ardupilot && rm openocd.tar.gz'
+			}
 		},
 		findArgs: {
 			args: ['--version']
