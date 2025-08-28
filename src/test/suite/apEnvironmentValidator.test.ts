@@ -15,12 +15,12 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 	suiteSetup(async () => {
 		apExtensionContext = await getApExtApi();
-		assert(apExtensionContext.apWelcomeProviderInstance);
+		assert.ok(apExtensionContext.apWelcomeProviderInstance);
 	});
 
 	setup(async () => {
 		sandbox = sinon.createSandbox();
-		assert(!ValidateEnvironmentPanel.currentPanel, 'ValidateEnvironmentPanel should not have been created yet');
+		assert.ok(!ValidateEnvironmentPanel.currentPanel, 'ValidateEnvironmentPanel should not have been created yet');
 	});
 
 	teardown(() => {
@@ -36,14 +36,14 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			await vscode.commands.executeCommand('apValidateEnv');
 
-			assert(createOrShowSpy.calledOnce);
+			assert.ok(createOrShowSpy.calledOnce);
 		});
 
 		test('should implement singleton pattern for webview panel', () => {
 			// Create the first panel
 			ValidateEnvironmentPanel.createOrShow();
 			const firstPanel = ValidateEnvironmentPanel.currentPanel;
-			assert(firstPanel, 'First panel should be created');
+			assert.ok(firstPanel, 'First panel should be created');
 
 			// Stub the reveal method on the existing panel
 			const revealStub = sandbox.stub(firstPanel._panel, 'reveal');
@@ -54,8 +54,8 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			// Should be the same instance
 			assert.strictEqual(firstPanel, secondPanel);
-			assert(revealStub.calledOnce);
-			assert(revealStub.calledWith(vscode.ViewColumn.Two));
+			assert.ok(revealStub.calledOnce);
+			assert.ok(revealStub.calledWith(vscode.ViewColumn.Two));
 		});
 	});
 
@@ -77,7 +77,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			Object.defineProperty(process, 'platform', { value: originalPlatform });
 
-			assert(findProgramSpy.notCalled);
+			assert.ok(findProgramSpy.notCalled);
 		});
 
 		test('should validate tools using registry-driven approach', async () => {
@@ -122,7 +122,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			ValidateEnvironmentPanel.createOrShow();
 			const panel = ValidateEnvironmentPanel.currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 			const webview = panel._panel.webview;
 			const postMessageSpy = sandbox.spy(webview, 'postMessage');
 
@@ -143,27 +143,27 @@ suite('apEnvironmentValidator Test Suite', () => {
 			);
 
 			// Verify postMessage was called
-			assert(postMessageSpy.called, 'webview.postMessage should have been called');
+			assert.ok(postMessageSpy.called, 'webview.postMessage should have been called');
 
 			// Check if platform check message was sent
 			const platformCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'platformCheck'
 			);
-			assert(platformCalls.length > 0, 'Platform check message should be sent');
+			assert.ok(platformCalls.length > 0, 'Platform check message should be sent');
 
 			// Check if validationResult messages were sent
 			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
 
-			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
+			assert.ok(validationResultCalls.length > 0, 'Validation result messages should be sent');
 
 			// Verify that findProgram was called with registry tools
-			assert(findProgramStub.called, 'findProgram should be called');
+			assert.ok(findProgramStub.called, 'findProgram should be called');
 
 			// Check that it was called with actual ToolInfo objects from the registry
 			const findProgramCalls = findProgramStub.getCalls();
-			assert(findProgramCalls.some(call =>
+			assert.ok(findProgramCalls.some(call =>
 				call.args[0] && call.args[0].name === 'Python'
 			), 'findProgram should be called with Python tool from registry');
 		});
@@ -185,7 +185,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			ValidateEnvironmentPanel.createOrShow();
 			const panel = ValidateEnvironmentPanel.currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 			const webview = panel._panel.webview;
 			const postMessageSpy = sandbox.spy(webview, 'postMessage');
 
@@ -206,14 +206,14 @@ suite('apEnvironmentValidator Test Suite', () => {
 			);
 
 			// Verify that webview received messages (including platform check)
-			assert(postMessageSpy.called, 'webview.postMessage should have been called');
+			assert.ok(postMessageSpy.called, 'webview.postMessage should have been called');
 
 			// Check if validationResult messages were sent even with failures
 			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
 
-			assert(validationResultCalls.length > 0, 'Validation result messages should be sent even with failures');
+			assert.ok(validationResultCalls.length > 0, 'Validation result messages should be sent even with failures');
 		});
 	});
 
@@ -232,7 +232,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 			// Test the functionality that the configuration uses
 			apToolsConfig.ToolsConfig.setToolPath('PYTHON', customPath);
 
-			assert(setToolPathSpy.calledWith('PYTHON', customPath));
+			assert.ok(setToolPathSpy.calledWith('PYTHON', customPath));
 		});
 
 		test('should handle Python interpreter selection', async () => {
@@ -257,13 +257,13 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			ValidateEnvironmentPanel.createOrShow();
 			const panel = ValidateEnvironmentPanel.currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 
 			// @ts-expect-error this is a private method
 			panel._onReceiveMessage({ command: 'selectPythonInterpreter' });
 			await new Promise(resolve => setTimeout(resolve, getEnvironmentTimeout(200)));
 
-			assert(setToolPathSpy.calledWith('PYTHON', interpreterPath));
+			assert.ok(setToolPathSpy.calledWith('PYTHON', interpreterPath));
 		});
 
 		test('should detect custom tool paths correctly with registry', async () => {
@@ -300,7 +300,7 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			ValidateEnvironmentPanel.createOrShow();
 			const panel = ValidateEnvironmentPanel.currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 			const webview = panel._panel.webview;
 			const postMessageSpy = sandbox.spy(webview, 'postMessage');
 
@@ -321,14 +321,14 @@ suite('apEnvironmentValidator Test Suite', () => {
 			);
 
 			// Verify that webview received messages
-			assert(postMessageSpy.called, 'webview.postMessage should have been called');
+			assert.ok(postMessageSpy.called, 'webview.postMessage should have been called');
 
 			// Check if validationResult messages were sent
 			const validationResultCalls = postMessageSpy.getCalls().filter(call =>
 				call.args[0] && call.args[0].command === 'validationResult'
 			);
 
-			assert(validationResultCalls.length > 0, 'Validation result messages should be sent');
+			assert.ok(validationResultCalls.length > 0, 'Validation result messages should be sent');
 
 			// Verify Python validationResult includes custom path information
 			const pythonValidationCall = validationResultCalls.find(call =>
@@ -356,12 +356,12 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			ValidateEnvironmentPanel.createOrShow();
 			const panel = ValidateEnvironmentPanel.currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 
 			// @ts-expect-error this is a private method
 			panel._onReceiveMessage({ command: 'launchWSL' });
 
-			assert(openExternalStub.calledWith(vscode.Uri.parse('https://learn.microsoft.com/en-us/windows/wsl/install')));
+			assert.ok(openExternalStub.calledWith(vscode.Uri.parse('https://learn.microsoft.com/en-us/windows/wsl/install')));
 		});
 
 		test('should handle VSCode WSL connection', async () => {
@@ -369,14 +369,14 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			ValidateEnvironmentPanel.createOrShow();
 			const panel = ValidateEnvironmentPanel.currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 
 			// @ts-expect-error this is a private method
 			panel._onReceiveMessage({ command: 'openVSCodeWSL' });
 
 			await new Promise(resolve => setTimeout(resolve, getEnvironmentTimeout(50)));
 
-			assert(executeCommandStub.calledWith('remote-wsl.openFolder'));
+			assert.ok(executeCommandStub.calledWith('remote-wsl.openFolder'));
 		});
 	});
 
@@ -388,14 +388,14 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			ValidateEnvironmentPanel.createOrShow();
 			const panel = ValidateEnvironmentPanel.currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 
 			// @ts-expect-error this is a private method
 			panel._onReceiveMessage({ command: 'selectPythonInterpreter' });
 
 			await new Promise(resolve => setTimeout(resolve, getEnvironmentTimeout(50)));
 
-			assert(showErrorStub.calledWith(sinon.match(/Failed to select Python interpreter/)));
+			assert.ok(showErrorStub.calledWith(sinon.match(/Failed to select Python interpreter/)));
 		});
 
 		test('should handle WSL command failures', async () => {
@@ -405,14 +405,14 @@ suite('apEnvironmentValidator Test Suite', () => {
 
 			ValidateEnvironmentPanel.createOrShow();
 			const panel = ValidateEnvironmentPanel.currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 
 			// @ts-expect-error this is a private method
 			panel._onReceiveMessage({ command: 'openVSCodeWSL' });
 
 			await new Promise(resolve => setTimeout(resolve, getEnvironmentTimeout(50)));
 
-			assert(showErrorStub.calledWith(sinon.match(/Failed to open VS Code with WSL/)));
+			assert.ok(showErrorStub.calledWith(sinon.match(/Failed to open VS Code with WSL/)));
 		});
 	});
 });

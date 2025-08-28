@@ -109,15 +109,15 @@ suite('E2E: ArduPilot Build', function() {
 
 		console.log('DEBUG: Starting E2E build test suite setup...');
 		apExtensionContext = await getApExtApi(false);
-		assert(apExtensionContext.apWelcomeProviderInstance, 'Extension context should be available');
+		assert.ok(apExtensionContext.apWelcomeProviderInstance, 'Extension context should be available');
 
 		// Use existing ardupilot-e2e directory from clone test
 		tempDir = path.join(os.tmpdir(), 'ardupilot-e2e');
 		ardupilotDir = path.join(tempDir, 'ardupilot');
 
 		// Verify ArduPilot directory exists from previous clone test
-		assert(fs.existsSync(ardupilotDir), 'ArduPilot directory should exist from clone test');
-		assert(fs.existsSync(path.join(ardupilotDir, 'wscript')), 'ArduPilot wscript should exist from clone test');
+		assert.ok(fs.existsSync(ardupilotDir), 'ArduPilot directory should exist from clone test');
+		assert.ok(fs.existsSync(path.join(ardupilotDir, 'wscript')), 'ArduPilot wscript should exist from clone test');
 		console.log('DEBUG: ArduPilot directory verified from clone test');
 	});
 
@@ -443,7 +443,7 @@ suite('E2E: ArduPilot Build', function() {
 		// Wait a brief moment for VS Code to settle after package installation
 		await new Promise(resolve => setTimeout(resolve, 5000));
 		const sitlBuildSuccess = await executeTask(sitlTask, 'SITL Build');
-		assert(sitlBuildSuccess, 'SITL build task should succeed');
+		assert.ok(sitlBuildSuccess, 'SITL build task should succeed');
 		console.log('DEBUG: SITL build task completed successfully');
 
 		// Verify SITL build artifacts are created with timeout
@@ -452,7 +452,7 @@ suite('E2E: ArduPilot Build', function() {
 		console.log(`DEBUG: Waiting for SITL binary creation at ${sitlBinary}...`);
 		const sitlCreated = await waitForFileCreation(sitlBinary, 1200000); // 20 minute timeout
 		console.log(`DEBUG: SITL binary created: ${sitlCreated} (${sitlBinary})`);
-		assert(sitlCreated, `SITL binary should be created at ${sitlBinary} within timeout`);
+		assert.ok(sitlCreated, `SITL binary should be created at ${sitlBinary} within timeout`);
 
 		// Test CubeOrange+ build task with cleanup
 		console.log('DEBUG: Testing CubeOrange+ build task...');
@@ -470,7 +470,7 @@ suite('E2E: ArduPilot Build', function() {
 		}
 
 		const cubeOrangeBuildSuccess = await executeTask(cubeOrangeTask, 'CubeOrange+ Build');
-		assert(cubeOrangeBuildSuccess, 'CubeOrange+ build task should succeed');
+		assert.ok(cubeOrangeBuildSuccess, 'CubeOrange+ build task should succeed');
 		console.log('DEBUG: CubeOrange+ build task completed successfully');
 
 		// Verify CubeOrange+ build artifacts are created with timeout
@@ -479,7 +479,7 @@ suite('E2E: ArduPilot Build', function() {
 		console.log(`DEBUG: Waiting for CubeOrange+ firmware creation at ${cubeOrangeFirmware}...`);
 		const cubeOrangeCreated = await waitForFileCreation(cubeOrangeFirmware, 1200000); // 20 minute timeout
 		console.log(`DEBUG: CubeOrange+ firmware created: ${cubeOrangeCreated} (${cubeOrangeFirmware})`);
-		assert(cubeOrangeCreated, `CubeOrange+ firmware should be created at ${cubeOrangeFirmware} within timeout`);
+		assert.ok(cubeOrangeCreated, `CubeOrange+ firmware should be created at ${cubeOrangeFirmware} within timeout`);
 
 		console.log('DEBUG: Build artifact verification completed with timeout-based detection');
 

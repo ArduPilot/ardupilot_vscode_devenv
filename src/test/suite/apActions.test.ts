@@ -22,9 +22,9 @@ suite('apActions Test Suite', () => {
 
 		// Create a temporary directory for testing
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert(workspaceFolder);
+		assert.ok(workspaceFolder);
 		ardupilotDir = workspaceFolder.uri.path;
-		assert(apExtensionContext.vscodeContext);
+		assert.ok(apExtensionContext.vscodeContext);
 		mockContext = apExtensionContext.vscodeContext;
 	});
 
@@ -34,7 +34,7 @@ suite('apActions Test Suite', () => {
 
 	setup(() => {
 		sandbox = sinon.createSandbox();
-		assert(apExtensionContext.actionsProvider);
+		assert.ok(apExtensionContext.actionsProvider);
 		actionsProvider = apExtensionContext.actionsProvider;
 	});
 
@@ -75,7 +75,7 @@ suite('apActions Test Suite', () => {
 		});
 
 		test('createMatchingLaunchConfig should create correct SITL configuration', () => {
-			assert(ardupilotDir);
+			assert.ok(ardupilotDir);
 			// Create a temporary .vscode directory
 			const vscodeDir = path.join(ardupilotDir, '.vscode');
 			try {
@@ -103,6 +103,7 @@ suite('apActions Test Suite', () => {
 			assert.strictEqual(launchConfig.target, 'copter');
 			assert.strictEqual(launchConfig.isSITL, true);
 			assert.strictEqual(launchConfig.simVehicleCommand, '--map --console');
+			assert.strictEqual(launchConfig.board, undefined); // SITL should not have board field
 
 			// Verify launch.json was created
 			const launchPath = path.join(vscodeDir, 'launch.json');
@@ -125,7 +126,7 @@ suite('apActions Test Suite', () => {
 		});
 
 		test('createMatchingLaunchConfig should create correct hardware configuration', () => {
-			assert(ardupilotDir);
+			assert.ok(ardupilotDir);
 			// Create a temporary .vscode directory
 			const vscodeDir = path.join(ardupilotDir, '.vscode');
 			try {
@@ -143,7 +144,8 @@ suite('apActions Test Suite', () => {
 				'CubeOrange-copter',
 				'CubeOrange',
 				'copter',
-				''
+				'',
+				'CubeOrange' // Board name for hardware debugging
 			);
 
 			assert.ok(launchConfig);
@@ -153,6 +155,7 @@ suite('apActions Test Suite', () => {
 			assert.strictEqual(launchConfig.target, 'copter');
 			assert.strictEqual(launchConfig.isSITL, false);
 			assert.strictEqual(launchConfig.simVehicleCommand, undefined);
+			assert.strictEqual(launchConfig.board, 'CubeOrange'); // Check board field is set
 
 		});
 	});
@@ -250,7 +253,7 @@ suite('apActions Test Suite', () => {
 
 	suite('updateTaskWithSimVehicleCommand Tests', () => {
 		test('should update existing task with simVehicleCommand', async () => {
-			assert(ardupilotDir);
+			assert.ok(ardupilotDir);
 
 			// Mock workspace configuration
 			const mockTasks = [
@@ -312,7 +315,7 @@ suite('apActions Test Suite', () => {
 		});
 
 		test('should handle task not found gracefully', async () => {
-			assert(ardupilotDir);
+			assert.ok(ardupilotDir);
 
 			const mockTasks = [
 				{
@@ -390,7 +393,7 @@ suite('apActions Test Suite', () => {
 			// Mock vscode.commands.executeCommand using sandbox
 			let commandExecuted = false;
 			let commandName = '';
-			assert(apExtensionContext.apBuildConfigProviderInstance);
+			assert.ok(apExtensionContext.apBuildConfigProviderInstance);
 			sandbox.stub(apExtensionContext.apBuildConfigProviderInstance, 'refresh').callsFake(async () => {
 				commandExecuted = true;
 				commandName = 'apBuildConfig.refreshEntry';
@@ -1014,7 +1017,7 @@ suite('apActions Test Suite', () => {
 			let commandExecuted = false;
 
 			// Mock vscode.commands.executeCommand using sandbox
-			assert(apExtensionContext.apBuildConfigProviderInstance);
+			assert.ok(apExtensionContext.apBuildConfigProviderInstance);
 			sandbox.stub(apExtensionContext.apBuildConfigProviderInstance, 'refresh').callsFake(() => {
 				commandExecuted = true;
 			});
@@ -1035,7 +1038,7 @@ suite('apActions Test Suite', () => {
 			});
 
 			// Mock vscode.commands.executeCommand using sandbox
-			assert(apExtensionContext.apBuildConfigProviderInstance);
+			assert.ok(apExtensionContext.apBuildConfigProviderInstance);
 			sandbox.stub(apExtensionContext.apBuildConfigProviderInstance, 'refresh').callsFake(() => {
 				commandCount++;
 				return Promise.resolve();

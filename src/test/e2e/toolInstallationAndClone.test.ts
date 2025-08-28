@@ -47,7 +47,7 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 
 		console.log('DEBUG: Starting E2E clone test suite setup...');
 		apExtensionContext = await getApExtApi(false);
-		assert(apExtensionContext.apWelcomeProviderInstance, 'Extension context should be available');
+		assert.ok(apExtensionContext.apWelcomeProviderInstance, 'Extension context should be available');
 
 		// Create persistent ardupilot-e2e directory for this test
 		tempDir = path.join(os.tmpdir(), 'ardupilot-e2e');
@@ -226,7 +226,7 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 		});
 
 		console.log(`DEBUG: Available critical tools: ${availableCriticalTools.join(', ')}`);
-		assert(availableCriticalTools.length >= 1, 'At least one critical tool should be available or installable');
+		assert.ok(availableCriticalTools.length >= 1, 'At least one critical tool should be available or installable');
 
 		// Phase 2: ArduPilot Cloning using apCloneArdupilot
 		console.log('DEBUG: Phase 2 - Checking/Cloning ArduPilot...');
@@ -286,12 +286,12 @@ suite('E2E: Tool Installation and ArduPilot Clone', function() {
 			]);
 
 			console.log(`DEBUG: ArduPilot clone result: ${cloneSuccess}`);
-			assert(cloneSuccess, 'ArduPilot repository should clone successfully');
+			assert.ok(cloneSuccess, 'ArduPilot repository should clone successfully');
 		}
 
 		// Verify ArduPilot directory exists regardless of whether we cloned or used existing
-		assert(fs.existsSync(ardupilotDir), 'ArduPilot directory should exist');
-		assert(fs.existsSync(path.join(ardupilotDir, 'wscript')), 'ArduPilot wscript should exist');
+		assert.ok(fs.existsSync(ardupilotDir), 'ArduPilot directory should exist');
+		assert.ok(fs.existsSync(path.join(ardupilotDir, 'wscript')), 'ArduPilot wscript should exist');
 		console.log('DEBUG: ArduPilot directory verified');
 
 		console.log('DEBUG: E2E clone test completed successfully - ArduPilot ready for build test');

@@ -1,5 +1,5 @@
 import * as path from 'path';
-import * as Mocha from 'mocha';
+import Mocha from 'mocha';
 import * as sourceMapSupport from 'source-map-support';
 import { existsSync } from 'fs';
 
@@ -24,7 +24,7 @@ export async function run(): Promise<void> {
 		}
 		mocha.addFile(path.resolve(testsRoot, testFile));
 		try {
-			mocha.run(failures => {
+			mocha.run((failures: number) => {
 				if (failures > 0) {
 					e(new Error(`${failures} tests failed.`));
 				} else {

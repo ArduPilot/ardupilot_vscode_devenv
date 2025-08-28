@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { runTests, downloadAndUnzipVSCode, resolveCliArgsFromVSCodeExecutablePath } from '@vscode/test-electron';
-import * as fg from 'fast-glob';
+import fg from 'fast-glob';
 import * as os from 'os';
 
 const execAsync = promisify(exec);

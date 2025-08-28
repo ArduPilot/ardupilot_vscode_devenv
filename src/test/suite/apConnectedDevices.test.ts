@@ -27,14 +27,14 @@ suite('apConnectedDevices Test Suite', () => {
 		apExtensionContext = await getApExtApi();
 
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert(workspaceFolder);
-		assert(apExtensionContext.vscodeContext);
+		assert.ok(workspaceFolder);
+		assert.ok(apExtensionContext.vscodeContext);
 		mockContext = apExtensionContext.vscodeContext;
 	});
 
 	setup(() => {
 		sandbox = sinon.createSandbox();
-		assert(apExtensionContext.connectedDevicesProvider, 'connectedDevicesProvider should be initialized');
+		assert.ok(apExtensionContext.connectedDevicesProvider, 'connectedDevicesProvider should be initialized');
 		provider = apExtensionContext.connectedDevicesProvider;
 	});
 
@@ -44,11 +44,11 @@ suite('apConnectedDevices Test Suite', () => {
 
 	suite('Constructor and Initialization', () => {
 		test('should create provider instance', () => {
-			assert(provider instanceof apConnectedDevices);
+			assert.ok(provider instanceof apConnectedDevices);
 		});
 
 		test('should have onDidChangeTreeData event emitter', () => {
-			assert(provider.onDidChangeTreeData);
+			assert.ok(provider.onDidChangeTreeData);
 			assert.strictEqual(typeof provider.onDidChangeTreeData, 'function');
 		});
 
@@ -56,7 +56,7 @@ suite('apConnectedDevices Test Suite', () => {
 			const setTimeoutSpy = sandbox.spy(global, 'setTimeout');
 			const newProvider = new apConnectedDevices();
 
-			assert(setTimeoutSpy.calledOnce);
+			assert.ok(setTimeoutSpy.calledOnce);
 			assert.strictEqual(setTimeoutSpy.firstCall.args[1], 1000); // 1 second interval
 
 			newProvider.dispose();
@@ -103,9 +103,9 @@ suite('apConnectedDevices Test Suite', () => {
 
 			const children = await provider.getChildren(parentItem);
 
-			assert(Array.isArray(children));
-			assert(children.length > 0);
-			assert(children[0].isCommand);
+			assert.ok(Array.isArray(children));
+			assert.ok(children.length > 0);
+			assert.ok(children[0].isCommand);
 			assert.strictEqual(children[0].label, 'Connect with MAVProxy');
 		});
 
@@ -159,7 +159,7 @@ suite('apConnectedDevices Test Suite', () => {
 			}));
 
 			const children = await provider.getChildren();
-			assert(Array.isArray(children));
+			assert.ok(Array.isArray(children));
 			assert.strictEqual(children.length, 0);
 		});
 
@@ -184,7 +184,7 @@ suite('apConnectedDevices Test Suite', () => {
 			}));
 
 			const children = await provider.getChildren();
-			assert(Array.isArray(children));
+			assert.ok(Array.isArray(children));
 			assert.strictEqual(children.length, 0);
 		});
 
@@ -274,7 +274,7 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			const children = await provider.getChildren();
 
 			// Should have detected 3 devices
-			assert(Array.isArray(children));
+			assert.ok(Array.isArray(children));
 			assert.strictEqual(children.length, 3);
 
 			// Check CubeOrangePlus device
@@ -282,25 +282,25 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 				child.device.path === '/dev/ttyACM0' &&
 				child.device.productId === '1016'
 			);
-			assert(cubeOrangePlus);
+			assert.ok(cubeOrangePlus);
 			assert.strictEqual(cubeOrangePlus.device.vendorId, '2dae');
-			assert(cubeOrangePlus.device.isArduPilot);
+			assert.ok(cubeOrangePlus.device.isArduPilot);
 
 			// Check CubeOrange device
 			const cubeOrange = children.find(child =>
 				child.device.path === '/dev/ttyACM1' &&
 				child.device.productId === '1011'
 			);
-			assert(cubeOrange);
+			assert.ok(cubeOrange);
 			assert.strictEqual(cubeOrange.device.vendorId, '2dae');
-			assert(cubeOrange.device.isArduPilot);
+			assert.ok(cubeOrange.device.isArduPilot);
 
 			// Check generic device (should not be marked as ArduPilot)
 			const genericDevice = children.find(child =>
 				child.device.path === '/dev/ttyUSB0' &&
 				child.device.productId === '5678'
 			);
-			assert(genericDevice);
+			assert.ok(genericDevice);
 			assert.strictEqual(genericDevice.device.vendorId, '1234');
 			assert.strictEqual(genericDevice.device.isArduPilot, false);
 		});
@@ -374,20 +374,20 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			const children = await provider.getChildren();
 
 			// Should have 2 entries (one for each serial port)
-			assert(Array.isArray(children));
+			assert.ok(Array.isArray(children));
 			assert.strictEqual(children.length, 2);
 
 			// Both should be CubeOrange devices
 			children.forEach(child => {
 				assert.strictEqual(child.device.vendorId, '2dae');
 				assert.strictEqual(child.device.productId, '1011');
-				assert(child.device.isArduPilot);
+				assert.ok(child.device.isArduPilot);
 			});
 
 			// Should have different paths
 			const paths = children.map(child => child.device.path);
-			assert(paths.includes('/dev/ttyACM0'));
-			assert(paths.includes('/dev/ttyACM1'));
+			assert.ok(paths.includes('/dev/ttyACM0'));
+			assert.ok(paths.includes('/dev/ttyACM1'));
 		});
 
 		test('should handle device detection errors gracefully on macOS', async function() {
@@ -425,7 +425,7 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			});
 
 			const children = await provider.getChildren();
-			assert(Array.isArray(children));
+			assert.ok(Array.isArray(children));
 			assert.strictEqual(children.length, 0); // Darwin error handling returns empty array instead of error item
 		});
 
@@ -494,9 +494,9 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			sandbox.stub(cp, 'execSync').returns(mockSerialPorts);
 
 			const children = await provider.getChildren();
-			assert(Array.isArray(children));
+			assert.ok(Array.isArray(children));
 			// Should detect at least one device (exact count depends on how Darwin parsing works)
-			assert(children.length >= 0);
+			assert.ok(children.length >= 0);
 		});
 
 		test('should detect devices in WSL mode', async () => {
@@ -567,15 +567,15 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			const children = await provider.getChildren();
 
 			// Should have detected devices from both Linux and Windows approaches
-			assert(Array.isArray(children));
-			assert(children.length > 0);
+			assert.ok(Array.isArray(children));
+			assert.ok(children.length > 0);
 
 			// Should have at least one Linux device and Windows devices
 			const linuxDevice = children.find(child => child.device.path === '/dev/ttyACM0');
 			const windowsDevice = children.find(child => child.device.path === 'COM3');
 
-			assert(linuxDevice, 'Should have Linux device');
-			assert(windowsDevice, 'Should have Windows device');
+			assert.ok(linuxDevice, 'Should have Linux device');
+			assert.ok(windowsDevice, 'Should have Windows device');
 		});
 
 		test('should handle partial WSL detection failures - lsusb fails, PowerShell succeeds', async () => {
@@ -627,11 +627,11 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			const children = await provider.getChildren();
 
 			// Should still find Windows devices even when Linux detection fails
-			assert(Array.isArray(children));
-			assert(children.length > 0, 'Should find Windows devices when Linux detection fails');
+			assert.ok(Array.isArray(children));
+			assert.ok(children.length > 0, 'Should find Windows devices when Linux detection fails');
 
 			const windowsDevice = children.find(child => child.device.path === 'COM3');
-			assert(windowsDevice, 'Should find Windows device from PowerShell');
+			assert.ok(windowsDevice, 'Should find Windows device from PowerShell');
 		});
 
 		test('should handle partial WSL detection failures - PowerShell fails, lsusb succeeds', async () => {
@@ -709,11 +709,11 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			const children = await provider.getChildren();
 
 			// Should still find Linux devices even when PowerShell fails
-			assert(Array.isArray(children));
-			assert(children.length > 0, 'Should find Linux devices when PowerShell fails');
+			assert.ok(Array.isArray(children));
+			assert.ok(children.length > 0, 'Should find Linux devices when PowerShell fails');
 
 			const linuxDevice = children.find(child => child.device.path === '/dev/ttyACM0');
-			assert(linuxDevice, 'Should find Linux device from lsusb');
+			assert.ok(linuxDevice, 'Should find Linux device from lsusb');
 		});
 	});
 
@@ -725,11 +725,11 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			});
 
 			provider.refresh();
-			assert(eventFired);
+			assert.ok(eventFired);
 		});
 
 		test('should refresh connected devices provider from extension context', () => {
-			assert(apExtensionContext.connectedDevicesProvider);
+			assert.ok(apExtensionContext.connectedDevicesProvider);
 
 			let eventFired = false;
 			apExtensionContext.connectedDevicesProvider.onDidChangeTreeData(() => {
@@ -737,7 +737,7 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			});
 
 			apExtensionContext.connectedDevicesProvider.refresh();
-			assert(eventFired);
+			assert.ok(eventFired);
 		});
 	});
 
@@ -746,7 +746,7 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			const clearIntervalSpy = sandbox.spy(global, 'clearInterval');
 
 			provider.dispose();
-			assert(clearIntervalSpy.called);
+			assert.ok(clearIntervalSpy.called);
 		});
 
 		test('should handle dispose when timer is undefined', () => {
@@ -791,13 +791,13 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 
 			// Test connected device command URI
 			const disconnectCommand = connectedChildren[0];
-			assert(disconnectCommand.resourceUri);
+			assert.ok(disconnectCommand.resourceUri);
 			assert.strictEqual(disconnectCommand.resourceUri.scheme, 'connected-device');
 			assert.strictEqual(disconnectCommand.resourceUri.query, 'connected');
 
 			// Test disconnected device command URI
 			const connectCommand = disconnectedChildren[0];
-			assert(connectCommand.resourceUri);
+			assert.ok(connectCommand.resourceUri);
 			assert.strictEqual(connectCommand.resourceUri.scheme, 'connected-device');
 			assert.strictEqual(connectCommand.resourceUri.query, 'disconnected');
 		});
@@ -805,25 +805,25 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 		test('should test decoration functionality through registered provider', () => {
 			// Test decoration functionality by verifying that the extension context
 			// has the decoration provider registered in subscriptions
-			assert(apExtensionContext.vscodeContext);
-			assert(apExtensionContext.vscodeContext.subscriptions);
+			assert.ok(apExtensionContext.vscodeContext);
+			assert.ok(apExtensionContext.vscodeContext.subscriptions);
 
 			// Verify subscription exists (decoration provider is registered)
 			const hasDecorationSubscription = apExtensionContext.vscodeContext.subscriptions.length > 0;
-			assert(hasDecorationSubscription);
+			assert.ok(hasDecorationSubscription);
 		});
 
 		test('should refresh decorations when refresh command is executed', async () => {
 			// Test that the refresh command also refreshes decorations
 			// by verifying the command exists and can be executed
 			const commands = await vscode.commands.getCommands();
-			assert(commands.includes('connected-devices.refresh'));
+			assert.ok(commands.includes('connected-devices.refresh'));
 
 			// Execute refresh command (this should refresh both tree and decorations)
 			await vscode.commands.executeCommand('connected-devices.refresh');
 
 			// If we get here without error, the command executed successfully
-			assert(true);
+			assert.ok(true);
 		});
 	});
 
@@ -832,9 +832,9 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			const commands = await vscode.commands.getCommands();
 
 			// Verify all connected devices commands are registered
-			assert(commands.includes('connected-devices.refresh'));
-			assert(commands.includes('connected-devices.connectMAVProxy'));
-			assert(commands.includes('connected-devices.disconnectMAVProxy'));
+			assert.ok(commands.includes('connected-devices.refresh'));
+			assert.ok(commands.includes('connected-devices.connectMAVProxy'));
+			assert.ok(commands.includes('connected-devices.disconnectMAVProxy'));
 		});
 
 		test('should execute refresh command', async () => {
@@ -857,7 +857,7 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 				apExtensionContext.connectedDevicesProvider.refresh = originalRefresh;
 			}
 
-			assert(refreshCalled);
+			assert.ok(refreshCalled);
 		});
 
 		test('should handle connectMAVProxy command with successful connection', async () => {
@@ -891,14 +891,14 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			await vscode.commands.executeCommand('connected-devices.connectMAVProxy', mockDevice);
 
 			// Verify terminal monitor was used
-			assert(mockTerminalMonitor.runCommand.calledOnce);
+			assert.ok(mockTerminalMonitor.runCommand.calledOnce);
 
 			// Check that the command contains the expected elements
 			const calledCommand = mockTerminalMonitor.runCommand.getCall(0).args[0];
-			assert(calledCommand.includes('mavproxy.py'));
-			assert(calledCommand.includes('--master=/dev/ttyACM0'));
-			assert(calledCommand.includes('--baudrate=115200'));
-			assert(calledCommand.includes('--console'));
+			assert.ok(calledCommand.includes('mavproxy.py'));
+			assert.ok(calledCommand.includes('--master=/dev/ttyACM0'));
+			assert.ok(calledCommand.includes('--baudrate=115200'));
+			assert.ok(calledCommand.includes('--console'));
 		});
 
 		test('should handle disconnectMAVProxy command', async () => {
@@ -916,7 +916,7 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			await vscode.commands.executeCommand('connected-devices.disconnectMAVProxy', mockDevice);
 
 			// If we get here without error, the command executed successfully
-			assert(true);
+			assert.ok(true);
 		});
 	});
 
@@ -939,8 +939,8 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 
 			assert.strictEqual(item.label, 'CubeOrangePlus');
 			assert.strictEqual(item.description, '2DAE:1016');
-			assert(typeof item.tooltip === 'string' && item.tooltip.includes('CubeOrangePlus'));
-			assert(typeof item.tooltip === 'string' && item.tooltip.includes('/dev/ttyACM0'));
+			assert.ok(typeof item.tooltip === 'string' && item.tooltip.includes('CubeOrangePlus'));
+			assert.ok(typeof item.tooltip === 'string' && item.tooltip.includes('/dev/ttyACM0'));
 		});
 
 		test('should create device item with manufacturer fallback', () => {
@@ -984,12 +984,12 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			// Test ArduPilot vendor ID for CubePilot
 			// @ts-expect-error - accessing private method for testing
 			let isArduPilot = provider.isArduPilotDevice('2DAE', '1016', 'CubePilot');
-			assert(isArduPilot);
+			assert.ok(isArduPilot);
 
 			// Test non-ArduPilot device
 			// @ts-expect-error - accessing private method for testing
 			isArduPilot = provider.isArduPilotDevice('1234', '5678', 'Generic Serial Device');
-			assert(!isArduPilot);
+			assert.ok(!isArduPilot);
 
 			provider.dispose();
 		});
