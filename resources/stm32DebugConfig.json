@@ -1,0 +1,316 @@
+{
+  "STM32F100xB": {
+    "openocd": {
+      "target": "stm32f1x.cfg"
+    },
+    "jlink": {
+      "device": "STM32F100RB"
+    },
+    "svd": "STM32F100xx.svd"
+  },
+  "STM32F103xB": {
+    "openocd": {
+      "target": "stm32f1x.cfg"
+    },
+    "jlink": {
+      "device": "STM32F103RB"
+    },
+    "svd": "STM32F103xx.svd"
+  },
+  "STM32F105xC": {
+    "openocd": {
+      "target": "stm32f1x.cfg"
+    },
+    "jlink": {
+      "device": "STM32F105RC"
+    },
+    "svd": "STM32F105xx.svd"
+  },
+  "STM32F303xC": {
+    "openocd": {
+      "target": "stm32f3x.cfg"
+    },
+    "jlink": {
+      "device": "STM32F303RC"
+    },
+    "svd": "STM32F303.svd"
+  },
+  "STM32F405xx": {
+    "openocd": {
+      "target": "stm32f4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F405RG", "flash": "1024KB"}
+      ]
+    },
+    "svd": "STM32F405.svd"
+  },
+  "STM32F407xx": {
+    "openocd": {
+      "target": "stm32f4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F407VE", "flash": "512KB"},
+        {"device": "STM32F407VG", "flash": "1024KB"}
+      ]
+    },
+    "svd": "STM32F407.svd"
+  },
+  "STM32F412Rx": {
+    "openocd": {
+      "target": "stm32f4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F412RE", "flash": "512KB"}
+      ]
+    },
+    "svd": "STM32F412.svd"
+  },
+  "STM32F413xx": {
+    "openocd": {
+      "target": "stm32f4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F413RH", "flash": "1536KB"}
+      ]
+    },
+    "svd": "STM32F413.svd"
+  },
+  "STM32F427xx": {
+    "openocd": {
+      "target": "stm32f4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F427VG", "flash": "1024KB"},
+        {"device": "STM32F427VI", "flash": "2048KB"}
+      ]
+    },
+    "svd": "STM32F427.svd"
+  },
+  "STM32F469xx": {
+    "openocd": {
+      "target": "stm32f4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F469VG", "flash": "1024KB"},
+        {"device": "STM32F469VI", "flash": "2048KB"}
+      ]
+    },
+    "svd": "STM32F469.svd"
+  },
+  "STM32F732xx": {
+    "openocd": {
+      "target": "stm32f7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F732RE", "flash": "512KB"}
+      ]
+    },
+    "svd": "STM32F7x2.svd"
+  },
+  "STM32F745xx": {
+    "openocd": {
+      "target": "stm32f7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F745VG", "flash": "1024KB"}
+      ]
+    },
+    "svd": "STM32F745.svd"
+  },
+  "STM32F767xx": {
+    "openocd": {
+      "target": "stm32f7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F767VI", "flash": "2048KB"}
+      ]
+    },
+    "svd": "STM32F7x7.svd"
+  },
+  "STM32F777xx": {
+    "openocd": {
+      "target": "stm32f7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32F777VI", "flash": "2048KB"}
+      ]
+    },
+    "svd": "STM32F7x7.svd"
+  },
+  "STM32G431xx": {
+    "openocd": {
+      "target": "stm32g4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32G431RB", "flash": "128KB"}
+      ]
+    },
+    "svd": "STM32G431xx.svd"
+  },
+  "STM32G441xx": {
+    "openocd": {
+      "target": "stm32g4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32G441RB", "flash": "128KB"}
+      ]
+    },
+    "svd": "STM32G441xx.svd"
+  },
+  "STM32G474xx": {
+    "openocd": {
+      "target": "stm32g4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32G474RE", "flash": "512KB"}
+      ]
+    },
+    "svd": "STM32G474xx.svd"
+  },
+  "STM32G491xx": {
+    "openocd": {
+      "target": "stm32g4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32G491RE", "flash": "512KB"}
+      ]
+    },
+    "svd": "STM32G491xx.svd"
+  },
+  "STM32H723xx": {
+    "openocd": {
+      "target": "stm32h7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32H723VG", "flash": "1024KB"}
+      ]
+    },
+    "svd": "STM32H7x3.svd"
+  },
+  "STM32H730xx": {
+    "openocd": {
+      "target": "stm32h7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32H730VB", "flash": "128KB"}
+      ]
+    },
+    "svd": "STM32H7x3.svd"
+  },
+  "STM32H743xx": {
+    "openocd": {
+      "target": "stm32h7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32H743VI", "flash": "2048KB"}
+      ]
+    },
+    "svd": "STM32H743x.svd"
+  },
+  "STM32H750xx": {
+    "openocd": {
+      "target": "stm32h7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32H750VB", "flash": "128KB"}
+      ]
+    },
+    "svd": "STM32H750x.svd"
+  },
+  "STM32H755xx": {
+    "openocd": {
+      "target": "stm32h7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32H755VI", "flash": "2048KB"}
+      ]
+    },
+    "svd": "STM32H7x5_CM7.svd"
+  },
+  "STM32H757xx": {
+    "openocd": {
+      "target": "stm32h7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32H757VI", "flash": "2048KB"}
+      ]
+    },
+    "svd": "STM32H7x7_CM7.svd"
+  },
+  "STM32H7A3xx": {
+    "openocd": {
+      "target": "stm32h7x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32H7A3VI", "flash": "2048KB"}
+      ]
+    },
+    "svd": "STM32H7A3x.svd"
+  },
+  "STM32L431xx": {
+    "openocd": {
+      "target": "stm32l4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32L431RC", "flash": "256KB"}
+      ]
+    },
+    "svd": "STM32L4x1.svd"
+  },
+  "STM32L476xx": {
+    "openocd": {
+      "target": "stm32l4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32L476RG", "flash": "1024KB"}
+      ]
+    },
+    "svd": "STM32L4x6.svd"
+  },
+  "STM32L496xx": {
+    "openocd": {
+      "target": "stm32l4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32L496RG", "flash": "1024KB"}
+      ]
+    },
+    "svd": "STM32L4x6.svd"
+  },
+  "STM32L4R5xx": {
+    "openocd": {
+      "target": "stm32l4x.cfg"
+    },
+    "jlink": {
+      "devices": [
+        {"device": "STM32L4R5VI", "flash": "2048KB"}
+      ]
+    },
+    "svd": "STM32L4R5.svd"
+  }
+}
