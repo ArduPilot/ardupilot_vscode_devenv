@@ -10,7 +10,9 @@
 		"sourceMap": true,
 		"strict": true,
 		"rootDir": "src",
-		"experimentalDecorators": true
+		"experimentalDecorators": true,
+		"resolveJsonModule": true,
+		"esModuleInterop": true
 	},
 	"include": [
 		"src"
