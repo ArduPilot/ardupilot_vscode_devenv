@@ -18,7 +18,7 @@ suite('apLog Test Suite', () => {
 	suiteSetup(async () => {
 
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert(workspaceFolder);
+		assert.ok(workspaceFolder);
 
 		// Store original method
 		originalCreateOutputChannel = vscode.window.createOutputChannel;

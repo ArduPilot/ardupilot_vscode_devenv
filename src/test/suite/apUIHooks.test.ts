@@ -26,8 +26,8 @@ suite('apUIHooks Test Suite', () => {
 	suiteSetup(async () => {
 		apExtensionContext = await getApExtApi();
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert(workspaceFolder);
-		assert(apExtensionContext.vscodeContext);
+		assert.ok(workspaceFolder);
+		assert.ok(apExtensionContext.vscodeContext);
 		mockContext = apExtensionContext.vscodeContext;
 		mockExtensionUri = mockContext.extensionUri;
 	});
@@ -107,7 +107,7 @@ suite('apUIHooks Test Suite', () => {
 		});
 
 		test('should set up message listener on webview', () => {
-			assert(mockWebview.onDidReceiveMessage.calledOnce);
+			assert.ok(mockWebview.onDidReceiveMessage.calledOnce);
 		});
 	});
 
@@ -119,8 +119,8 @@ suite('apUIHooks Test Suite', () => {
 			uiHooks.on('testEvent', mockListener);
 			(uiHooks as any)._onMessage(testMessage);
 
-			assert(mockListener.calledOnce);
-			assert(mockListener.calledWith(testMessage));
+			assert.ok(mockListener.calledOnce);
+			assert.ok(mockListener.calledWith(testMessage));
 		});
 	});
 
@@ -133,8 +133,8 @@ suite('apUIHooks Test Suite', () => {
 
 			(uiHooks as any)._onMessage(message);
 
-			assert(mockWebview.postMessage.calledOnce);
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledOnce);
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'getTasksList',
 				tasksList: '{"version": "2.0.0", "tasks": []}'
 			}));
@@ -156,8 +156,8 @@ suite('apUIHooks Test Suite', () => {
 
 			(uiHooks as any)._onMessage(message);
 
-			assert(mockWebview.postMessage.calledOnce);
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledOnce);
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'extractFeatures',
 				features: ['GPS_TYPE', 'COMPASS_ENABLE']
 			}));
@@ -169,7 +169,7 @@ suite('apUIHooks Test Suite', () => {
 
 			(uiHooks as any)._onMessage(message);
 
-			assert(getSITLOptionsSpy.calledOnce);
+			assert.ok(getSITLOptionsSpy.calledOnce);
 		});
 
 		test('should handle error command by logging', () => {
@@ -190,7 +190,7 @@ suite('apUIHooks Test Suite', () => {
 
 			(uiHooks as any)._onMessage(message);
 
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'unknownCommand',
 				response: 'Bad Request'
 			}));
@@ -211,8 +211,8 @@ suite('apUIHooks Test Suite', () => {
 
 			(uiHooks as any).getTasksList();
 
-			assert(mockWebview.postMessage.calledOnce);
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledOnce);
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'getTasksList',
 				tasksList: undefined
 			}));
@@ -230,8 +230,8 @@ suite('apUIHooks Test Suite', () => {
 
 			(uiHooks as any).getTasksList();
 
-			assert(mockWebview.postMessage.calledOnce);
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledOnce);
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'getTasksList',
 				tasksList: undefined
 			}));
@@ -244,8 +244,8 @@ suite('apUIHooks Test Suite', () => {
 			(uiHooks as any).getTasksList();
 
 			// The stubbed method returns the default tasks content
-			assert(mockWebview.postMessage.calledOnce);
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledOnce);
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'getTasksList',
 				tasksList: '{"version": "2.0.0", "tasks": []}'
 			}));
@@ -263,8 +263,8 @@ suite('apUIHooks Test Suite', () => {
 
 			(uiHooks as any).getTasksList();
 
-			assert(mockWebview.postMessage.calledOnce);
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledOnce);
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'getTasksList',
 				tasksList: undefined
 			}));
@@ -289,8 +289,8 @@ suite('apUIHooks Test Suite', () => {
 
 			await uiHooks.extractFeatures({ board: 'sitl', target: 'copter' });
 
-			assert(mockWebview.postMessage.calledOnce);
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledOnce);
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'extractFeatures',
 				features: [],
 				error: 'No workspace folder found'
@@ -315,8 +315,8 @@ suite('apUIHooks Test Suite', () => {
 
 			await uiHooks.extractFeatures({ board: 'sitl' }); // missing target
 
-			assert(mockWebview.postMessage.calledOnce);
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledOnce);
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'extractFeatures',
 				features: [],
 				error: 'Board and target are required'
@@ -342,8 +342,8 @@ suite('apUIHooks Test Suite', () => {
 
 			await uiHooks.extractFeatures({ board: 'sitl', target: 'copter' });
 
-			assert(mockWebview.postMessage.calledOnce);
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledOnce);
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'extractFeatures',
 				features: [],
 				error: 'Binary file not found for sitl-copter. Please build the firmware first.'
@@ -370,7 +370,7 @@ suite('apUIHooks Test Suite', () => {
 
 			await uiHooks.extractFeatures({ board: 'sitl', target: 'copter' });
 
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'extractFeatures',
 				features: mockFeatures
 			}));
@@ -470,8 +470,8 @@ suite('apUIHooks Test Suite', () => {
 				buildOptions: '--verbose'
 			});
 
-			assert(generateBuildCommandsStub.calledWith('sitl', 'copter', '--debug', '--verbose', '/mock/workspace'));
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(generateBuildCommandsStub.calledWith('sitl', 'copter', '--debug', '--verbose', '/mock/workspace'));
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'getBuildCommands',
 				configureCommand: 'python3 /mock/workspace/waf configure --board=sitl',
 				buildCommand: 'python3 /mock/workspace/waf copter'
@@ -486,7 +486,7 @@ suite('apUIHooks Test Suite', () => {
 				target: 'copter'
 			});
 
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'getBuildCommands',
 				configureCommand: '',
 				buildCommand: '',
@@ -511,7 +511,7 @@ suite('apUIHooks Test Suite', () => {
 			// Simulate message from webview
 			(uiHooks as any)._onMessage({ command: 'getTasksList' });
 
-			assert(mockWebview.postMessage.calledWith({
+			assert.ok(mockWebview.postMessage.calledWith({
 				command: 'getTasksList',
 				tasksList: mockTasksContent
 			}));
@@ -524,8 +524,8 @@ suite('apUIHooks Test Suite', () => {
 			uiHooks.on('build', mockListener);
 			(uiHooks as any)._onMessage(testMessage);
 
-			assert(mockListener.calledOnce);
-			assert(mockListener.calledWith(testMessage));
+			assert.ok(mockListener.calledOnce);
+			assert.ok(mockListener.calledWith(testMessage));
 		});
 	});
 });

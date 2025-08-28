@@ -22,8 +22,8 @@ suite('apToolsConfig Test Suite', () => {
 	suiteSetup(async () => {
 		apExtensionContext = await getApExtApi();
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert(workspaceFolder);
-		assert(apExtensionContext.vscodeContext);
+		assert.ok(workspaceFolder);
+		assert.ok(apExtensionContext.vscodeContext);
 		mockContext = apExtensionContext.vscodeContext;
 		tempConfigPath = path.join(workspaceFolder.uri.fsPath, '.vscode', 'apenv.json');
 	});
@@ -143,7 +143,7 @@ suite('apToolsConfig Test Suite', () => {
 			ToolsConfig.setToolPath('GCC', toolPath);
 
 			assert.strictEqual(ToolsConfig.getToolPath('GCC'), toolPath);
-			assert(writeFileSyncStub.calledOnce);
+			assert.ok(writeFileSyncStub.calledOnce);
 		});
 
 		test('should remove tool paths correctly', () => {
@@ -158,7 +158,7 @@ suite('apToolsConfig Test Suite', () => {
 			// Remove it
 			ToolsConfig.removeToolPath('GCC');
 			assert.strictEqual(ToolsConfig.getToolPath('GCC'), undefined);
-			assert(writeFileSyncStub.calledTwice);
+			assert.ok(writeFileSyncStub.calledTwice);
 		});
 
 		test('should handle multiple tool paths', () => {
@@ -216,7 +216,7 @@ suite('apToolsConfig Test Suite', () => {
 
 			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
-			assert(writeFileSyncStub.calledOnce);
+			assert.ok(writeFileSyncStub.calledOnce);
 			const savedConfig = JSON.parse(savedContent);
 			assert.deepStrictEqual(savedConfig, {
 				toolPaths: {
@@ -236,9 +236,9 @@ suite('apToolsConfig Test Suite', () => {
 
 			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
-			assert(mkdirSyncStub.calledOnce);
+			assert.ok(mkdirSyncStub.calledOnce);
 			const mkdirCall = mkdirSyncStub.getCall(0);
-			assert(mkdirCall.args[0].toString().includes('.vscode'));
+			assert.ok(mkdirCall.args[0].toString().includes('.vscode'));
 			assert.deepStrictEqual(mkdirCall.args[1], { recursive: true });
 		});
 
@@ -302,16 +302,16 @@ suite('apToolsConfig Test Suite', () => {
 
 			ToolsConfig.initialize(mockContext);
 
-			assert(createFileSystemWatcherStub.calledOnce);
-			assert(mockWatcher.onDidChange.calledOnce);
-			assert(mockWatcher.onDidCreate.calledOnce);
+			assert.ok(createFileSystemWatcherStub.calledOnce);
+			assert.ok(mockWatcher.onDidChange.calledOnce);
+			assert.ok(mockWatcher.onDidCreate.calledOnce);
 
 			// Verify the pattern includes the correct config file
 			const watchPattern = createFileSystemWatcherStub.getCall(0).args[0];
 			if (typeof watchPattern === 'string') {
-				assert(watchPattern.includes('apenv.json'));
+				assert.ok(watchPattern.includes('apenv.json'));
 			} else {
-				assert((watchPattern as vscode.RelativePattern).pattern.includes('apenv.json'));
+				assert.ok((watchPattern as vscode.RelativePattern).pattern.includes('apenv.json'));
 			}
 		});
 
@@ -321,7 +321,7 @@ suite('apToolsConfig Test Suite', () => {
 
 			ToolsConfig.initialize(mockContext);
 
-			assert(createFileSystemWatcherStub.notCalled);
+			assert.ok(createFileSystemWatcherStub.notCalled);
 		});
 
 		test('should reload configuration when file changes', () => {
@@ -449,8 +449,8 @@ suite('apToolsConfig Test Suite', () => {
 			// Should not throw
 			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
-			assert(showErrorMessageStub.calledOnce);
-			assert(showErrorMessageStub.getCall(0).args[0].includes('Failed to save tool configuration'));
+			assert.ok(showErrorMessageStub.calledOnce);
+			assert.ok(showErrorMessageStub.getCall(0).args[0].includes('Failed to save tool configuration'));
 		});
 
 		test('should handle directory creation errors', () => {
@@ -462,7 +462,7 @@ suite('apToolsConfig Test Suite', () => {
 			// Should not throw
 			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
-			assert(showErrorMessageStub.calledOnce);
+			assert.ok(showErrorMessageStub.calledOnce);
 		});
 
 	});
@@ -524,7 +524,7 @@ suite('apToolsConfig Test Suite', () => {
 			ToolsConfig.initialize(mockContext);
 
 			// Verify watcher is created and subscribed to context
-			assert(mockContext.subscriptions.includes(mockWatcher as any));
+			assert.ok(mockContext.subscriptions.includes(mockWatcher as any));
 		});
 
 		test('should handle concurrent configuration operations', async () => {
@@ -544,7 +544,7 @@ suite('apToolsConfig Test Suite', () => {
 			await Promise.all(promises);
 
 			// All operations should complete without errors
-			assert(writeFileSyncStub.callCount >= 5);
+			assert.ok(writeFileSyncStub.callCount >= 5);
 
 			// Final state should be consistent
 			assert.strictEqual(ToolsConfig.getToolPath('GCC'), undefined);
@@ -557,15 +557,15 @@ suite('apToolsConfig Test Suite', () => {
 		test('should have consistent TOOLS_REGISTRY structure', () => {
 			// Verify each tool has required properties
 			for (const [toolKey, toolInfo] of Object.entries(apToolsConfig.TOOLS_REGISTRY)) {
-				assert(toolInfo.name, `${toolKey} should have a name`);
-				assert(toolInfo.paths, `${toolKey} should have paths`);
-				assert((toolInfo as apToolsConfig.ToolInfo).id === toolKey, `${toolKey} should have id field set to key`);
+				assert.ok(toolInfo.name, `${toolKey} should have a name`);
+				assert.ok(toolInfo.paths, `${toolKey} should have paths`);
+				assert.ok((toolInfo as apToolsConfig.ToolInfo).id === toolKey, `${toolKey} should have id field set to key`);
 
 				// Check that tool has at least one platform path
 				const hasLinux = 'linux' in toolInfo.paths;
 				const hasDarwin = 'darwin' in toolInfo.paths;
 				const hasWSL = 'wsl' in toolInfo.paths;
-				assert(hasLinux || hasDarwin || hasWSL, `${toolKey} should have at least one platform path`);
+				assert.ok(hasLinux || hasDarwin || hasWSL, `${toolKey} should have at least one platform path`);
 			}
 		});
 
@@ -578,8 +578,8 @@ suite('apToolsConfig Test Suite', () => {
 		test('should have consistent PYTHON_PACKAGES_REGISTRY structure', () => {
 			// Verify each package has required properties
 			for (const [packageKey, packageInfo] of Object.entries(apToolsConfig.PYTHON_PACKAGES_REGISTRY)) {
-				assert(packageInfo.name, `${packageKey} should have a name`);
-				assert(packageInfo.description, `${packageKey} should have a description`);
+				assert.ok(packageInfo.name, `${packageKey} should have a name`);
+				assert.ok(packageInfo.description, `${packageKey} should have a description`);
 			}
 		});
 	});
@@ -588,20 +588,20 @@ suite('apToolsConfig Test Suite', () => {
 		test('should provide tool IDs list', () => {
 			const toolIds = apToolsConfig.ToolsRegistryHelpers.getToolIdsList();
 
-			assert(Array.isArray(toolIds));
-			assert(toolIds.includes('GCC'));
-			assert(toolIds.includes('ARM_GCC'));
-			assert(toolIds.includes('MAVPROXY'));
+			assert.ok(Array.isArray(toolIds));
+			assert.ok(toolIds.includes('GCC'));
+			assert.ok(toolIds.includes('ARM_GCC'));
+			assert.ok(toolIds.includes('MAVPROXY'));
 		});
 
 		test('should format Python packages for installation', () => {
 			const packages = apToolsConfig.ToolsRegistryHelpers.getPythonPackagesForInstallation();
 
-			assert(Array.isArray(packages));
+			assert.ok(Array.isArray(packages));
 			// Check that packages are formatted correctly with versions where specified
-			assert(packages.some(pkg => pkg === 'empy==3.3.4'));
-			assert(packages.some(pkg => pkg === 'future'));
-			assert(packages.some(pkg => pkg === 'pymavlink'));
+			assert.ok(packages.some(pkg => pkg === 'empy==3.3.4'));
+			assert.ok(packages.some(pkg => pkg === 'future'));
+			assert.ok(packages.some(pkg => pkg === 'pymavlink'));
 		});
 	});
 });

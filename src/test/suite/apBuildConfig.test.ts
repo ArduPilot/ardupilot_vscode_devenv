@@ -26,12 +26,12 @@ suite('apBuildConfig Test Suite', () => {
 		apExtensionContext = await getApExtApi();
 
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert(workspaceFolder);
-		assert(apExtensionContext.vscodeContext);
+		assert.ok(workspaceFolder);
+		assert.ok(apExtensionContext.vscodeContext);
 		mockContext = apExtensionContext.vscodeContext;
 
 		// Use the existing provider instance from the extension
-		assert(apExtensionContext.apBuildConfigProviderInstance, 'apBuildConfigProviderInstance should be available');
+		assert.ok(apExtensionContext.apBuildConfigProviderInstance, 'apBuildConfigProviderInstance should be available');
 		buildConfigProvider = apExtensionContext.apBuildConfigProviderInstance;
 	});
 
@@ -321,8 +321,8 @@ suite('apBuildConfig Test Suite', () => {
 
 			// Verify we have the expected configurations using configName
 			const labels = children.map(child => child.label);
-			assert(labels.includes('sitl-copter'), 'Should include sitl-copter configuration');
-			assert(labels.includes('CubeOrange-plane'), 'Should include CubeOrange-plane configuration');
+			assert.ok(labels.includes('sitl-copter'), 'Should include sitl-copter configuration');
+			assert.ok(labels.includes('CubeOrange-plane'), 'Should include CubeOrange-plane configuration');
 		});
 
 		test('should handle empty task list', async () => {

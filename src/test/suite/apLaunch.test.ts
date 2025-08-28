@@ -46,10 +46,10 @@ suite('apLaunch Test Suite', () => {
 	suiteSetup(async () => {
 		apExtensionContext = await getApExtApi();
 		const folders = vscode.workspace.workspaceFolders;
-		assert(folders && folders.length > 0, 'Workspace folder must be available for tests');
+		assert.ok(folders && folders.length > 0, 'Workspace folder must be available for tests');
 		workspaceFolder = folders[0];
-		assert(workspaceFolder, 'Workspace folder should be available');
-		assert(apExtensionContext.vscodeContext, 'VS Code context should be available');
+		assert.ok(workspaceFolder, 'Workspace folder should be available');
+		assert.ok(apExtensionContext.vscodeContext, 'VS Code context should be available');
 	});
 
 	// Store references to the mocked methods for use in tests
@@ -85,9 +85,9 @@ suite('apLaunch Test Suite', () => {
 
 		// Mock ProgramUtils.PYTHON to prevent actual Python detection
 		sandbox.stub(ProgramUtils, 'PYTHON').resolves('/usr/bin/python3');
-
+		assert.ok(apExtensionContext.vscodeContext?.extensionUri, 'Extension URI should be available');
 		// Create fresh provider instance for each test
-		provider = new APLaunchConfigurationProvider(workspaceFolder);
+		provider = new APLaunchConfigurationProvider(apExtensionContext.vscodeContext.extensionUri);
 	});
 
 	teardown(() => {
@@ -105,7 +105,7 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			assert.strictEqual(result, undefined);
-			assert(showErrorStub.calledWith(
+			assert.ok(showErrorStub.calledWith(
 				'Cannot launch ArduPilot debug session. Please create a launch configuration.'
 			));
 		});
@@ -124,7 +124,7 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			assert.strictEqual(result, otherConfig);
-			assert(showErrorStub.notCalled);
+			assert.ok(showErrorStub.notCalled);
 		});
 
 		test('should set default waf file path when not specified', async () => {
@@ -188,11 +188,11 @@ suite('apLaunch Test Suite', () => {
 				config as vscode.DebugConfiguration
 			);
 
-			assert(result, 'Should return debug configuration');
+			assert.ok(result, 'Should return debug configuration');
 			assert.strictEqual(result.type, 'lldb');
 			assert.strictEqual(result.request, 'attach');
 			assert.strictEqual(result.pid, 12345);
-			assert(result.program?.includes('copter'));
+			assert.ok(result.program?.includes('copter'));
 		});
 
 		test('should configure cppdbg debugging for Linux SITL', async () => {
@@ -231,11 +231,11 @@ suite('apLaunch Test Suite', () => {
 				config as vscode.DebugConfiguration
 			);
 
-			assert(result, 'Should return debug configuration');
+			assert.ok(result, 'Should return debug configuration');
 			assert.strictEqual(result.type, 'cppdbg');
 			assert.strictEqual(result.request, 'launch');
-			assert(result.miDebuggerServerAddress?.startsWith('localhost:'));
-			assert(result.program?.includes('copter'));
+			assert.ok(result.miDebuggerServerAddress?.startsWith('localhost:'));
+			assert.ok(result.program?.includes('copter'));
 			assert.strictEqual(result.miDebuggerPath, '/usr/bin/gdb');
 		});
 	});
@@ -269,7 +269,7 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			assert.strictEqual(result, undefined);
-			assert(showErrorStub.calledWith(
+			assert.ok(showErrorStub.calledWith(
 				sinon.match('CodeLLDB extension is required for debugging on macOS')
 			));
 		});
@@ -302,7 +302,7 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			assert.strictEqual(result, undefined);
-			assert(showErrorStub.calledWith(
+			assert.ok(showErrorStub.calledWith(
 				'GDB not found. Please install GDB to debug SITL.'
 			));
 		});
@@ -334,7 +334,7 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			assert.strictEqual(result, undefined);
-			assert(showErrorStub.calledWith(
+			assert.ok(showErrorStub.calledWith(
 				'tmux not found. Please install tmux to debug SITL.'
 			));
 		});
@@ -356,10 +356,10 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			assert.strictEqual(result, undefined, 'Should return undefined for non-debug sessions');
-			assert(mockTerminalMonitor.createTerminal.called, 'Should create terminal');
-			assert(mockTerminalMonitor.show.called, 'Should show terminal');
-			assert(mockTerminalMonitor.runCommand.calledWith(`cd ${workspaceFolder.uri.fsPath}`), 'Should cd to workspace');
-			assert(mockTerminalMonitor.runCommand.calledWith(sinon.match(/python3.*waf.*copter.*--upload/)), 'Should run upload command');
+			assert.ok(mockTerminalMonitor.createTerminal.called, 'Should create terminal');
+			assert.ok(mockTerminalMonitor.show.called, 'Should show terminal');
+			assert.ok(mockTerminalMonitor.runCommand.calledWith(`cd ${workspaceFolder.uri.fsPath}`), 'Should cd to workspace');
+			assert.ok(mockTerminalMonitor.runCommand.calledWith(sinon.match(/python3.*waf.*copter.*--upload/)), 'Should run upload command');
 		});
 
 		test('should handle different vehicle types for hardware upload', async () => {
@@ -381,7 +381,7 @@ suite('apLaunch Test Suite', () => {
 					config as vscode.DebugConfiguration
 				);
 
-				assert(mockTerminalMonitor.runCommand.calledWith(sinon.match(vehicle)), `Should include ${vehicle} in upload command`);
+				assert.ok(mockTerminalMonitor.runCommand.calledWith(sinon.match(vehicle)), `Should include ${vehicle} in upload command`);
 			}
 		});
 	});
@@ -421,8 +421,8 @@ suite('apLaunch Test Suite', () => {
 				config as vscode.DebugConfiguration
 			);
 
-			assert(fetchTasksStub.calledWith({ type: 'ardupilot' }));
-			assert(executeTaskStub.calledWith(mockTask));
+			assert.ok(fetchTasksStub.calledWith({ type: 'ardupilot' }));
+			assert.ok(executeTaskStub.calledWith(mockTask));
 		});
 
 		test('should handle pre-launch task execution failure', async () => {
@@ -458,7 +458,7 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			assert.strictEqual(result, undefined);
-			assert(showErrorStub.calledWith(
+			assert.ok(showErrorStub.calledWith(
 				sinon.match(/Failed to execute pre-launch task/)
 			));
 		});
@@ -493,8 +493,8 @@ suite('apLaunch Test Suite', () => {
 			// Manually call the handler for testing
 			await (provider as any).handleDebugSessionTermination(mockSession);
 
-			assert(mockDebugTerminal.sendInterruptSignal.calledTwice, 'Should call sendInterruptSignal twice');
-			assert(mockDebugTerminal.dispose.called);
+			assert.ok(mockDebugTerminal.sendInterruptSignal.calledTwice, 'Should call sendInterruptSignal twice');
+			assert.ok(mockDebugTerminal.dispose.called);
 			assert.strictEqual((provider as any).tmuxSessionName, undefined);
 			assert.strictEqual((provider as any).debugSessionTerminal, undefined);
 		});
@@ -510,7 +510,7 @@ suite('apLaunch Test Suite', () => {
 			mockContext.subscriptions.push(disposable);
 
 			assert.strictEqual(mockContext.subscriptions.length, 1);
-			assert(disposable.dispose, 'Should provide dispose method');
+			assert.ok(disposable.dispose, 'Should provide dispose method');
 		});
 
 		test('should integrate with targetToBin mapping correctly', async () => {
@@ -559,8 +559,8 @@ suite('apLaunch Test Suite', () => {
 					config as vscode.DebugConfiguration
 				);
 
-				assert(result, `Should process ${vehicle} target successfully`);
-				assert(result.program?.includes(targetToBin[vehicle]),
+				assert.ok(result, `Should process ${vehicle} target successfully`);
+				assert.ok(result.program?.includes(targetToBin[vehicle]),
 					`Should use correct binary path for ${vehicle}`);
 			}
 		});

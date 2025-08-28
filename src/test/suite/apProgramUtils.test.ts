@@ -18,8 +18,8 @@ suite('apProgramUtils Test Suite', () => {
 	suiteSetup(async () => {
 		const apExtensionContext = await getApExtApi();
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert(workspaceFolder);
-		assert(apExtensionContext);
+		assert.ok(workspaceFolder);
+		assert.ok(apExtensionContext);
 	});
 
 	setup(() => {
@@ -37,25 +37,25 @@ suite('apProgramUtils Test Suite', () => {
 	suite('Tool Registry Structure', () => {
 		test('should have consistent TOOLS_REGISTRY structure', () => {
 			for (const [toolKey, toolInfo] of Object.entries(apToolsConfig.TOOLS_REGISTRY)) {
-				assert(toolInfo.name, `${toolKey} should have a name`);
-				assert(toolInfo.paths, `${toolKey} should have paths`);
+				assert.ok(toolInfo.name, `${toolKey} should have a name`);
+				assert.ok(toolInfo.paths, `${toolKey} should have paths`);
 
 				// Check that tool has at least one platform path
 				const hasLinux = 'linux' in toolInfo.paths;
 				const hasDarwin = 'darwin' in toolInfo.paths;
 				const hasWSL = 'wsl' in toolInfo.paths;
-				assert(hasLinux || hasDarwin || hasWSL, `${toolKey} should have at least one platform path`);
+				assert.ok(hasLinux || hasDarwin || hasWSL, `${toolKey} should have at least one platform path`);
 			}
 		});
 
 		test('should provide valid tool IDs list', () => {
 			const toolIds = apToolsConfig.ToolsRegistryHelpers.getToolIdsList();
 
-			assert(Array.isArray(toolIds));
-			assert(toolIds.includes('PYTHON'));
-			assert(toolIds.includes('GCC'));
-			assert(toolIds.includes('MAVPROXY'));
-			assert(toolIds.length > 5);
+			assert.ok(Array.isArray(toolIds));
+			assert.ok(toolIds.includes('PYTHON'));
+			assert.ok(toolIds.includes('GCC'));
+			assert.ok(toolIds.includes('MAVPROXY'));
+			assert.ok(toolIds.length > 5);
 		});
 	});
 
@@ -217,7 +217,7 @@ suite('apProgramUtils Test Suite', () => {
 			const result = await ProgramUtils.selectPythonInterpreter();
 
 			assert.strictEqual(result, null);
-			assert(showErrorStub.called);
+			assert.ok(showErrorStub.called);
 		});
 
 		test('should activate Python extension if not active', async () => {
@@ -269,7 +269,7 @@ suite('apProgramUtils Test Suite', () => {
 			const result = await ProgramUtils.checkPythonPackage('nonexistent');
 
 			assert.strictEqual(result.available, false);
-			assert(result.info?.includes('pip install nonexistent'));
+			assert.ok(result.info?.includes('pip install nonexistent'));
 		});
 
 		test('should handle Python not available for package check', async () => {
@@ -281,7 +281,7 @@ suite('apProgramUtils Test Suite', () => {
 			const result = await ProgramUtils.checkPythonPackage('pymavlink');
 
 			assert.strictEqual(result.available, false);
-			assert(result.info?.includes('Python not available'));
+			assert.ok(result.info?.includes('Python not available'));
 		});
 
 		test('should check all Python packages', async () => {
@@ -308,15 +308,15 @@ suite('apProgramUtils Test Suite', () => {
 
 			const results = await ProgramUtils.checkAllPythonPackages();
 
-			assert(Array.isArray(results));
-			assert(results.length > 0);
+			assert.ok(Array.isArray(results));
+			assert.ok(results.length > 0);
 
 			const empyResult = results.find(r => r.packageName === 'empy');
-			assert(empyResult);
+			assert.ok(empyResult);
 			assert.strictEqual(empyResult.result.available, true);
 
 			const pymavlinkResult = results.find(r => r.packageName === 'pymavlink');
-			assert(pymavlinkResult);
+			assert.ok(pymavlinkResult);
 			assert.strictEqual(pymavlinkResult.result.available, false);
 		});
 	});
@@ -392,7 +392,7 @@ suite('apProgramUtils Test Suite', () => {
 			const result = await ProgramUtils.configureVenvArdupilot();
 
 			assert.strictEqual(result, true);
-			assert(mockConfig.update.calledWith('venvFolders', sinon.match.array));
+			assert.ok(mockConfig.update.calledWith('venvFolders', sinon.match.array));
 		});
 
 		test('should return false when venv-ardupilot does not exist', async () => {
@@ -437,7 +437,7 @@ suite('apProgramUtils Test Suite', () => {
 			const result = await ProgramUtils.configureVenvArdupilot();
 
 			assert.strictEqual(result, false);
-			assert(mockConfig.update.notCalled);
+			assert.ok(mockConfig.update.notCalled);
 		});
 	});
 
@@ -457,7 +457,7 @@ suite('apProgramUtils Test Suite', () => {
 			const result = await ProgramUtils.checkPythonPackage('test-package');
 
 			assert.strictEqual(result.available, false);
-			assert(result.info?.includes('pip install test-package'));
+			assert.ok(result.info?.includes('pip install test-package'));
 		});
 
 		test('should handle WSL detection errors gracefully', () => {

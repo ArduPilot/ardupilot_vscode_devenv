@@ -22,15 +22,15 @@ suite('APTaskProvider Test Suite', () => {
 	suiteSetup(async () => {
 		apExtensionContext = await getApExtApi();
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert(workspaceFolder);
+		assert.ok(workspaceFolder);
 		ardupilotDir = workspaceFolder.uri.path;
-		assert(apExtensionContext.vscodeContext);
+		assert.ok(apExtensionContext.vscodeContext);
 		mockContext = apExtensionContext.vscodeContext;
 	});
 
 	setup(() => {
 		sandbox = sinon.createSandbox();
-		assert(ardupilotDir, 'ardupilotDir should be defined');
+		assert.ok(ardupilotDir, 'ardupilotDir should be defined');
 		taskProvider = new APTaskProvider(ardupilotDir, mockContext.extensionUri);
 	});
 
@@ -53,14 +53,14 @@ suite('APTaskProvider Test Suite', () => {
 			};
 			createFileSystemWatcherStub.returns(mockWatcher as any);
 
-			assert(ardupilotDir, 'ardupilotDir should be defined');
+			assert.ok(ardupilotDir, 'ardupilotDir should be defined');
 			new APTaskProvider(ardupilotDir, mockContext.extensionUri);
 
 			const expectedPattern = path.join(ardupilotDir, 'tasklist.json');
-			assert(createFileSystemWatcherStub.calledWith(expectedPattern));
-			assert(mockWatcher.onDidChange.called);
-			assert(mockWatcher.onDidCreate.called);
-			assert(mockWatcher.onDidDelete.called);
+			assert.ok(createFileSystemWatcherStub.calledWith(expectedPattern));
+			assert.ok(mockWatcher.onDidChange.called);
+			assert.ok(mockWatcher.onDidCreate.called);
+			assert.ok(mockWatcher.onDidDelete.called);
 		});
 
 		test('should resolve tasks through resolveTask()', async () => {
@@ -154,7 +154,7 @@ suite('APTaskProvider Test Suite', () => {
 			const task = await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
 			assert.strictEqual(task, undefined);
-			assert(showErrorStub.calledWith('No workspace folder is open.'));
+			assert.ok(showErrorStub.calledWith('No workspace folder is open.'));
 		});
 
 		test('should create .vscode directory if it doesn\'t exist', async () => {
@@ -178,7 +178,7 @@ suite('APTaskProvider Test Suite', () => {
 
 			await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
-			assert(mkdirSyncStub.calledWith(sinon.match.string, { recursive: true }));
+			assert.ok(mkdirSyncStub.calledWith(sinon.match.string, { recursive: true }));
 		});
 
 		test('should preserve existing simVehicleCommand from tasks.json', async () => {
@@ -230,7 +230,7 @@ suite('APTaskProvider Test Suite', () => {
 			assert.strictEqual(task.definition.simVehicleCommand, '--new-command');
 
 			// Verify update was called
-			assert(mockConfiguration.update.called);
+			assert.ok(mockConfiguration.update.called);
 			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
 			assert.strictEqual(updatedTasks.length, 1);
 			assert.strictEqual(updatedTasks[0].simVehicleCommand, '--new-command');
@@ -243,7 +243,7 @@ suite('APTaskProvider Test Suite', () => {
 			const task = await APTaskProvider.getOrCreateBuildConfig('CubeOrange', 'plane', 'CubeOrange-plane');
 
 			assert.ok(task);
-			assert(mockConfiguration.update.called);
+			assert.ok(mockConfiguration.update.called);
 			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
 			assert.strictEqual(updatedTasks.length, 1);
 			assert.strictEqual(updatedTasks[0].configure, 'CubeOrange');
@@ -465,7 +465,7 @@ suite('APTaskProvider Test Suite', () => {
 			APTaskProvider.delete('sitl-copter');
 
 			// The update method should be called
-			assert(mockConfiguration.update.called);
+			assert.ok(mockConfiguration.update.called);
 			const updateCall = mockConfiguration.update.getCall(0);
 			assert.strictEqual(updateCall.args[0], 'tasks'); // First arg should be 'tasks'
 			const updatedTasks = updateCall.args[1];
@@ -477,7 +477,7 @@ suite('APTaskProvider Test Suite', () => {
 			APTaskProvider.delete('nonexistent-config');
 
 			// Should not call update since no task was found to remove
-			assert(mockConfiguration.update.notCalled);
+			assert.ok(mockConfiguration.update.notCalled);
 		});
 
 		test('should handle missing workspace folder', () => {
@@ -486,7 +486,7 @@ suite('APTaskProvider Test Suite', () => {
 
 			APTaskProvider.delete('sitl-copter');
 
-			assert(showErrorStub.calledWith('No workspace folder is open.'));
+			assert.ok(showErrorStub.calledWith('No workspace folder is open.'));
 		});
 
 		test('should handle missing tasks array', () => {
@@ -495,7 +495,7 @@ suite('APTaskProvider Test Suite', () => {
 
 			APTaskProvider.delete('sitl');
 
-			assert(showErrorStub.calledWith('No tasks found in tasks.json'));
+			assert.ok(showErrorStub.calledWith('No tasks found in tasks.json'));
 		});
 
 		test('should handle malformed tasks array', () => {
@@ -504,7 +504,7 @@ suite('APTaskProvider Test Suite', () => {
 
 			APTaskProvider.delete('sitl');
 
-			assert(showErrorStub.calledWith('No tasks found in tasks.json'));
+			assert.ok(showErrorStub.calledWith('No tasks found in tasks.json'));
 		});
 	});
 
@@ -736,7 +736,7 @@ suite('APTaskProvider Test Suite', () => {
 			);
 
 			assert.strictEqual(task, undefined);
-			assert(showErrorStub.calledWith('Custom configure and build commands are required when override is enabled.'));
+			assert.ok(showErrorStub.calledWith('Custom configure and build commands are required when override is enabled.'));
 
 			// Missing custom build command
 			showErrorStub.resetHistory();
@@ -745,7 +745,7 @@ suite('APTaskProvider Test Suite', () => {
 			);
 
 			assert.strictEqual(task, undefined);
-			assert(showErrorStub.calledWith('Custom configure and build commands are required when override is enabled.'));
+			assert.ok(showErrorStub.calledWith('Custom configure and build commands are required when override is enabled.'));
 		});
 
 		test('should create standard configuration when override is false', async () => {
@@ -781,7 +781,7 @@ suite('APTaskProvider Test Suite', () => {
 			);
 
 			assert.strictEqual(task, undefined);
-			assert(showErrorStub.calledWith('Board and target are required for standard configurations.'));
+			assert.ok(showErrorStub.calledWith('Board and target are required for standard configurations.'));
 
 			// Missing target
 			showErrorStub.resetHistory();
@@ -790,7 +790,7 @@ suite('APTaskProvider Test Suite', () => {
 			);
 
 			assert.strictEqual(task, undefined);
-			assert(showErrorStub.calledWith('Board and target are required for standard configurations.'));
+			assert.ok(showErrorStub.calledWith('Board and target are required for standard configurations.'));
 		});
 
 		test('should use custom commands in task execution when override is enabled', async () => {
@@ -866,7 +866,7 @@ suite('APTaskProvider Test Suite', () => {
 				'custom configure', 'custom build'
 			);
 
-			assert(mockConfiguration.update.called);
+			assert.ok(mockConfiguration.update.called);
 			const savedTasks = mockConfiguration.update.getCall(0).args[1];
 			assert.strictEqual(savedTasks.length, 1);
 
@@ -890,7 +890,7 @@ suite('APTaskProvider Test Suite', () => {
 			const task = await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
 			assert.strictEqual(task, undefined);
-			assert(showErrorStub.calledWith('No workspace folder is open.'));
+			assert.ok(showErrorStub.calledWith('No workspace folder is open.'));
 		});
 
 		test('should handle VS Code API update failures', async () => {
@@ -908,7 +908,7 @@ suite('APTaskProvider Test Suite', () => {
 
 			await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
-			assert(showErrorStub.calledWith(sinon.match(/Failed to update tasks.json/)));
+			assert.ok(showErrorStub.calledWith(sinon.match(/Failed to update tasks.json/)));
 		});
 
 		test('should handle JSON parsing errors in tasks.json', () => {
@@ -936,7 +936,7 @@ suite('APTaskProvider Test Suite', () => {
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
 			void APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
-			assert(showErrorStub.calledWith('No workspace folder is open.'));
+			assert.ok(showErrorStub.calledWith('No workspace folder is open.'));
 		});
 	});
 
@@ -1025,7 +1025,7 @@ suite('APTaskProvider Test Suite', () => {
 			const result = APTaskProvider.migrateTasksJsonForConfigName();
 
 			assert.strictEqual(result, false, 'Migration should return false when no changes needed');
-			assert(writeStub.notCalled, 'writeFileSync should not be called');
+			assert.ok(writeStub.notCalled, 'writeFileSync should not be called');
 		});
 
 	});
@@ -1070,7 +1070,7 @@ suite('APTaskProvider Test Suite', () => {
 			const configName = 'test-config';
 			await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', configName);
 
-			assert(mockConfiguration.update.called, 'Configuration should be updated');
+			assert.ok(mockConfiguration.update.called, 'Configuration should be updated');
 			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
 			assert.strictEqual(updatedTasks.length, 1, 'Should have one task');
 			assert.strictEqual(updatedTasks[0].configName, configName, 'Persisted task should have configName');
@@ -1093,7 +1093,7 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(task, 'Task should be created');
 			assert.strictEqual(task.definition.configName, 'existing-config', 'Task should have the specified configName');
 
-			assert(mockConfiguration.update.called, 'Configuration should be updated');
+			assert.ok(mockConfiguration.update.called, 'Configuration should be updated');
 			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
 			assert.strictEqual(updatedTasks.length, 1, 'Should still have one task (updated existing)');
 			assert.strictEqual(updatedTasks[0].configure, 'sitl', 'Task should be updated with new board');
@@ -1117,7 +1117,7 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(task, 'Task should be created');
 			assert.strictEqual(task.definition.simVehicleCommand, '--new-command', 'SimVehicle command should be updated');
 
-			assert(mockConfiguration.update.called, 'Configuration should be updated');
+			assert.ok(mockConfiguration.update.called, 'Configuration should be updated');
 			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
 			assert.strictEqual(updatedTasks.length, 1, 'Should still have one task');
 			assert.strictEqual(updatedTasks[0].simVehicleCommand, '--new-command', 'Persisted task should have new command');

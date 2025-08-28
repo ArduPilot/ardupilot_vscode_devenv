@@ -23,8 +23,8 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 	suiteSetup(async () => {
 		apExtensionContext = await getApExtApi();
 		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert(workspaceFolder);
-		assert(apExtensionContext.vscodeContext);
+		assert.ok(workspaceFolder);
+		assert.ok(apExtensionContext.vscodeContext);
 		mockContext = apExtensionContext.vscodeContext;
 		mockExtensionUri = mockContext.extensionUri;
 	});
@@ -75,7 +75,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 
 			// Access the panel instance to get UI hooks
 			const panel = (apBuildConfigPanel as any).currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 
 			let buildHookMessage: Record<string, unknown> | null = null;
 			const buildHookCalled = new Promise<void>((resolve) => {
@@ -84,8 +84,8 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 					try {
 						buildHookMessage = message;
 						// Verify the message structure
-						assert(message.board, 'Message should have board');
-						assert(message.target, 'Message should have target');
+						assert.ok(message.board, 'Message should have board');
+						assert.ok(message.target, 'Message should have target');
 						resolve();
 					} catch (error) {
 						console.error('Build hook validation failed:', error);
@@ -109,7 +109,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 			await buildHookCalled;
 
 			// Verify the hook received the correct message
-			assert(buildHookMessage, 'Build hook should have been called');
+			assert.ok(buildHookMessage, 'Build hook should have been called');
 			assert.strictEqual((buildHookMessage as any).board, 'CubeOrangePlus', 'Hook should receive correct board');
 			assert.strictEqual((buildHookMessage as any).target, 'copter', 'Hook should receive correct target');
 
@@ -121,7 +121,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 
 			// Access the panel instance to get UI hooks
 			const panel = (apBuildConfigPanel as any).currentPanel;
-			assert(panel, 'Panel should be created');
+			assert.ok(panel, 'Panel should be created');
 
 			let buildHookMessage: Record<string, unknown> | null = null;
 			const buildHookCalled = new Promise<void>((resolve) => {
@@ -130,10 +130,10 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 					try {
 						buildHookMessage = message;
 						// Verify the message structure
-						assert(message.board, 'Message should have board');
-						assert(message.target, 'Message should have target');
+						assert.ok(message.board, 'Message should have board');
+						assert.ok(message.target, 'Message should have target');
 						if (message.simVehicleCommand) {
-							assert(typeof message.simVehicleCommand === 'string', 'Message should have simVehicleCommand string');
+							assert.ok(typeof message.simVehicleCommand === 'string', 'Message should have simVehicleCommand string');
 						}
 						resolve();
 					} catch (error) {
@@ -159,7 +159,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 			await buildHookCalled;
 
 			// Verify the hook received the correct message
-			assert(buildHookMessage, 'Build hook should have been called');
+			assert.ok(buildHookMessage, 'Build hook should have been called');
 			assert.strictEqual((buildHookMessage as any).board, 'sitl', 'Hook should receive correct board');
 			assert.strictEqual((buildHookMessage as any).target, 'copter', 'Hook should receive correct target');
 			assert.strictEqual((buildHookMessage as any).simVehicleCommand, '--console --map', 'Hook should receive correct simVehicleCommand');
@@ -180,7 +180,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 			apBuildConfigPanel.createOrShow(mockExtensionUri, mockTask);
 
 			// Verify panel was created with edit title
-			assert((vscode.window.createWebviewPanel as sinon.SinonStub).calledWith(
+			assert.ok((vscode.window.createWebviewPanel as sinon.SinonStub).calledWith(
 				'apBuildConfigPanel',
 				'Edit Build Configuration',
 				sinon.match.any,
@@ -200,9 +200,9 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 				call.args[0].command === 'getCurrentTask'
 			);
 
-			assert(getCurrentTaskCall, 'Panel should post getCurrentTask message');
+			assert.ok(getCurrentTaskCall, 'Panel should post getCurrentTask message');
 			const message = getCurrentTaskCall.args[0];
-			assert(message.task, 'Message should include task definition');
+			assert.ok(message.task, 'Message should include task definition');
 			assert.strictEqual(message.task.configure, 'CubeOrangePlus', 'Task should have correct board');
 			assert.strictEqual(message.task.target, 'copter', 'Task should have correct target');
 		});
@@ -224,8 +224,8 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 
 			// Verify initial panel has the task
 			const initialPanel = (apBuildConfigPanel as any).currentPanel;
-			assert(initialPanel, 'Panel should exist');
-			assert(initialPanel._currentTask, 'Panel should have current task');
+			assert.ok(initialPanel, 'Panel should exist');
+			assert.ok(initialPanel._currentTask, 'Panel should have current task');
 
 			let currentPanel = (apBuildConfigPanel as any).currentPanel;
 			// Trigger getCurrentTask to verify the task was updated
@@ -238,7 +238,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 				call.args[0].task?.configure === 'CubeOrangePlus'
 			);
 
-			assert(initialTaskCall, 'Panel should be initialized with initial task');
+			assert.ok(initialTaskCall, 'Panel should be initialized with initial task');
 
 			// Clear previous messages and switch to new task (still edit mode)
 			(mockWebview.postMessage as sinon.SinonStub).resetHistory();
@@ -250,7 +250,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 
 			// Verify that the panel functionality works correctly regardless of implementation details
 			currentPanel = (apBuildConfigPanel as any).currentPanel;
-			assert(currentPanel, 'Panel should exist after task switch');
+			assert.ok(currentPanel, 'Panel should exist after task switch');
 
 			// Trigger getCurrentTask to verify the task was updated
 			currentPanel._uiHooks._onMessage({ command: 'getCurrentTask' });
@@ -262,7 +262,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 				call.args[0].task?.configure === 'CubeBlack'
 			);
 
-			assert(updateTaskCall, 'Panel should be updated with new task');
+			assert.ok(updateTaskCall, 'Panel should be updated with new task');
 
 			// Verify panel title remains in edit mode
 			assert.strictEqual(mockPanel.title, 'Edit Build Configuration', 'Panel title should remain Edit Build Configuration');
@@ -282,7 +282,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 			} as unknown as vscode.Task;
 			apBuildConfigPanel.createOrShow(mockExtensionUri, mockTask);
 
-			assert((disposeStub as sinon.SinonStub).calledOnce, 'Previous panel should be disposed');
+			assert.ok((disposeStub as sinon.SinonStub).calledOnce, 'Previous panel should be disposed');
 			assert.strictEqual((vscode.window.createWebviewPanel as sinon.SinonStub).callCount, 2, 'New panel should be created');
 		});
 
@@ -318,7 +318,7 @@ suite('apBuildConfigPanel Test Suite - createOrShow Implementation', () => {
 			});
 
 			// Verify getOrCreateBuildConfig was called with override parameters
-			assert(getOrCreateBuildConfigStub.calledWith(
+			assert.ok(getOrCreateBuildConfigStub.calledWith(
 				'', '', 'custom-build', '', '', true, 'custom configure', 'custom build'
 			), 'Should call getOrCreateBuildConfig with override parameters');
 		});
