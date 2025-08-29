@@ -112,3 +112,19 @@ export function fireAndForget<T extends (...args: unknown[]) => Promise<unknown>
 ): (...args: Parameters<T>) => void {
 	return withFireAndForget(methodName, options, asyncFn);
 }
+
+/*
+ * Determines if a target is a vehicle target that requires upload functionality
+ *
+ * Vehicle targets are main ArduPilot vehicles that can be uploaded to hardware.
+ * Non-vehicle targets like AP_Periph, bootloaders, and iofirmware do not need upload tasks.
+ *
+ * @param target The target name to check (e.g., 'copter', 'plane', 'AP_Periph')
+ * @returns true if the target is a vehicle target that needs upload functionality
+ */
+export function isVehicleTarget(target: string): boolean {
+	// Vehicle targets that need upload functionality
+	const vehicleTargets = ['copter', 'plane', 'rover', 'sub', 'blimp', 'heli', 'antennatracker'];
+	
+	return vehicleTargets.includes(target);
+}

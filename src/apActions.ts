@@ -22,7 +22,7 @@ import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { ProgramUtils } from './apProgramUtils';
 import { TOOLS_REGISTRY } from './apToolsConfig';
 import { targetToVehicleType } from './apLaunch';
-import { FireAndForget } from './apCommonUtils';
+import { FireAndForget, isVehicleTarget } from './apCommonUtils';
 
 // Interface for launch configuration
 interface LaunchConfiguration {
@@ -30,7 +30,7 @@ interface LaunchConfiguration {
 	type: string;
 	request: string;
 	target: string;
-	preLaunchTask: string;
+	preLaunchTask?: string; // Optional for non-vehicle targets
 	isSITL: boolean;
 	simVehicleCommand?: string;
 	board?: string; // Board name for hardware debugging
@@ -42,6 +42,9 @@ export let activeLaunchConfig: LaunchConfiguration | null;
 
 // Function to update the active configuration
 export function setActiveConfiguration(task: vscode.Task): void {
+	if (task.name.endsWith('-upload')) {
+		return;
+	}
 	activeConfiguration = task;
 	// After successful build, create matching launch configuration
 	if (activeConfiguration && activeConfiguration.definition) {
@@ -322,13 +325,27 @@ export class apActionItem extends vscode.TreeItem {
 		const isSITL = configure.toLowerCase().startsWith('sitl');
 		const launchConfigName = 'Launch Ardupilot';
 
+		// Determine if this is a vehicle target that needs upload functionality
+		const isVehicle = isVehicleTarget(target);
+
+		// Set preLaunchTask based on target type
+		let preLaunchTask: string | undefined;
+		if (isVehicle) {
+			// For vehicle targets, depend on upload task (will be created separately)
+			preLaunchTask = `${APTaskProvider.ardupilotTaskType}: ${configName}-upload`;
+			apActionItem.log(`Vehicle target detected: ${target}, using upload task dependency`);
+		} else {
+			// For non-vehicle targets (AP_Periph, bootloaders, etc.), no preLaunchTask needed
+			apActionItem.log(`Non-vehicle target detected: ${target}, no upload task needed`);
+		}
+
 		// Create standard launch configuration
 		const newConfig: LaunchConfiguration = {
 			name: launchConfigName,
 			type: 'apLaunch',
 			request: 'launch',
 			target: target,
-			preLaunchTask: `${APTaskProvider.ardupilotTaskType}: ${configName}`,
+			...(preLaunchTask && { preLaunchTask }), // Only add preLaunchTask if defined
 			isSITL: isSITL,
 			...(simVehicleCommand && { simVehicleCommand }),
 			...(!isSITL && board && { board }) // Add board field for hardware debugging
@@ -533,7 +550,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 			const taskDef = e.execution.task.definition;
 			if (taskDef.type === 'ardupilot') {
 				this.log(`Task started: ${taskDef.configName}`);
-				activeConfiguration = e.execution.task;
+				setActiveConfiguration(e.execution.task);
 				this.refresh();
 			}
 		});
