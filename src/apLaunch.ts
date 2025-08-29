@@ -25,6 +25,7 @@ import { TOOLS_REGISTRY } from './apToolsConfig';
 import { apTerminalMonitor } from './apTerminalMonitor';
 import * as fs from 'fs';
 import { readHwdefFile, getDebugConfigFromMCU, HwdefInfo, DebugConfig } from './apBuildConfig';
+import { env } from 'process';
 
 // Map vehicle types to ArduPilot binary names
 export const targetToVehicleType: { [key: string]: string } = {
@@ -102,9 +103,10 @@ class DebugServerPseudoterminal implements vscode.Pseudoterminal {
 			LINES: this.dimensions?.rows?.toString() || '24'
 		};
 
-		this.process = spawn(this.command, this.args, {
+		this.process = spawn(`"${this.command}"`, this.args, {
 			env,
-			stdio: ['pipe', 'pipe', 'pipe']
+			stdio: ['pipe', 'pipe', 'pipe'],
+			shell: true
 		});
 
 		if (this.process.stdout) {
@@ -1006,30 +1008,38 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 			throw new Error(`No OpenOCD target configured for ${hwdefInfo.mcuTarget}`);
 		}
 
-		const svdPath = debugConfig.svdFile ? path.join(__dirname, '..', 'resources', 'STMicro', debugConfig.svdFile) : undefined;
+		let svdPath = debugConfig.svdFile ? path.join(__dirname, '..', 'resources', 'STMicro', debugConfig.svdFile) : undefined;
 
 		// OpenOCD configuration
 		const gdbPort = 3333; // default OpenOCD GDB port
-		const openOCDHelperPath = path.join(this.extensionUri.fsPath, 'resources', 'openocd-helper.tcl');
-		const openocdScriptPath = path.join(path.dirname(openOCD.path), '../scripts');
+		let openOCDHelperPath = path.join(this.extensionUri.fsPath, 'resources', 'openocd-helper.tcl');
+		let openocdScriptPath = path.join(path.dirname(openOCD.path), '../scripts');
+		let openOCDPath = openOCD.path;
+		if (ProgramUtils.isWSL()) {
+			// convert to using wsl path by appending \\wsl.localhost\Ubuntu
+			const wslDistro = ProgramUtils.wslDistro();
+			openOCDHelperPath = `\\\\\\\\wsl.localhost\\${wslDistro}${openOCDHelperPath.replace(/\//g, '\\')}`;
+			openocdScriptPath = `\\\\\\\\wsl.localhost\\${wslDistro}${openocdScriptPath.replace(/\//g, '\\')}`;
+
+		}
 
 		APLaunchConfigurationProvider.log.log(`HARDWARE_DEBUG: Starting debug session for ${config.board}`);
 
 		// Start OpenOCD server for debugging using pseudoterminal (expects firmware already flashed)
 		const openOCDArgs = [
-			'-c', `gdb port ${gdbPort}`,
-			'-f', `${openOCDHelperPath}`,
-			'-f', 'interface/stlink.cfg',
-			'-c', 'transport select swd',
-			'-f', `target/${debugConfig.openocdTarget}`,
-			'-c', 'bindto 0.0.0.0',
-			'-c', 'init',
-			'-c', 'CDRTOSConfigure chibios',
-			'-s', `${openocdScriptPath}`
+			'-c', `"gdb port ${gdbPort}"`,
+			'-f', `"${openOCDHelperPath}"`,
+			'-f', `"interface/stlink.cfg"`,
+			'-c', `"transport select swd"`,
+			'-f', `"target/${debugConfig.openocdTarget}"`,
+			'-c', `"bindto 0.0.0.0"`,
+			'-c', `"init"`,
+			'-c', `"CDRTOSConfigure chibios"`,
+			'-s', `"${openocdScriptPath}"`
 		];
 
 		APLaunchConfigurationProvider.log.log(`Starting OpenOCD for debugging with args: ${openOCDArgs.join(' ')}`);
-		await this.startDebugServerTerminal('OpenOCD Server', openOCD.path, openOCDArgs, 'Listening on port 3333 for gdb connections');
+		await this.startDebugServerTerminal('OpenOCD Server', openOCDPath, openOCDArgs, 'Listening on port 3333 for gdb connections');
 
 		// for wsl platform use wslIP
 		let gdbTarget = 'localhost:3333';
@@ -1087,11 +1097,12 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 		let pluginFileName: string;
 
 		switch (platform) {
-		case 'win32':
-			pluginFileName = 'RTOSPlugin_ChibiOS-windows-x64.dll';
-			break;
 		case 'linux':
-			pluginFileName = 'libRTOSPlugin_ChibiOS-linux-x86_64.so';
+			if (ProgramUtils.isWSL()) {
+				pluginFileName = 'RTOSPlugin_ChibiOS-windows-x64.dll';
+			} else {
+				pluginFileName = 'libRTOSPlugin_ChibiOS-linux-x86_64.so';
+			}
 			break;
 		case 'darwin':
 			pluginFileName = 'libRTOSPlugin_ChibiOS-macos-universal.so';
@@ -1101,11 +1112,13 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 			return undefined;
 		}
 
-		const pluginPath = path.join(this.extensionUri.fsPath, 'resources', 'JLinkRTOSPlugins', pluginFileName);
-
+		let pluginPath = path.join(this.extensionUri.fsPath, 'resources', 'JLinkRTOSPlugins', pluginFileName);
 		// Check if the plugin file exists
 		if (fs.existsSync(pluginPath)) {
 			APLaunchConfigurationProvider.log.log(`RTOS_PLUGIN: Found plugin for ${platform}: ${pluginPath}`);
+			if (ProgramUtils.isWSL()) {
+				pluginPath = `\\\\\\\\wsl.localhost\\${ProgramUtils.wslDistro()}${pluginPath.replace(/\//g, '\\')}`;
+			}
 			return pluginPath;
 		} else {
 			APLaunchConfigurationProvider.log.log(`RTOS_PLUGIN: Plugin file not found: ${pluginPath}`);
@@ -1263,7 +1276,7 @@ except OSError as e:
 
 		// Add RTOS plugin if available and approved
 		if (rtosPluginEnabled && rtosPluginPath) {
-			jlinkArgs.push('-rtos', rtosPluginPath);
+			jlinkArgs.push('-rtos', `"${rtosPluginPath}"`);
 			APLaunchConfigurationProvider.log.log(`Configuring RTOS plugin: ${rtosPluginPath}`);
 		}
 

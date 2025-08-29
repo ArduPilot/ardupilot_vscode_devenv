@@ -361,6 +361,27 @@ export class ProgramUtils {
 	}
 
 	/**
+	 * Gets the WSL distribution name
+	 * @returns The WSL distribution name, or 'Ubuntu' if not in WSL
+	 */
+	public static wslDistro(): string {
+		// Get the WSL distribution name
+		try {
+			const osRelease = child_process.spawnSync('cat', ['/etc/os-release'], { stdio: 'pipe' });
+			if (osRelease.status === 0) {
+				const output = osRelease.stdout.toString();
+				const nameMatch = output.match(/^NAME="?([^"\n]+)"?/m);
+				const distroName = nameMatch ? nameMatch[1] : 'Ubuntu';
+				ProgramUtils.log.log(`WSL distribution from /etc/os-release: ${distroName}`);
+				return distroName;
+			}
+		} catch (error) {
+			ProgramUtils.log.log(`Error reading /etc/os-release: ${error}`);
+		}
+		return 'Ubuntu';
+	}
+
+	/**
 	 * Gets the IP address for WSL networking
 	 * @returns The IP address for WSL, or 'localhost' if not in WSL
 	 */
