@@ -138,7 +138,7 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 
 	private detectBuildCompletion(output: string): void {
 		// Check for success message
-		if (output.includes('finished successfully')) {
+		if (output.includes('finished successfully') && !output.includes('configure')) {
 			this.buildCompleted = true;
 			this.buildSuccess = true;
 			APBuildPseudoterminal.log.log(`Build success detected for task: ${this.definition.configName}`);
@@ -222,7 +222,7 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 			.catch(error => {
 				const errorMsg = error instanceof Error ? error.message : String(error);
 				APBuildPseudoterminal.log.log(`Build command failed: ${errorMsg}`);
-				
+
 				// Check if we detected build completion despite the error
 				if (this.buildCompleted && !this.commandFinished) {
 					APBuildPseudoterminal.log.log('Build completion detected despite runCommand error, using detected status');
@@ -317,7 +317,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 				});
 
 				// Second pass: Create missing upload tasks for vehicle targets
-				const ardupilotTasks = tasksJson.tasks.filter((task: ArdupilotTaskDefinition) => 
+				const ardupilotTasks = tasksJson.tasks.filter((task: ArdupilotTaskDefinition) =>
 					task.type === 'ardupilot' && !task.configName.endsWith('-upload')
 				);
 
@@ -327,9 +327,9 @@ export class APTaskProvider implements vscode.TaskProvider {
 					// Check if this is a vehicle target that needs an upload task
 					if (task.target && isVehicleTarget(task.target)) {
 						const uploadTaskName = `${task.configName}-upload`;
-						
+
 						// Check if upload task already exists
-						const uploadTaskExists = tasksJson.tasks.some((existingTask: ArdupilotTaskDefinition) => 
+						const uploadTaskExists = tasksJson.tasks.some((existingTask: ArdupilotTaskDefinition) =>
 							existingTask.configName === uploadTaskName
 						);
 
