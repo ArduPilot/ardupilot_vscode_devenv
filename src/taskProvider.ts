@@ -22,6 +22,7 @@ import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { apTerminalMonitor } from './apTerminalMonitor';
 import { TOOLS_REGISTRY } from './apToolsConfig';
+import { isVehicleTarget } from './apCommonUtils';
 
 /**
  * Custom execution class for ArduPilot build tasks
@@ -401,6 +402,26 @@ export class APTaskProvider implements vscode.TaskProvider {
 			tasks.push(task.definition as ArdupilotTaskDefinition);
 		}
 
+		// For vehicle targets, also create and add an upload task
+		if (!overrideEnabled && target && isVehicleTarget(target)) {
+			const uploadTaskDef = this.createUploadTaskDefinition(configName, task.definition as ArdupilotTaskDefinition);
+
+			// Check if upload task already exists
+			const existingUploadTaskIndex = tasks.findIndex((task: ArdupilotTaskDefinition) =>
+				task.configName === `${configName}-upload`
+			);
+
+			if (existingUploadTaskIndex !== -1) {
+				// Update existing upload task
+				tasks[existingUploadTaskIndex] = uploadTaskDef;
+			} else {
+				// Add new upload task
+				tasks.push(uploadTaskDef);
+			}
+
+			APTaskProvider.log.log(`Created upload task for vehicle target: ${target}`);
+		}
+
 		// Update the tasks configuration
 		tasksConfig.update('tasks', tasks, vscode.ConfigurationTarget.Workspace).then(() => {
 			APTaskProvider.log.log(`Added/updated task ${configName} to tasks.json using VS Code API`);
@@ -410,6 +431,28 @@ export class APTaskProvider implements vscode.TaskProvider {
 		});
 
 		return task;
+	}
+
+	/**
+	 * Creates an upload task definition that depends on the build task and adds --upload flag
+	 * This just creates a task definition object, not an actual VS Code task
+	 * @param configName The configuration name for the build task this upload depends on
+	 * @param definition The base task definition to copy settings from
+	 * @returns Upload task definition
+	 */
+	public static createUploadTaskDefinition(configName: string, definition: ArdupilotTaskDefinition): ArdupilotTaskDefinition {
+		// Create upload task definition based on build task definition
+		const uploadTaskDef: ArdupilotTaskDefinition = {
+			...definition,
+			configName: `${configName}-upload`,
+			buildOptions: `${definition.buildOptions || ''} --upload`.trim(),
+			group: {
+				kind: 'build',
+			},
+			dependsOn: [configName] // Upload depends on build task
+		};
+
+		return uploadTaskDef;
 	}
 
 	/**
@@ -646,6 +689,10 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	 * Flash size in KB from hwdef.dat
 	 */
 	flashSizeKB?: number;
+	/**
+	 * Tasks that this task depends on (for upload tasks depending on build tasks)
+	 */
+	dependsOn?: string[];
 }
 
 export async function getFeaturesList(extensionUri: vscode.Uri): Promise<Record<string, unknown>> {

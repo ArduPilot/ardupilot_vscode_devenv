@@ -611,30 +611,52 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				return undefined;
 			}
 
-			// Execute the task and wait for it to complete
-			try {
+			// Check if this is an upload task and prompt user
+			let shouldExecuteTask = true;
+			if (taskName.endsWith('-upload')) {
+				const choice = await vscode.window.showWarningMessage(
+					'This will upload firmware to the target before debugging. Do you want to proceed with the upload?',
+					{ modal: true },
+					'Run Upload & Debug',
+					'Skip Upload & Debug'
+				);
+
+				if (choice === 'Skip Upload & Debug') {
+					APLaunchConfigurationProvider.log.log('User chose to skip upload task, proceeding directly to debug');
+					shouldExecuteTask = false; // Skip task execution
+				} else {
+					// choice === 'Run Upload & Debug' or undefined (ESC pressed - default to upload)
+					APLaunchConfigurationProvider.log.log('User chose to run upload task before debugging');
+					shouldExecuteTask = true; // Execute the upload task as normal
+				}
+			}
+
+			// Execute the task and wait for it to complete (only if not skipping)
+			if (shouldExecuteTask) {
+				try {
 				// executeTask in terminal
-				const execution = await vscode.tasks.executeTask(task);
+					const execution = await vscode.tasks.executeTask(task);
 
-				// Create a promise that resolves when the task completes
-				const taskExecution = new Promise<void>((resolve, reject) => {
-					const disposable = vscode.tasks.onDidEndTaskProcess(e => {
-						if (e.execution === execution) {
-							disposable.dispose();
-							if (e.exitCode === 0) {
-								resolve();
-							} else {
-								reject(new Error(`Task '${task.name}' failed with exit code ${e.exitCode}`));
+					// Create a promise that resolves when the task completes
+					const taskExecution = new Promise<void>((resolve, reject) => {
+						const disposable = vscode.tasks.onDidEndTaskProcess(e => {
+							if (e.execution === execution) {
+								disposable.dispose();
+								if (e.exitCode === 0) {
+									resolve();
+								} else {
+									reject(new Error(`Task '${task.name}' failed with exit code ${e.exitCode}`));
+								}
 							}
-						}
+						});
 					});
-				});
 
-				// Wait for the task to complete
-				await taskExecution;
-			} catch (error) {
-				vscode.window.showErrorMessage(`Failed to execute pre-launch task: ${error}`);
-				return undefined;
+					// Wait for the task to complete
+					await taskExecution;
+				} catch (error) {
+					vscode.window.showErrorMessage(`Failed to execute pre-launch task: ${error}`);
+					return undefined;
+				}
 			}
 		}
 
@@ -991,16 +1013,13 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 		const openOCDHelperPath = path.join(this.extensionUri.fsPath, 'resources', 'openocd-helper.tcl');
 		const openocdScriptPath = path.join(path.dirname(openOCD.path), '../scripts');
 
-		// Warn user that firmware must be flashed separately
-		const flashMessage = `Please ensure firmware has been flashed to ${config.board} before debugging. Use the build and upload actions to flash firmware first.`;
-		vscode.window.showWarningMessage(flashMessage);
-		APLaunchConfigurationProvider.log.log(`HARDWARE_DEBUG: ${flashMessage}`);
+		APLaunchConfigurationProvider.log.log(`HARDWARE_DEBUG: Starting debug session for ${config.board}`);
 
 		// Start OpenOCD server for debugging using pseudoterminal (expects firmware already flashed)
 		const openOCDArgs = [
 			'-c', `gdb port ${gdbPort}`,
 			'-f', `${openOCDHelperPath}`,
-			'-f', 'interface/jlink.cfg',
+			'-f', 'interface/stlink.cfg',
 			'-c', 'transport select swd',
 			'-f', `target/${debugConfig.openocdTarget}`,
 			'-c', 'bindto 0.0.0.0',

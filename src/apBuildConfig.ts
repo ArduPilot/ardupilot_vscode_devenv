@@ -215,8 +215,10 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 
 		const buildConfigList: apBuildConfig[] = [];
 
-		// Filter and process only ardupilot tasks
-		const ardupilotTasks = tasks.filter(task => task.type === 'ardupilot');
+		// Filter and process only ardupilot tasks (excluding upload tasks)
+		const ardupilotTasks = tasks.filter(task => 
+			task.type === 'ardupilot' && !task.configName.endsWith('-upload')
+		);
 
 		for (const taskDef of ardupilotTasks) {
 			try {
