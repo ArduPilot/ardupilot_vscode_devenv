@@ -57,8 +57,12 @@ class APCustomExecution extends vscode.CustomExecution {
 class APBuildPseudoterminal implements vscode.Pseudoterminal {
 	private writeEmitter = new vscode.EventEmitter<string>();
 	private closeEmitter = new vscode.EventEmitter<number>();
+	private buildCompletionEmitter = new vscode.EventEmitter<{ success: boolean }>();
 	private static log = new apLog('APBuildPseudoterminal');
 	private terminalMonitor: apTerminalMonitor | undefined;
+	private buildCompleted = false;
+	private buildSuccess = false;
+	private commandFinished = false;
 
 	onDidWrite: vscode.Event<string> = this.writeEmitter.event;
 	onDidClose: vscode.Event<number> = this.closeEmitter.event;
@@ -101,6 +105,9 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 			this.terminalMonitor = undefined;
 		}
 
+		// Dispose emitters
+		this.buildCompletionEmitter.dispose();
+
 		this.writeEmitter.fire('Build task completed.\r\n');
 		this.closeEmitter.fire(0);
 	}
@@ -118,12 +125,66 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 				// Write to pseudoterminal
 				this.writeEmitter.fire(`${text}\r\n`);
 
+				// Check for build completion messages
+				this.detectBuildCompletion(trimmedOutput);
+
 				// Redirect to extension logger
 				apLog.channel.appendLine(`[BUILD] ${trimmedOutput}`);
 			}
 		});
 
 		APBuildPseudoterminal.log.log('Terminal monitoring setup completed with apTerminalMonitor');
+	}
+
+	private detectBuildCompletion(output: string): void {
+		// Check for success message
+		if (output.includes('finished successfully')) {
+			this.buildCompleted = true;
+			this.buildSuccess = true;
+			APBuildPseudoterminal.log.log(`Build success detected for task: ${this.definition.configName}`);
+			this.buildCompletionEmitter.fire({ success: true });
+		}
+		// Check for failure message
+		else if (output.includes('Build failed')) {
+			this.buildCompleted = true;
+			this.buildSuccess = false;
+			APBuildPseudoterminal.log.log(`Build failure detected for task: ${this.definition.configName}`);
+			this.buildCompletionEmitter.fire({ success: false });
+		}
+	}
+
+	private handleBuildCompletion(result?: { exitCode: number }): void {
+		if (this.commandFinished) {
+			return; // Prevent duplicate handling
+		}
+		this.commandFinished = true;
+
+		let finalExitCode = result?.exitCode || 0;
+		let buildStatus = 'UNKNOWN';
+
+		if (this.buildCompleted) {
+			// Use detected build status from output messages
+			finalExitCode = this.buildSuccess ? 0 : 1;
+			buildStatus = this.buildSuccess ? 'SUCCESS ✅' : 'FAILED ❌';
+			APBuildPseudoterminal.log.log(`Build status determined from output: ${buildStatus}`);
+		} else if (result) {
+			// Fall back to exit code if available
+			buildStatus = finalExitCode === 0 ? 'SUCCESS ✅' : 'FAILED ❌';
+			APBuildPseudoterminal.log.log(`Build status determined from exit code: ${buildStatus}`);
+		}
+
+		this.writeEmitter.fire(`Build completed with exit code: ${result?.exitCode || 0}\r\n`);
+
+		// Log completion info
+		apLog.channel.appendLine('[BUILD] ======== Build Completed ========');
+		apLog.channel.appendLine(`[BUILD] Task: ${this.definition.configName}`);
+		apLog.channel.appendLine(`[BUILD] Exit code: ${result?.exitCode || 0}`);
+		apLog.channel.appendLine(`[BUILD] Detected status: ${this.buildCompleted ? (this.buildSuccess ? 'SUCCESS' : 'FAILED') : 'NOT_DETECTED'}`);
+		apLog.channel.appendLine(`[BUILD] Final status: ${buildStatus}`);
+		apLog.channel.appendLine('[BUILD] ===================================');
+
+		// Close the pseudoterminal with the determined exit code
+		this.closeEmitter.fire(finalExitCode);
 	}
 
 	private executeBuildCommand(): void {
@@ -142,26 +203,37 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 		APBuildPseudoterminal.log.log(`Executing build command: ${this.taskCommand}`);
 		this.writeEmitter.fire(`Executing: ${this.taskCommand}\r\n`);
 
+		// Set up listener for build completion detection
+		const buildCompletionListener = this.buildCompletionEmitter.event((completion) => {
+			APBuildPseudoterminal.log.log(`Build completion emitted: ${completion.success ? 'SUCCESS' : 'FAILED'}`);
+			// Handle build completion immediately when detected
+			this.handleBuildCompletion({ exitCode: completion.success ? 0 : 1 });
+		});
+
 		// Use the terminalMonitor.runCommand method for better command lifecycle tracking
 		this.terminalMonitor.runCommand(this.taskCommand)
 			.then(async result => {
 				APBuildPseudoterminal.log.log(`Shell execution ended with exit code: ${result.exitCode}`);
-				this.writeEmitter.fire(`Build completed with exit code: ${result.exitCode}\r\n`);
-				// Redirect completion info to extension logger
-				apLog.channel.appendLine('[BUILD] ======== Build Completed ========');
-				apLog.channel.appendLine(`[BUILD] Task: ${this.definition.configName}`);
-				apLog.channel.appendLine(`[BUILD] Exit code: ${result.exitCode}`);
-				apLog.channel.appendLine(`[BUILD] Status: ${result.exitCode === 0 ? 'SUCCESS ✅' : 'FAILED ❌'}`);
-				apLog.channel.appendLine('[BUILD] ===================================');
-
-				// Close the pseudoterminal with the actual exit code
-				this.closeEmitter.fire(result.exitCode || 0);
+				// Only handle completion if it wasn't already handled by the emitter
+				if (!this.commandFinished) {
+					this.handleBuildCompletion(result);
+				}
 			})
 			.catch(error => {
 				const errorMsg = error instanceof Error ? error.message : String(error);
 				APBuildPseudoterminal.log.log(`Build command failed: ${errorMsg}`);
-				this.writeEmitter.fire(`Error: ${errorMsg}\r\n`);
-				this.closeEmitter.fire(1);
+				
+				// Check if we detected build completion despite the error
+				if (this.buildCompleted && !this.commandFinished) {
+					APBuildPseudoterminal.log.log('Build completion detected despite runCommand error, using detected status');
+					this.handleBuildCompletion({ exitCode: this.buildSuccess ? 0 : 1 });
+				} else if (!this.commandFinished) {
+					this.writeEmitter.fire(`Error: ${errorMsg}\r\n`);
+					this.closeEmitter.fire(1);
+				}
+			})
+			.finally(() => {
+				buildCompletionListener.dispose();
 			});
 
 		APBuildPseudoterminal.log.log('Build command initiated');
@@ -235,13 +307,44 @@ export class APTaskProvider implements vscode.TaskProvider {
 			let modified = false;
 
 			if (tasksJson.tasks) {
+				// First pass: Fix missing configName fields
 				tasksJson.tasks.forEach((task: vscode.TaskDefinition) => {
 					if (task.type === 'ardupilot' && !task.configName) {
 						task.configName = `${task.configure}-${task.target}`;
 						modified = true;
-						APTaskProvider.log.log(`Migrated task: ${task.configName}`);
+						APTaskProvider.log.log(`Migrated task configName: ${task.configName}`);
 					}
 				});
+
+				// Second pass: Create missing upload tasks for vehicle targets
+				const ardupilotTasks = tasksJson.tasks.filter((task: ArdupilotTaskDefinition) => 
+					task.type === 'ardupilot' && !task.configName.endsWith('-upload')
+				);
+
+				const uploadTasksToAdd: ArdupilotTaskDefinition[] = [];
+
+				ardupilotTasks.forEach((task: ArdupilotTaskDefinition) => {
+					// Check if this is a vehicle target that needs an upload task
+					if (task.target && isVehicleTarget(task.target)) {
+						const uploadTaskName = `${task.configName}-upload`;
+						
+						// Check if upload task already exists
+						const uploadTaskExists = tasksJson.tasks.some((existingTask: ArdupilotTaskDefinition) => 
+							existingTask.configName === uploadTaskName
+						);
+
+						if (!uploadTaskExists) {
+							// Create upload task definition
+							const uploadTaskDef = APTaskProvider.createUploadTaskDefinition(task.configName, task);
+							uploadTasksToAdd.push(uploadTaskDef);
+							modified = true;
+							APTaskProvider.log.log(`Created missing upload task: ${uploadTaskName}`);
+						}
+					}
+				});
+
+				// Add all new upload tasks to the tasks array
+				tasksJson.tasks.push(...uploadTasksToAdd);
 			}
 
 			if (modified) {
