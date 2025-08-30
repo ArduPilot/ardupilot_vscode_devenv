@@ -333,12 +333,16 @@ export class apActionItem extends vscode.TreeItem {
 		// Set preLaunchTask based on target type
 		let preLaunchTask: string | undefined;
 		if (isVehicle && !isSITL) {
-			// For vehicle targets, depend on upload task (will be created separately)
+			// For hardware vehicle targets, depend on upload task (will be created separately)
 			preLaunchTask = `${APTaskProvider.ardupilotTaskType}: ${configName}-upload`;
 			apActionItem.log(`Vehicle target detected: ${target}, using upload task dependency`);
+		} else if (isSITL) {
+			// For SITL, depend on the build task to ensure binaries are up to date
+			preLaunchTask = `${APTaskProvider.ardupilotTaskType}: ${configName}`;
+			apActionItem.log(`SITL target detected: ${target}, using build task as preLaunchTask`);
 		} else {
 			// For non-vehicle targets (AP_Periph, bootloaders, etc.), no preLaunchTask needed
-			apActionItem.log(`Non-vehicle target detected: ${target}, no upload task needed`);
+			apActionItem.log(`Non-vehicle target detected: ${target}, no preLaunchTask needed`);
 		}
 
 		// Create standard launch configuration
