@@ -181,79 +181,12 @@ suite('apConnectedDevices Test Suite', () => {
 
 			provider.setIsWSL(false);
 
-			// Mock ProgramUtils.findProgram for LSUSB
-			sandbox.stub(ProgramUtils, 'findProgram').resolves({
-				available: true,
-				path: '/usr/bin/lsusb',
-				isCustomPath: false
-			});
-
-			// Mock lsusb output with multiple CubePilot devices
-			const mockLsusbOutput = `Bus 001 Device 003: ID 2dae:1016 CubePilot CubeOrangePlus
-Bus 001 Device 004: ID 2dae:1011 CubePilot CubeOrange
-Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
-
-			// Mock ls /dev/tty* to return multiple serial devices
-			const mockDeviceList = '/dev/ttyACM0\n/dev/ttyACM1\n/dev/ttyUSB0';
-
-			// Mock child_process.spawnSync for lsusb and ls commands
-			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
-				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
-					return {
-						error: undefined,
-						stdout: mockLsusbOutput,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(mockLsusbOutput, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
-					return {
-						error: undefined,
-						stdout: mockDeviceList,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(mockDeviceList, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else if (command === 'udevadm') {
-					const devicePath = args && args[2] ? args[2].replace('--name=', '') : '';
-					let stdout = '';
-
-					if (devicePath === '/dev/ttyACM0') {
-						// CubeOrangePlus
-						stdout = 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n';
-					} else if (devicePath === '/dev/ttyACM1') {
-						// CubeOrange
-						stdout = 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n';
-					} else if (devicePath === '/dev/ttyUSB0') {
-						// Generic device
-						stdout = 'ID_VENDOR_ID=1234\nID_MODEL_ID=5678\n';
-					}
-
-					return {
-						error: undefined,
-						stdout,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(stdout, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else {
-					return {
-						error: undefined,
-						stdout: '',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				}
-			});
+			// Stub the getLinuxDevices method directly to avoid stubbing child_process
+			sandbox.stub(provider as any, 'getLinuxDevices').resolves([
+				{ path: '/dev/ttyACM0', vendorId: '2dae', productId: '1016', manufacturer: 'CubePilot', product: 'CubeOrangePlus', isArduPilot: true },
+				{ path: '/dev/ttyACM1', vendorId: '2dae', productId: '1011', manufacturer: 'CubePilot', product: 'CubeOrange', isArduPilot: true },
+				{ path: '/dev/ttyUSB0', vendorId: '1234', productId: '5678', manufacturer: 'Generic', product: 'Serial Device', isArduPilot: false }
+			]);
 
 			const children = await provider.getChildren();
 
@@ -298,62 +231,12 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 
 			provider.setIsWSL(false);
 
-			// Mock ProgramUtils.findProgram for LSUSB
-			sandbox.stub(ProgramUtils, 'findProgram').resolves({
-				available: true,
-				path: '/usr/bin/lsusb',
-				isCustomPath: false
-			});
-
+			// Stub the getLinuxDevices method directly to avoid stubbing child_process
 			// Simulate a device that creates multiple serial ports (like CubeOrange with multiple interfaces)
-			const mockLsusbOutput = 'Bus 001 Device 003: ID 2dae:1011 CubePilot CubeOrange';
-			const mockDeviceList = '/dev/ttyACM0\n/dev/ttyACM1';
-
-			// Mock child_process.spawnSync for lsusb, ls and udevadm commands
-			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
-				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
-					return {
-						error: undefined,
-						stdout: mockLsusbOutput,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(mockLsusbOutput, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
-					return {
-						error: undefined,
-						stdout: mockDeviceList,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(mockDeviceList, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else if (command === 'udevadm') {
-					// Both serial ports belong to the same USB device
-					return {
-						error: undefined,
-						stdout: 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1011\n', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else {
-					return {
-						error: undefined,
-						stdout: '',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				}
-			});
+			sandbox.stub(provider as any, 'getLinuxDevices').resolves([
+				{ path: '/dev/ttyACM0', vendorId: '2dae', productId: '1011', manufacturer: 'CubePilot', product: 'CubeOrange', isArduPilot: true },
+				{ path: '/dev/ttyACM1', vendorId: '2dae', productId: '1011', manufacturer: 'CubePilot', product: 'CubeOrange', isArduPilot: true }
+			]);
 
 			const children = await provider.getChildren();
 
