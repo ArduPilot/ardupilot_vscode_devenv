@@ -313,7 +313,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 
 				ardupilotTasks.forEach((task: ArdupilotTaskDefinition) => {
 					// Check if this is a vehicle target that needs an upload task
-					if (task.target && isVehicleTarget(task.target)) {
+					if (task.target && isVehicleTarget(task.target) && !(task.configure && task.configure.toLowerCase().startsWith('sitl'))) {
 						const uploadTaskName = `${task.configName}-upload`;
 
 						// Check if upload task already exists
@@ -493,8 +493,8 @@ export class APTaskProvider implements vscode.TaskProvider {
 			tasks.push(task.definition as ArdupilotTaskDefinition);
 		}
 
-		// For vehicle targets, also create and add an upload task
-		if (!overrideEnabled && target && isVehicleTarget(target)) {
+		// For vehicle targets, also create and add an upload task (skip for SITL)
+		if (!overrideEnabled && target && isVehicleTarget(target) && !(board && board.toLowerCase().startsWith('sitl'))) {
 			const uploadTaskDef = this.createUploadTaskDefinition(configName, task.definition as ArdupilotTaskDefinition);
 
 			// Check if upload task already exists

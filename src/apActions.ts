@@ -24,6 +24,7 @@ import { ProgramUtils } from './apProgramUtils';
 import { TOOLS_REGISTRY } from './apToolsConfig';
 import { targetToVehicleType } from './apLaunch';
 import { FireAndForget, isVehicleTarget } from './apCommonUtils';
+import { apTerminalMonitor } from './apTerminalMonitor';
 
 // Interface for launch configuration
 interface LaunchConfiguration {
@@ -331,7 +332,7 @@ export class apActionItem extends vscode.TreeItem {
 
 		// Set preLaunchTask based on target type
 		let preLaunchTask: string | undefined;
-		if (isVehicle) {
+		if (isVehicle && !isSITL) {
 			// For vehicle targets, depend on upload task (will be created separately)
 			preLaunchTask = `${APTaskProvider.ardupilotTaskType}: ${configName}-upload`;
 			apActionItem.log(`Vehicle target detected: ${target}, using upload task dependency`);
