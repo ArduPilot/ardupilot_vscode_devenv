@@ -247,14 +247,17 @@ export class apTerminalMonitor {
 			return false;
 		}
 
-		const normalizedOriginal = this.normalizeCommand(originalCommand);
 		const normalizedExecuted = this.normalizeCommand(executedCommand);
 
-		// Split the original command by common shell operators
-		const commandParts = normalizedOriginal.split(/\s*(?:&&|\|\||;)\s*/);
+		// Since normalizeCommand removes all non-alphanumeric chars, we need to split differently
+		// Split by shell operators and normalize each part
+		const commandParts = originalCommand.split(/\s*(?:&&|\|\||;)\s*/);
 
 		// Check if the executed command matches any part of the compound command
-		return commandParts.some(part => this.normalizeCommand(part) === normalizedExecuted);
+		return commandParts.some(part => {
+			const normalizedPart = this.normalizeCommand(part);
+			return normalizedPart === normalizedExecuted;
+		});
 	}
 
 	// Initialize event listener and promise maps for all event types
