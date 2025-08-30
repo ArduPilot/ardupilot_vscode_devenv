@@ -33,6 +33,7 @@ interface LaunchConfiguration {
 	preLaunchTask: string;
 	isSITL: boolean;
 	simVehicleCommand?: string;
+	board?: string; // Board name for hardware debugging
 }
 
 // Store the currently active build configuration
@@ -52,7 +53,8 @@ export function setActiveConfiguration(task: vscode.Task): void {
 				taskDef.configName,
 				taskDef.configure,
 				taskDef.target,
-				taskDef.simVehicleCommand || ''
+				taskDef.simVehicleCommand || '',
+				taskDef.configure // Pass board name (same as configure for hardware builds)
 			);
 			// Update c_cpp_properties.json for IntelliSense
 			updateCppProperties(taskDef.configure).catch(error => {
@@ -282,7 +284,7 @@ export class apActionItem extends vscode.TreeItem {
 
 	}
 
-	static createMatchingLaunchConfig(configName: string, configure: string, target: string, simVehicleCommand: string): LaunchConfiguration | null {
+	static createMatchingLaunchConfig(configName: string, configure: string, target: string, simVehicleCommand: string, board?: string): LaunchConfiguration | null {
 		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 		if (!workspaceRoot) {
 			apActionItem.log('No workspace folder is open.');
@@ -328,7 +330,8 @@ export class apActionItem extends vscode.TreeItem {
 			target: target,
 			preLaunchTask: `${APTaskProvider.ardupilotTaskType}: ${configName}`,
 			isSITL: isSITL,
-			...(simVehicleCommand && { simVehicleCommand })
+			...(simVehicleCommand && { simVehicleCommand }),
+			...(!isSITL && board && { board }) // Add board field for hardware debugging
 		};
 
 		// Check if a similar configuration already exists
