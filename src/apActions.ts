@@ -551,7 +551,6 @@ export class apActionItem extends vscode.TreeItem {
 
 		const simVehiclePath = path.join(workspaceRoot, 'Tools', 'autotest', 'sim_vehicle.py');
 
-		
 		if (!fs.existsSync(simVehiclePath)) {
 			vscode.window.showErrorMessage('sim_vehicle.py not found. Please ensure ArduPilot is properly cloned.');
 			return;

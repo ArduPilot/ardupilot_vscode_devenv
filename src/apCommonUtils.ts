@@ -125,6 +125,6 @@ export function fireAndForget<T extends (...args: unknown[]) => Promise<unknown>
 export function isVehicleTarget(target: string): boolean {
 	// Vehicle targets that need upload functionality
 	const vehicleTargets = ['copter', 'plane', 'rover', 'sub', 'blimp', 'heli', 'antennatracker'];
-	
+
 	return vehicleTargets.includes(target);
 }
