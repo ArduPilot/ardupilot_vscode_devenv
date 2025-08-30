@@ -180,7 +180,7 @@ export class apTerminalMonitor {
 					}
 				})();
 			} else {
-				apTerminalMonitor.globalLog.log(`Ignoring shell execution for terminal: ${terminalName} - command mismatch`);
+				apTerminalMonitor.globalLog.log(`Ignoring shell execution start for terminal: ${terminalName} - command mismatch ${event.execution.commandLine.value} != ${monitor.currentCommand}`);
 			}
 		}
 	}
@@ -221,7 +221,7 @@ export class apTerminalMonitor {
 					commandLine: event.execution.commandLine.value
 				});
 			} else {
-				apTerminalMonitor.globalLog.log(`Ignoring shell execution end for terminal: ${terminalName} - command mismatch`);
+				apTerminalMonitor.globalLog.log(`Ignoring shell execution end for terminal: ${terminalName} - command mismatch ${event.execution.commandLine.value} != ${monitor.currentCommand}`);
 			}
 		}
 	}
@@ -238,7 +238,7 @@ export class apTerminalMonitor {
 
 	// Normalize command string by removing extra whitespace for comparison
 	private normalizeCommand(command: string): string {
-		return command.trim().replace(/\s+/g, ' ');
+		return command.replace(/[^a-zA-Z0-9_\-./:]/g, '');
 	}
 
 	// Check if the executed command is part of a compound command (with &&, ||, ;)
