@@ -583,8 +583,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			}
 
 			return devices;
-		} catch (parseError) {
-			this.log.log(`Error parsing ioreg output: ${parseError}`);
+		} catch {
 			return [];
 		}
 	}
