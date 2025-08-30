@@ -220,12 +220,9 @@ export class ProgramUtils {
 		const result = child_process.spawnSync(toolPath, tool.findArgs?.args, { stdio: 'pipe' });
 		const stdoutStr = result.stdout ? result.stdout.toString().trim() : '';
 		const stderrStr = result.stderr ? result.stderr.toString().trim() : '';
-		const combinedForLog = stdoutStr || stderrStr;
-		ProgramUtils.log.log(`Checking version for ${tool.name}: ${toolPath}:  ${combinedForLog}`);
 		if (result.status === 0) {
 			// Some tools (e.g., openocd, python) may print version to stderr
 			const output = stdoutStr || stderrStr;
-			ProgramUtils.log.log(`Found version for ${tool.name}: ${output}`);
 			// Use regex to extract version
 			const versionMatch = output.match(tool.findArgs?.versionRegex ?? /(\d+\.\d+\.\d+)/);
 			return versionMatch ? versionMatch[1] : output;
@@ -250,7 +247,7 @@ export class ProgramUtils {
 						this.log.log(`Using Python interpreter from Python extension: ${interpreterPath}`);
 
 						const result = child_process.spawnSync(interpreterPath, ['--version'], { stdio: 'pipe' });
-						ProgramUtils.log.log(`Checking version for ${interpreterPath}: ${interpreterPath} --version: ${result.stdout.toString().trim()}`);
+
 						if (result.status === 0) {
 							const versionMatch = result.stdout.toString().trim().match(/Python (\d+\.\d+\.\d+)/);
 							const version = versionMatch ? versionMatch[1] : result.stdout.toString().trim();
@@ -352,7 +349,6 @@ export class ProgramUtils {
 			const commandToRun = `exec ${process.env.SHELL || 'bash'} -l -c "which ${command}"`;
 
 			const result = child_process.spawnSync(commandToRun, { stdio: 'pipe', shell: true });
-			ProgramUtils.log.log(`Running command: ${commandToRun} : ${result.stdout.toString().trim()}`);
 			if (result.status === 0) {
 				// cleanup result output from shell decorations
 				return result.stdout.toString().trim();
