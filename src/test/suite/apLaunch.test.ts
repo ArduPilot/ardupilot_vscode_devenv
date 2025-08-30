@@ -6,7 +6,6 @@ import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as os from 'os';
 import { APLaunchConfigurationProvider } from '../../apLaunch';
 import { ProgramUtils } from '../../apProgramUtils';
 import { targetToBin } from '../../apBuildConfig';
@@ -147,9 +146,10 @@ suite('apLaunch Test Suite', () => {
 	});
 
 	suite('Platform Detection and Debug Configuration', () => {
-		test('should configure LLDB debugging for macOS SITL', async () => {
-			// Mock macOS platform
-			sandbox.stub(os, 'platform').returns('darwin');
+		test('should configure LLDB debugging for macOS SITL', async function() {
+			if (process.platform !== 'darwin') {
+				this.skip();
+			}
 
 			// Mock CodeLLDB extension
 			const mockCodelldbExtension = {
@@ -168,8 +168,6 @@ suite('apLaunch Test Suite', () => {
 				isCustomPath: false
 			});
 
-			// Mock file system and terminal operations
-			sandbox.stub(fs, 'existsSync').returns(true);
 			sandbox.stub(vscode.window, 'createTerminal').returns(createMockTerminal());
 
 			// Mock process discovery to return a PID
@@ -195,9 +193,10 @@ suite('apLaunch Test Suite', () => {
 			assert.ok(result.program?.includes('copter'));
 		});
 
-		test('should configure cppdbg debugging for Linux SITL', async () => {
-			// Mock Linux platform
-			sandbox.stub(os, 'platform').returns('linux');
+		test('should configure cppdbg debugging for Linux SITL', async function() {
+			if (process.platform !== 'linux') {
+				this.skip();
+			}
 
 			// Mock required tools
 			const findProgramStub = sandbox.stub(ProgramUtils, 'findProgram');
@@ -241,8 +240,10 @@ suite('apLaunch Test Suite', () => {
 	});
 
 	suite('Tool Requirements and Error Handling', () => {
-		test('should require CodeLLDB extension for macOS SITL debugging', async () => {
-			sandbox.stub(os, 'platform').returns('darwin');
+		test('should require CodeLLDB extension for macOS SITL debugging', async function() {
+			if (process.platform !== 'darwin') {
+				this.skip();
+			}
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 			sandbox.stub(vscode.extensions, 'getExtension').returns(undefined);
 
@@ -274,8 +275,10 @@ suite('apLaunch Test Suite', () => {
 			));
 		});
 
-		test('should require GDB for Linux SITL debugging', async () => {
-			sandbox.stub(os, 'platform').returns('linux');
+		test('should require GDB for Linux SITL debugging', async function() {
+			if (process.platform !== 'linux') {
+				this.skip();
+			}
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 			const findProgramStub = sandbox.stub(ProgramUtils, 'findProgram');
 			const { TOOLS_REGISTRY } = await import('../../apToolsConfig');
@@ -341,14 +344,31 @@ suite('apLaunch Test Suite', () => {
 	});
 
 	suite('Hardware Upload Workflow', () => {
-		test('should execute hardware upload command for non-SITL targets', async () => {
+		test('should execute upload pre-launch task for non-SITL targets', async () => {
+			// Set up a mock upload task and execution pipeline
+			const mockTask = { name: 'copter-upload', definition: { type: 'ardupilot' } } as unknown as vscode.Task;
+			sandbox.stub(vscode.tasks, 'fetchTasks').resolves([mockTask]);
+			const executeTaskStub = sandbox.stub(vscode.tasks, 'executeTask');
+			const mockExecution = { task: mockTask, terminate: sandbox.stub() } as vscode.TaskExecution;
+			executeTaskStub.resolves(mockExecution);
+			sandbox.stub(vscode.tasks, 'onDidEndTaskProcess').callsFake((callback) => {
+				setTimeout(() => {
+					callback({ execution: mockExecution, exitCode: 0 } as vscode.TaskProcessEndEvent);
+				}, 0);
+				return { dispose: sandbox.stub() };
+			});
+
 			const config = {
 				type: 'apLaunch',
 				request: 'launch',
 				name: 'Hardware Upload',
 				target: 'copter',
-				isSITL: false
+				isSITL: false,
+				preLaunchTask: 'ardupilot: copter-upload'
 			};
+
+			// Mock user confirmation for upload prompt
+			sandbox.stub(vscode.window, 'showWarningMessage').resolves('Run Upload & Debug' as any);
 
 			const result = await provider.resolveDebugConfiguration(
 				workspaceFolder,
@@ -356,32 +376,49 @@ suite('apLaunch Test Suite', () => {
 			);
 
 			assert.strictEqual(result, undefined, 'Should return undefined for non-debug sessions');
-			assert.ok(mockTerminalMonitor.createTerminal.called, 'Should create terminal');
-			assert.ok(mockTerminalMonitor.show.called, 'Should show terminal');
-			assert.ok(mockTerminalMonitor.runCommand.calledWith(`cd ${workspaceFolder.uri.fsPath}`), 'Should cd to workspace');
-			assert.ok(mockTerminalMonitor.runCommand.calledWith(sinon.match(/python3.*waf.*copter.*--upload/)), 'Should run upload command');
+			assert.ok(executeTaskStub.calledWith(mockTask), 'Should execute upload pre-launch task');
+			// Ensure we are not using apTerminalMonitor for manual uploads
+			assert.ok(mockTerminalMonitor.runCommand.notCalled, 'Should not run manual upload command');
 		});
 
-		test('should handle different vehicle types for hardware upload', async () => {
+		test('should handle different vehicle types for hardware upload via pre-launch tasks', async () => {
 			const vehicles = ['copter', 'plane', 'rover', 'sub'];
 
 			for (const vehicle of vehicles) {
-				mockTerminalMonitor.runCommand.resetHistory();
+				// Fresh stubs per iteration
+				const taskName = `${vehicle}-upload`;
+				const mockTask = { name: taskName, definition: { type: 'ardupilot' } } as unknown as vscode.Task;
+				sandbox.stub(vscode.tasks, 'fetchTasks').resolves([mockTask]);
+				const executeTaskStub = sandbox.stub(vscode.tasks, 'executeTask');
+				const mockExecution = { task: mockTask, terminate: sandbox.stub() } as vscode.TaskExecution;
+				executeTaskStub.resolves(mockExecution);
+				sandbox.stub(vscode.tasks, 'onDidEndTaskProcess').callsFake((callback) => {
+					setTimeout(() => {
+						callback({ execution: mockExecution, exitCode: 0 } as vscode.TaskProcessEndEvent);
+					}, 0);
+					return { dispose: sandbox.stub() };
+				});
 
 				const config = {
 					type: 'apLaunch',
 					request: 'launch',
 					name: `${vehicle} Upload`,
 					target: vehicle,
-					isSITL: false
+					isSITL: false,
+					preLaunchTask: `ardupilot: ${taskName}`
 				};
+
+				// Mock user confirmation for upload prompt
+				sandbox.stub(vscode.window, 'showWarningMessage').resolves('Run Upload & Debug' as any);
 
 				await provider.resolveDebugConfiguration(
 					workspaceFolder,
 					config as vscode.DebugConfiguration
 				);
 
-				assert.ok(mockTerminalMonitor.runCommand.calledWith(sinon.match(vehicle)), `Should include ${vehicle} in upload command`);
+				assert.ok(executeTaskStub.calledWith(mockTask), `Should execute ${vehicle} upload pre-launch task`);
+				assert.ok(mockTerminalMonitor.runCommand.notCalled, 'Should not run manual upload command');
+				sandbox.restore();
 			}
 		});
 	});
@@ -513,9 +550,11 @@ suite('apLaunch Test Suite', () => {
 			assert.ok(disposable.dispose, 'Should provide dispose method');
 		});
 
-		test('should integrate with targetToBin mapping correctly', async () => {
-			// Mock Linux platform for this test
-			sandbox.stub(os, 'platform').returns('linux');
+		test('should integrate with targetToBin mapping correctly', async function() {
+			// Only run on Linux where cppdbg path is configured
+			if (process.platform !== 'linux') {
+				this.skip();
+			}
 
 			const findProgramStub = sandbox.stub(ProgramUtils, 'findProgram');
 			const { TOOLS_REGISTRY } = await import('../../apToolsConfig');

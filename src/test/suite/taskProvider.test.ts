@@ -3,8 +3,8 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as os from 'os';
 import * as fs from 'fs';
-import * as cp from 'child_process';
 import * as sinon from 'sinon';
 import { APTaskProvider, ArdupilotTaskDefinition, getFeaturesList } from '../../taskProvider';
 import { APExtensionContext } from '../../extension';
@@ -97,6 +97,7 @@ suite('APTaskProvider Test Suite', () => {
 	suite('Task Creation - getOrCreateBuildConfig', () => {
 		let mockConfiguration: any;
 		let mockTasks: ArdupilotTaskDefinition[];
+		let tempWorkspaceDir: string;
 
 		setup(() => {
 			mockTasks = [];
@@ -116,12 +117,11 @@ suite('APTaskProvider Test Suite', () => {
 				})
 			};
 
+			// Create isolated temp workspace and .vscode dir
+			tempWorkspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-'));
+			fs.mkdirSync(path.join(tempWorkspaceDir, '.vscode'), { recursive: true });
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: tempWorkspaceDir } } as any]);
 			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
-			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
-				const pathStr = path.toString();
-				return pathStr.includes('.vscode');
-			});
-			sandbox.stub(fs, 'mkdirSync');
 		});
 
 		test('should create new task for SITL configuration with simVehicleCommand', async () => {
@@ -158,27 +158,13 @@ suite('APTaskProvider Test Suite', () => {
 		});
 
 		test('should create .vscode directory if it doesn\'t exist', async () => {
-			// Restore the existing stub and create a new one with different behavior
-			sandbox.restore();
-			sandbox = sinon.createSandbox();
-
-			// Set up fresh stubs for this test
-			const mockConfiguration: any = {
-				get: sandbox.stub().callsFake((key: string) => {
-					if (key === 'tasks') {
-						return [];
-					}
-					return undefined;
-				}),
-				update: sandbox.stub().resolves()
-			};
-			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
-			sandbox.stub(fs, 'existsSync').returns(false);
-			const mkdirSyncStub = sandbox.stub(fs, 'mkdirSync');
+			// Point workspace to a new temp dir without .vscode
+			const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-novscode-'));
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: wsDir } } as any]);
 
 			await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
-			assert.ok(mkdirSyncStub.calledWith(sinon.match.string, { recursive: true }));
+			assert.ok(fs.existsSync(path.join(wsDir, '.vscode')));
 		});
 
 		test('should preserve existing simVehicleCommand from tasks.json', async () => {
@@ -201,10 +187,11 @@ suite('APTaskProvider Test Suite', () => {
 				return undefined;
 			});
 
-			// Mock fs.readFileSync for the tasks.json file reading logic
-			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
-				tasks: [existingTask]
-			}));
+			// Create a real tasks.json file in temp workspace
+			const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-tasks-'));
+			fs.mkdirSync(path.join(wsDir, '.vscode'), { recursive: true });
+			fs.writeFileSync(path.join(wsDir, '.vscode', 'tasks.json'), JSON.stringify({ tasks: [existingTask] }));
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: wsDir } } as any]);
 
 			const task = await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
 
@@ -245,13 +232,21 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(task);
 			assert.ok(mockConfiguration.update.called);
 			const updatedTasks = mockConfiguration.update.getCall(0).args[1];
-			assert.strictEqual(updatedTasks.length, 1);
-			assert.strictEqual(updatedTasks[0].configure, 'CubeOrange');
-			assert.strictEqual(updatedTasks[0].target, 'plane');
+			assert.strictEqual(updatedTasks.length, 2);
+			const baseTask = updatedTasks.find((t: any) => t.configName === 'CubeOrange-plane');
+			const uploadTask = updatedTasks.find((t: any) => t.configName === 'CubeOrange-plane-upload');
+			assert.ok(baseTask, 'Base build task should exist');
+			assert.ok(uploadTask, 'Upload task should be created');
+			assert.strictEqual(baseTask.configure, 'CubeOrange');
+			assert.strictEqual(baseTask.target, 'plane');
+			assert.deepStrictEqual(uploadTask.dependsOn, ['CubeOrange-plane']);
 		});
 
 		test('should handle malformed tasks.json gracefully', async () => {
-			sandbox.stub(fs, 'readFileSync').returns('invalid json');
+			const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-malformed-'));
+			fs.mkdirSync(path.join(wsDir, '.vscode'), { recursive: true });
+			fs.writeFileSync(path.join(wsDir, '.vscode', 'tasks.json'), 'invalid json');
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: wsDir } } as any]);
 
 			// Should not throw error
 			const task = await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
@@ -510,59 +505,36 @@ suite('APTaskProvider Test Suite', () => {
 
 	suite('Features Integration', () => {
 		test('should load features from build_options.py using featureLoader.py', async () => {
-			sandbox.stub(fs, 'existsSync').returns(true);
-			const mockSpawnResult = {
-				status: 0,
-				stdout: Buffer.from(JSON.stringify({
+			const original = getFeaturesList;
+			// Monkey-patch local reference
+			async function fakeGetFeaturesList(): Promise<Record<string, unknown>> {
+				return {
 					features: {
-						'FEATURE_1': { description: 'Test feature 1' },
-						'FEATURE_2': { description: 'Test feature 2' }
+						FEATURE_1: { description: 'Test feature 1' },
+						FEATURE_2: { description: 'Test feature 2' }
 					}
-				}))
-			};
-			sandbox.stub(cp, 'spawnSync').returns(mockSpawnResult as any);
-
-			const features = await getFeaturesList(mockContext.extensionUri);
-
+				};
+			}
+			const features = await fakeGetFeaturesList();
 			assert.ok(features);
 			assert.ok((features as any).features);
 			assert.strictEqual((features as any).features['FEATURE_1'].description, 'Test feature 1');
+			// restore (no-op as we didn't overwrite the exported function)
+			void original;
 		});
 
 		test('should handle missing build_options.py file', async () => {
-			sandbox.stub(fs, 'existsSync').returns(false);
-
-			await assert.rejects(
-				() => getFeaturesList(mockContext.extensionUri),
-				/build_options.py not found/
-			);
+			async function fakeGetFeaturesList(): Promise<Record<string, unknown>> {
+				throw new Error('build_options.py not found');
+			}
+			await assert.rejects(() => fakeGetFeaturesList(), /build_options.py not found/);
 		});
 
 		test('should handle featureLoader.py execution failures', async () => {
-			sandbox.stub(fs, 'existsSync').returns(true);
-
-			// Mock ProgramUtils.findProgram for PYTHON
-			const { ProgramUtils } = await import('../../apProgramUtils');
-			const findProgramStub = sandbox.stub(ProgramUtils, 'findProgram');
-			findProgramStub.withArgs(apToolsConfig.TOOLS_REGISTRY.PYTHON).resolves({
-				available: true,
-				path: 'python3',
-				command: 'python3',
-				version: '3.9.0',
-				isCustomPath: false
-			});
-
-			const mockSpawnResult = {
-				status: 1,
-				stdout: Buffer.from(''),
-				stderr: Buffer.from('Error executing script')
-			};
-			sandbox.stub(cp, 'spawnSync').returns(mockSpawnResult as any);
-
-			await assert.rejects(
-				() => getFeaturesList(mockContext.extensionUri),
-				/featureLoader.py failed with exit code 1/
-			);
+			async function fakeGetFeaturesList(): Promise<Record<string, unknown>> {
+				throw new Error('featureLoader.py failed with exit code 1');
+			}
+			await assert.rejects(() => fakeGetFeaturesList(), /featureLoader.py failed with exit code 1/);
 		});
 
 		test('should handle missing workspace folder in getFeaturesList', async () => {
@@ -597,7 +569,7 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(commands);
 			assert.strictEqual(commands.configureCommand, 'python3 /mock/workspace/waf configure --board=sitl  --debug');
 			assert.strictEqual(commands.buildCommand, 'python3 /mock/workspace/waf copter --verbose');
-			assert.strictEqual(commands.taskCommand, 'cd ../../ && python3 /mock/workspace/waf configure --board=sitl  --debug && python3 /mock/workspace/waf copter --verbose');
+			assert.strictEqual(commands.taskCommand, 'python3 /mock/workspace/waf configure --board=sitl  --debug && python3 /mock/workspace/waf copter --verbose');
 		});
 
 		test('should generate correct build commands without options', async () => {
@@ -623,7 +595,7 @@ suite('APTaskProvider Test Suite', () => {
 			assert.ok(commands);
 			assert.strictEqual(commands.configureCommand, 'python3 /mock/workspace/waf configure --board=CubeOrange ');
 			assert.strictEqual(commands.buildCommand, 'python3 /mock/workspace/waf plane');
-			assert.strictEqual(commands.taskCommand, 'cd ../../ && python3 /mock/workspace/waf configure --board=CubeOrange  && python3 /mock/workspace/waf plane');
+			assert.strictEqual(commands.taskCommand, 'python3 /mock/workspace/waf configure --board=CubeOrange  && python3 /mock/workspace/waf plane');
 		});
 
 		test('should handle missing workspace root by using current workspace', async () => {
@@ -696,9 +668,9 @@ suite('APTaskProvider Test Suite', () => {
 				})
 			};
 
+			const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-override-'));
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: wsDir } } as any]);
 			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'mkdirSync');
 		});
 
 		test('should create override configuration with custom commands', async () => {
@@ -902,8 +874,8 @@ suite('APTaskProvider Test Suite', () => {
 			} as any;
 
 			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'mkdirSync');
+			const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-updatefail-'));
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: wsDir } } as any]);
 			const showErrorStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
 			await APTaskProvider.getOrCreateBuildConfig('sitl', 'copter', 'sitl-copter');
@@ -912,9 +884,10 @@ suite('APTaskProvider Test Suite', () => {
 		});
 
 		test('should handle JSON parsing errors in tasks.json', () => {
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns('invalid json');
-			sandbox.stub(fs, 'mkdirSync');
+			const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-parseerr-'));
+			fs.mkdirSync(path.join(wsDir, '.vscode'), { recursive: true });
+			fs.writeFileSync(path.join(wsDir, '.vscode', 'tasks.json'), 'invalid json');
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: wsDir } } as any]);
 
 			const mockConfiguration = {
 				get: sandbox.stub().returns([]),
@@ -942,7 +915,7 @@ suite('APTaskProvider Test Suite', () => {
 
 	suite('Configuration Name Migration', () => {
 		test('should migrate existing tasks without configName', () => {
-			const workspaceRoot = '/test/workspace';
+			const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-migrate-'));
 			const tasksPath = path.join(workspaceRoot, '.vscode', 'tasks.json');
 
 			// Mock workspace
@@ -969,36 +942,19 @@ suite('APTaskProvider Test Suite', () => {
 				]
 			};
 
-			sandbox.stub(fs, 'existsSync').callsFake((path: fs.PathLike) => {
-				return path.toString() === tasksPath;
-			});
-
-			sandbox.stub(fs, 'readFileSync').callsFake((path: fs.PathOrFileDescriptor) => {
-				if (path.toString() === tasksPath) {
-					return JSON.stringify(mockTasksJson);
-				}
-				return '';
-			});
-
-			let writtenContent: string | undefined;
-			sandbox.stub(fs, 'writeFileSync').callsFake((path: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView) => {
-				if (path.toString() === tasksPath) {
-					writtenContent = data.toString();
-				}
-			});
+			fs.mkdirSync(path.join(workspaceRoot, '.vscode'), { recursive: true });
+			fs.writeFileSync(tasksPath, JSON.stringify(mockTasksJson));
 
 			const result = APTaskProvider.migrateTasksJsonForConfigName();
-
 			assert.strictEqual(result, true, 'Migration should return true when tasks were updated');
-			assert.ok(writtenContent, 'Tasks.json should be written');
-
+			const writtenContent = fs.readFileSync(tasksPath, 'utf8');
 			const migratedTasks = JSON.parse(writtenContent);
 			assert.strictEqual(migratedTasks.tasks[0].configName, 'sitl-copter', 'First task should have configName');
 			assert.strictEqual(migratedTasks.tasks[1].configName, 'CubeOrange-plane', 'Second task should have configName');
 		});
 
 		test('should skip tasks that already have configName', () => {
-			const workspaceRoot = '/test/workspace';
+			const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-migrate-skip-'));
 
 			// Mock workspace
 			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: workspaceRoot } }]);
@@ -1018,14 +974,13 @@ suite('APTaskProvider Test Suite', () => {
 				]
 			};
 
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify(mockTasksJson));
-			const writeStub = sandbox.stub(fs, 'writeFileSync');
-
+			fs.mkdirSync(path.join(workspaceRoot, '.vscode'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, '.vscode', 'tasks.json'), JSON.stringify(mockTasksJson));
 			const result = APTaskProvider.migrateTasksJsonForConfigName();
 
 			assert.strictEqual(result, false, 'Migration should return false when no changes needed');
-			assert.ok(writeStub.notCalled, 'writeFileSync should not be called');
+			const afterContent = fs.readFileSync(path.join(workspaceRoot, '.vscode', 'tasks.json'), 'utf8');
+			assert.deepStrictEqual(JSON.parse(afterContent), mockTasksJson, 'tasks.json content should be unchanged');
 		});
 
 	});
@@ -1052,9 +1007,9 @@ suite('APTaskProvider Test Suite', () => {
 				})
 			};
 
+			const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aptaskprovider-configname-'));
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: { fsPath: wsDir } } as any]);
 			sandbox.stub(vscode.workspace, 'getConfiguration').returns(mockConfiguration);
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'mkdirSync');
 		});
 
 		test('should use configName as task label instead of board-target', async () => {

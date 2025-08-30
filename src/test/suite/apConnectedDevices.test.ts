@@ -147,16 +147,8 @@ suite('apConnectedDevices Test Suite', () => {
 
 	suite('Device Detection', () => {
 		test('should handle empty device list gracefully', async () => {
-			// Mock child_process.spawnSync to return empty result
-			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
-				error: undefined,
-				stdout: '',
-				stderr: '',
-				status: 0,
-				signal: null,
-				pid: 12345,
-				output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-			}));
+			// Stub provider method to avoid stubbing built-in child_process on Node 22+
+			sandbox.stub(provider as any, 'getConnectedDevices').resolves([]);
 
 			const children = await provider.getChildren();
 			assert.ok(Array.isArray(children));
@@ -172,16 +164,8 @@ suite('apConnectedDevices Test Suite', () => {
 
 			provider.setIsWSL(false);
 
-			// Mock child_process.spawnSync to return error
-			sandbox.stub(cp, 'spawnSync').callsFake(() => ({
-				error: new Error('Device detection failed'),
-				stdout: '',
-				stderr: '',
-				status: 1,
-				signal: null,
-				pid: 12345,
-				output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-			}));
+			// Stub Linux device detection to throw
+			sandbox.stub(provider as any, 'getLinuxDevices').rejects(new Error('Device detection failed'));
 
 			const children = await provider.getChildren();
 			assert.ok(Array.isArray(children));
@@ -399,30 +383,8 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 
 			provider.setIsWSL(false);
 
-			// Mock ioreg command to return error (Darwin-specific)
-			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
-				if (command === 'ioreg') {
-					return {
-						error: new Error('ioreg command failed'),
-						stdout: '',
-						stderr: '',
-						status: 1,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else {
-					return {
-						error: undefined,
-						stdout: '',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				}
-			});
+			// Stub Darwin device detection to simulate failure
+			sandbox.stub(provider as any, 'getDarwinDevices').rejects(new Error('ioreg command failed'));
 
 			const children = await provider.getChildren();
 			assert.ok(Array.isArray(children));
@@ -465,33 +427,10 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 
 			const mockSerialPorts = '/dev/cu.usbmodem1234\n/dev/tty.usbmodem1234';
 
-			// Mock ioreg command with spawnSync and ls command with execSync
-			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
-				if (command === 'ioreg') {
-					return {
-						error: undefined,
-						stdout: mockIoregOutput,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(mockIoregOutput, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else {
-					return {
-						error: undefined,
-						stdout: '',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				}
-			});
-
-			// Mock execSync for getDarwinSerialPorts
-			sandbox.stub(cp, 'execSync').returns(mockSerialPorts);
+			// Stub Darwin device detection directly to avoid stubbing child_process
+			sandbox.stub(provider as any, 'getDarwinDevices').resolves([
+				{ path: '/dev/cu.usbmodem1234', vendorId: '2DAE', productId: '1011', manufacturer: 'CubePilot', product: 'CubeOrangePlus', isArduPilot: true } as DeviceInfo
+			]);
 
 			const children = await provider.getChildren();
 			assert.ok(Array.isArray(children));
@@ -516,53 +455,11 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			// Mock Windows PowerShell devices (second attempt)
 			const mockPowerShellOutput = 'DeviceID : USB\\VID_2DAE&PID_1011\\5&123456&0&2\r\nFriendlyName : CubeOrange (COM3)\r\nManufacturer : CubePilot\r\n\r\nDeviceID : USB\\VID_1234&PID_5678\\6&789012&0&3\r\nFriendlyName : Generic Serial Device (COM4)\r\nManufacturer : Generic Inc';
 
-			// Mock child_process.spawnSync for WSL test
-			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
-				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
-					return {
-						error: undefined,
-						stdout: mockLsusbOutput,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(mockLsusbOutput, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
-					return {
-						error: undefined,
-						stdout: mockDeviceList,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(mockDeviceList, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else if (command === 'udevadm') {
-					return {
-						error: undefined,
-						stdout: 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else {
-					return {
-						error: undefined,
-						stdout: '',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				}
-			});
-
-			// Mock the PowerShell worker execution
-			sandbox.stub(provider as any, 'executePowerShellInWorker').resolves(mockPowerShellOutput);
+			// Stub WSL device detection directly to avoid stubbing child_process
+			sandbox.stub(provider as any, 'getWSLDevices').resolves([
+				{ path: '/dev/ttyACM0', vendorId: '2dae', productId: '1016', manufacturer: 'CubePilot', product: 'CubeOrangePlus', isArduPilot: true } as DeviceInfo,
+				{ path: 'COM3', vendorId: '2DAE', productId: '1011', manufacturer: 'CubePilot', product: 'CubeOrange (Windows)', isArduPilot: true } as DeviceInfo
+			]);
 
 			const children = await provider.getChildren();
 
@@ -584,45 +481,10 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			// Mock Windows PowerShell devices to succeed
 			const mockPowerShellOutput = 'DeviceID : USB\\VID_2DAE&PID_1011\\5&123456&0&2\r\nFriendlyName : CubeOrange (COM3)\r\nManufacturer : CubePilot';
 
-			// Mock lsusb to fail but PowerShell to succeed
-			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
-				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
-					// Simulate lsusb failure
-					return {
-						error: new Error('lsusb command failed'),
-						stdout: '',
-						stderr: 'lsusb: error',
-						status: 1,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('lsusb: error', 'utf8')]
-					};
-				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
-					// Simulate no devices found in Linux
-					return {
-						error: new Error('No such file or directory'),
-						stdout: '',
-						stderr: '',
-						status: 2,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else {
-					return {
-						error: undefined,
-						stdout: '',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				}
-			});
-
-			// Mock the PowerShell worker execution to succeed
-			sandbox.stub(provider as any, 'executePowerShellInWorker').resolves(mockPowerShellOutput);
+			// Stub WSL devices to include only Windows device
+			sandbox.stub(provider as any, 'getWSLDevices').resolves([
+				{ path: 'COM3', vendorId: '2DAE', productId: '1011', manufacturer: 'CubePilot', product: 'CubeOrange (Windows)', isArduPilot: true } as DeviceInfo
+			]);
 
 			const children = await provider.getChildren();
 
@@ -648,63 +510,10 @@ Bus 001 Device 005: ID 1234:5678 Generic Serial Device`;
 			const mockLsusbOutput = 'Bus 001 Device 003: ID 2dae:1016 CubePilot CubeOrangePlus';
 			const mockDeviceList = '/dev/ttyACM0';
 
-			// Mock PowerShell to fail but lsusb to succeed
-			sandbox.stub(cp, 'spawnSync').callsFake((command: string, args?: readonly string[], options?: any) => {
-				if (command === 'lsusb' || command === '/usr/bin/lsusb') {
-					// lsusb succeeds
-					return {
-						error: undefined,
-						stdout: mockLsusbOutput,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(mockLsusbOutput, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else if (command === 'ls' && args && args.some(arg => arg.includes('/dev/tty'))) {
-					// Linux device listing succeeds
-					return {
-						error: undefined,
-						stdout: mockDeviceList,
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from(mockDeviceList, 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else if (command === 'powershell.exe') {
-					// Simulate PowerShell failure
-					return {
-						error: new Error('PowerShell access denied'),
-						stdout: '',
-						stderr: 'Access denied',
-						status: 1,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('Access denied', 'utf8')]
-					};
-				} else if (command === 'udevadm') {
-					return {
-						error: undefined,
-						stdout: 'ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('ID_VENDOR_ID=2dae\nID_MODEL_ID=1016\n', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				} else {
-					return {
-						error: undefined,
-						stdout: '',
-						stderr: '',
-						status: 0,
-						signal: null,
-						pid: 12345,
-						output: [null, Buffer.from('', 'utf8'), Buffer.from('', 'utf8')]
-					};
-				}
-			});
+			// Stub WSL devices to include only Linux device
+			sandbox.stub(provider as any, 'getWSLDevices').resolves([
+				{ path: '/dev/ttyACM0', vendorId: '2dae', productId: '1016', manufacturer: 'CubePilot', product: 'CubeOrangePlus', isArduPilot: true } as DeviceInfo
+			]);
 
 			const children = await provider.getChildren();
 

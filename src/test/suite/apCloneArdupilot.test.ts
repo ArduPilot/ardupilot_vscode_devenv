@@ -29,10 +29,8 @@ suite('apCloneArdupilot Test Suite', () => {
 			let errorMessageShown = false;
 			let errorMessage = '';
 
-			// Mock git not installed
-			sandbox.stub(child_process, 'exec').callsFake(((command: string, callback: (error: any) => void) => {
-				callback(new Error('Git not found'));
-			}) as any);
+			// Mock git not installed (avoid stubbing built-in child_process)
+			sandbox.stub((CloneArdupilot as any), 'isGitInstalled').resolves(false);
 
 			// Mock error message display
 			sandbox.stub(vscode.window, 'showErrorMessage').callsFake(((message: string, ...items: string[]) => {
@@ -54,10 +52,8 @@ suite('apCloneArdupilot Test Suite', () => {
 			let externalUrlOpened = false;
 			let openedUrl = '';
 
-			// Mock git not installed
-			sandbox.stub(child_process, 'exec').callsFake(((_command: string, callback: (error: any) => void) => {
-				callback(new Error('Git not found'));
-			}) as any);
+			// Mock git not installed (avoid stubbing built-in child_process)
+			sandbox.stub((CloneArdupilot as any), 'isGitInstalled').resolves(false);
 
 			// Mock error message display returning install instructions selection
 			sandbox.stub(vscode.window, 'showErrorMessage').callsFake(((_message: string, ..._items: string[]) => {
