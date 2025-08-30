@@ -361,6 +361,28 @@ export class ProgramUtils {
 	}
 
 	/**
+	 * Gets the IP address for WSL networking
+	 * @returns The IP address for WSL, or 'localhost' if not in WSL
+	 */
+	public static wslIP(): string {
+		if (!ProgramUtils.isWSL()) {
+			return 'localhost';
+		}
+		let ip = 'localhost';
+		// If running in WSL, check wslinfo networking mode
+		const networkingMode = child_process.execSync('wslinfo --networking-mode').toString().trim();
+		if (networkingMode === 'nat') {
+			// extract the IP address from ip route show | grep -i default | awk '{ print $3}'`
+			// as mentioned here https://learn.microsoft.com/en-us/windows/wsl/networking
+			const ipRoute = child_process.execSync('ip route show | grep -i default | awk \'{ print $3}\'').toString().trim();
+			if (ipRoute) {
+				ip = ipRoute;
+			}
+		}
+		return ip;
+	}
+
+	/**
 	 * Opens the Python interpreter selection dialog using Microsoft's Python extension
 	 * and returns the selected interpreter path
 	 * @returns Promise resolving to the selected Python interpreter path or undefined if cancelled
