@@ -216,7 +216,7 @@
   },
   "STM32H743xx": {
     "openocd": {
-      "target": "stm32h7x.cfg"
+      "target": "stm32h7x_dual_bank.cfg"
     },
     "jlink": {
       "devices": [
@@ -238,29 +238,29 @@
   },
   "STM32H755xx": {
     "openocd": {
-      "target": "stm32h7x.cfg"
+      "target": "stm32h7x_dual_bank.cfg"
     },
     "jlink": {
       "devices": [
-        {"device": "STM32H755VI", "flash": "2048KB"}
+        {"device": "STM32H755XI_M7", "flash": "2048KB"}
       ]
     },
     "svd": "STM32H7x5_CM7.svd"
   },
   "STM32H757xx": {
     "openocd": {
-      "target": "stm32h7x.cfg"
+      "target": "stm32h7x_dual_bank.cfg"
     },
     "jlink": {
       "devices": [
-        {"device": "STM32H757VI", "flash": "2048KB"}
+        {"device": "STM32H757XI_M7", "flash": "2048KB"}
       ]
     },
     "svd": "STM32H7x7_CM7.svd"
   },
   "STM32H7A3xx": {
     "openocd": {
-      "target": "stm32h7x.cfg"
+      "target": "stm32h7x_dual_bank.cfg"
     },
     "jlink": {
       "devices": [
