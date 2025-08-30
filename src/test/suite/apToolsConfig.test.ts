@@ -5,6 +5,7 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as os from 'os';
 import * as fs from 'fs';
 import * as sinon from 'sinon';
 import { ToolsConfig } from '../../apToolsConfig';
@@ -17,19 +18,25 @@ suite('apToolsConfig Test Suite', () => {
 	let mockContext: vscode.ExtensionContext;
 	let sandbox: sinon.SinonSandbox;
 	let apExtensionContext: APExtensionContext;
+	let tempWorkspaceDir: string;
 	let tempConfigPath: string;
+	let tempVscodeDir: string;
 
 	suiteSetup(async () => {
 		apExtensionContext = await getApExtApi();
-		workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		assert.ok(workspaceFolder);
 		assert.ok(apExtensionContext.vscodeContext);
 		mockContext = apExtensionContext.vscodeContext;
-		tempConfigPath = path.join(workspaceFolder.uri.fsPath, '.vscode', 'apenv.json');
 	});
 
 	setup(() => {
 		sandbox = sinon.createSandbox();
+		// Create isolated temp workspace
+		tempWorkspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aptoolsconfig-'));
+		tempVscodeDir = path.join(tempWorkspaceDir, '.vscode');
+		tempConfigPath = path.join(tempVscodeDir, 'apenv.json');
+		workspaceFolder = { uri: vscode.Uri.file(tempWorkspaceDir), name: 'temp', index: 0 } as vscode.WorkspaceFolder;
+		sandbox.stub(vscode.workspace, 'workspaceFolders').value([workspaceFolder]);
+
 		// Reset static state
 		(ToolsConfig as any).toolPaths = {};
 		(ToolsConfig as any).onConfigChangedCallbacks = [];
@@ -41,10 +48,10 @@ suite('apToolsConfig Test Suite', () => {
 
 	teardown(() => {
 		sandbox.restore();
-		// Clean up any created config files
+		// Clean up temp workspace
 		try {
-			if (fs.existsSync(tempConfigPath)) {
-				fs.unlinkSync(tempConfigPath);
+			if (tempWorkspaceDir && fs.existsSync(tempWorkspaceDir)) {
+				fs.rmSync(tempWorkspaceDir, { recursive: true, force: true });
 			}
 		} catch {
 			// Ignore cleanup errors
@@ -60,11 +67,8 @@ suite('apToolsConfig Test Suite', () => {
 
 	suite('Core Functionality', () => {
 		test('should initialize with default empty configuration', () => {
-			// Ensure no config file exists
-			sandbox.stub(fs, 'existsSync').returns(false);
-
+			// Ensure no config file exists in temp workspace
 			ToolsConfig.loadConfig();
-
 			const allPaths = ToolsConfig.getAllToolPaths();
 			assert.deepStrictEqual(allPaths, {});
 		});
@@ -78,8 +82,11 @@ suite('apToolsConfig Test Suite', () => {
 				}
 			};
 
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify(mockConfig));
+			// Write real file under temp workspace
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
+			fs.writeFileSync(tempConfigPath, JSON.stringify(mockConfig));
 
 			ToolsConfig.loadConfig();
 
@@ -89,8 +96,10 @@ suite('apToolsConfig Test Suite', () => {
 		});
 
 		test('should handle malformed JSON configuration gracefully', () => {
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns('{ invalid json }');
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
+			fs.writeFileSync(tempConfigPath, '{ invalid json }');
 
 			// Should not throw
 			ToolsConfig.loadConfig();
@@ -104,8 +113,10 @@ suite('apToolsConfig Test Suite', () => {
 				someOtherProperty: 'value'
 			};
 
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify(mockConfig));
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
+			fs.writeFileSync(tempConfigPath, JSON.stringify(mockConfig));
 
 			ToolsConfig.loadConfig();
 
@@ -120,8 +131,10 @@ suite('apToolsConfig Test Suite', () => {
 				}
 			};
 
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify(mockConfig));
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
+			fs.writeFileSync(tempConfigPath, JSON.stringify(mockConfig));
 
 			ToolsConfig.loadConfig();
 
@@ -135,21 +148,23 @@ suite('apToolsConfig Test Suite', () => {
 
 	suite('Tool Path Management', () => {
 		test('should set and get tool paths correctly', () => {
-			const writeFileSyncStub = sandbox.stub(fs, 'writeFileSync');
-			sandbox.stub(fs, 'existsSync').returns(true); // .vscode directory exists
-			sandbox.stub(fs, 'mkdirSync');
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
 
 			const toolPath = '/custom/bin/gcc';
 			ToolsConfig.setToolPath('GCC', toolPath);
 
 			assert.strictEqual(ToolsConfig.getToolPath('GCC'), toolPath);
-			assert.ok(writeFileSyncStub.calledOnce);
+			assert.ok(fs.existsSync(tempConfigPath));
+			const content = JSON.parse(fs.readFileSync(tempConfigPath, 'utf8'));
+			assert.strictEqual(content.toolPaths['GCC'], toolPath);
 		});
 
 		test('should remove tool paths correctly', () => {
-			const writeFileSyncStub = sandbox.stub(fs, 'writeFileSync');
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'mkdirSync');
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
 
 			// Set a tool path first
 			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
@@ -158,13 +173,15 @@ suite('apToolsConfig Test Suite', () => {
 			// Remove it
 			ToolsConfig.removeToolPath('GCC');
 			assert.strictEqual(ToolsConfig.getToolPath('GCC'), undefined);
-			assert.ok(writeFileSyncStub.calledTwice);
+			assert.ok(fs.existsSync(tempConfigPath));
+			const content = JSON.parse(fs.readFileSync(tempConfigPath, 'utf8'));
+			assert.strictEqual(content.toolPaths['GCC'], undefined);
 		});
 
 		test('should handle multiple tool paths', () => {
-			const writeFileSyncStub = sandbox.stub(fs, 'writeFileSync');
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'mkdirSync');
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
 
 			const tools = {
 				'GCC': '/usr/bin/gcc',
@@ -185,12 +202,17 @@ suite('apToolsConfig Test Suite', () => {
 
 			const allPaths = ToolsConfig.getAllToolPaths();
 			assert.deepStrictEqual(allPaths, tools);
+
+			// Verify file contents too
+			assert.ok(fs.existsSync(tempConfigPath));
+			const content = JSON.parse(fs.readFileSync(tempConfigPath, 'utf8'));
+			assert.deepStrictEqual(content.toolPaths, tools);
 		});
 
 		test('should handle special characters in paths', () => {
-			const writeFileSyncStub = sandbox.stub(fs, 'writeFileSync');
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'mkdirSync');
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
 
 			const specialPaths = {
 				'GCC': '/path/with spaces/gcc',
@@ -202,22 +224,21 @@ suite('apToolsConfig Test Suite', () => {
 				ToolsConfig.setToolPath(tool as apToolsConfig.ToolID, toolPath);
 				assert.strictEqual(ToolsConfig.getToolPath(tool as apToolsConfig.ToolID), toolPath);
 			});
+
+			const content = JSON.parse(fs.readFileSync(tempConfigPath, 'utf8'));
+			assert.deepStrictEqual(content.toolPaths, specialPaths);
 		});
 	});
 
 	suite('Configuration Persistence', () => {
 		test('should save configuration with correct JSON structure', () => {
-			let savedContent: string = '';
-			const writeFileSyncStub = sandbox.stub(fs, 'writeFileSync').callsFake((filePath, content) => {
-				savedContent = content as string;
-			});
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'mkdirSync');
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
 
 			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
-			assert.ok(writeFileSyncStub.calledOnce);
-			const savedConfig = JSON.parse(savedContent);
+			const savedConfig = JSON.parse(fs.readFileSync(tempConfigPath, 'utf8'));
 			assert.deepStrictEqual(savedConfig, {
 				toolPaths: {
 					'GCC': '/usr/bin/gcc'
@@ -226,20 +247,16 @@ suite('apToolsConfig Test Suite', () => {
 		});
 
 		test('should create .vscode directory if it does not exist', () => {
-			const mkdirSyncStub = sandbox.stub(fs, 'mkdirSync');
-			sandbox.stub(fs, 'writeFileSync');
-			sandbox.stub(fs, 'existsSync').callsFake((filePath: fs.PathLike) => {
-				const pathStr = filePath.toString();
-				// .vscode directory doesn't exist, but parent does
-				return !pathStr.includes('.vscode');
-			});
+			// Ensure parent exists but .vscode does not
+			assert.ok(fs.existsSync(tempWorkspaceDir));
+			if (fs.existsSync(tempVscodeDir)) {
+				fs.rmSync(tempVscodeDir, { recursive: true, force: true });
+			}
 
 			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
 
-			assert.ok(mkdirSyncStub.calledOnce);
-			const mkdirCall = mkdirSyncStub.getCall(0);
-			assert.ok(mkdirCall.args[0].toString().includes('.vscode'));
-			assert.deepStrictEqual(mkdirCall.args[1], { recursive: true });
+			assert.ok(fs.existsSync(tempVscodeDir));
+			assert.ok(fs.existsSync(tempConfigPath));
 		});
 
 		test('should handle workspace without folders', () => {
@@ -272,14 +289,14 @@ suite('apToolsConfig Test Suite', () => {
 				}
 			};
 
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify(existingConfig));
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
+			fs.writeFileSync(tempConfigPath, JSON.stringify(existingConfig));
 
 			ToolsConfig.loadConfig();
 
 			// Add a new tool
-			const writeFileSyncStub = sandbox.stub(fs, 'writeFileSync');
-			sandbox.stub(fs, 'mkdirSync');
 			ToolsConfig.setToolPath('GDB', '/new/gdb');
 
 			// Should preserve existing tools
@@ -337,21 +354,14 @@ suite('apToolsConfig Test Suite', () => {
 
 			sandbox.stub(vscode.workspace, 'createFileSystemWatcher').returns(mockWatcher as any);
 
-			// Mock file operations for initial load
-			sandbox.stub(fs, 'existsSync').returns(false);
-
 			ToolsConfig.initialize(mockContext);
 
 			// Initial state should be empty
 			assert.deepStrictEqual(ToolsConfig.getAllToolPaths(), {});
 
 			// Mock file exists now with content
-			sandbox.restore();
-			sandbox = sinon.createSandbox();
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns(JSON.stringify({
-				toolPaths: { 'GCC': '/new/gcc' }
-			}));
+			fs.mkdirSync(tempVscodeDir, { recursive: true });
+			fs.writeFileSync(tempConfigPath, JSON.stringify({ toolPaths: { 'GCC': '/new/gcc' } }));
 
 			// Trigger file change
 			if (onDidChangeCallback) {
@@ -374,7 +384,6 @@ suite('apToolsConfig Test Suite', () => {
 			};
 
 			sandbox.stub(vscode.workspace, 'createFileSystemWatcher').returns(mockWatcher as any);
-			sandbox.stub(fs, 'existsSync').returns(false);
 
 			ToolsConfig.initialize(mockContext);
 
@@ -403,7 +412,6 @@ suite('apToolsConfig Test Suite', () => {
 			};
 
 			sandbox.stub(vscode.workspace, 'createFileSystemWatcher').returns(mockWatcher as any);
-			sandbox.stub(fs, 'existsSync').returns(false);
 
 			ToolsConfig.initialize(mockContext);
 
@@ -430,8 +438,12 @@ suite('apToolsConfig Test Suite', () => {
 
 	suite('Error Handling', () => {
 		test('should handle file read errors gracefully', () => {
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').throws(new Error('Permission denied'));
+			// Write an unreadable file then simulate read throwing by replacing with a directory
+			fs.mkdirSync(tempVscodeDir, { recursive: true });
+			fs.writeFileSync(tempConfigPath, '{"toolPaths":{}}');
+			// Replace file by directory to cause readFileSync to throw
+			fs.rmSync(tempConfigPath, { force: true });
+			fs.mkdirSync(tempConfigPath);
 
 			// Should not throw
 			ToolsConfig.loadConfig();
@@ -441,9 +453,10 @@ suite('apToolsConfig Test Suite', () => {
 		});
 
 		test('should handle file write errors gracefully', () => {
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'mkdirSync');
-			sandbox.stub(fs, 'writeFileSync').throws(new Error('Disk full'));
+			// Point config path to a directory to force write failure
+			fs.mkdirSync(tempVscodeDir, { recursive: true });
+			// Create a directory at the config file path
+			fs.mkdirSync(tempConfigPath, { recursive: true });
 			const showErrorMessageStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
 			// Should not throw
@@ -454,9 +467,9 @@ suite('apToolsConfig Test Suite', () => {
 		});
 
 		test('should handle directory creation errors', () => {
-			sandbox.stub(fs, 'existsSync').returns(false);
-			sandbox.stub(fs, 'mkdirSync').throws(new Error('Permission denied'));
-			sandbox.stub(fs, 'writeFileSync');
+			// Make parent unwritable by pointing to a path we cannot create under
+			// If running as normal user, creating under root should fail
+			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: vscode.Uri.file('/root/forbidden'), name: 'x', index: 0 }]);
 			const showErrorMessageStub = sandbox.stub(vscode.window, 'showErrorMessage');
 
 			// Should not throw
@@ -528,9 +541,9 @@ suite('apToolsConfig Test Suite', () => {
 		});
 
 		test('should handle concurrent configuration operations', async () => {
-			const writeFileSyncStub = sandbox.stub(fs, 'writeFileSync');
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'mkdirSync');
+			if (!fs.existsSync(tempVscodeDir)) {
+				fs.mkdirSync(tempVscodeDir, { recursive: true });
+			}
 
 			// Simulate concurrent tool path updates
 			const promises = [
@@ -544,7 +557,7 @@ suite('apToolsConfig Test Suite', () => {
 			await Promise.all(promises);
 
 			// All operations should complete without errors
-			assert.ok(writeFileSyncStub.callCount >= 5);
+			assert.ok(fs.existsSync(tempConfigPath));
 
 			// Final state should be consistent
 			assert.strictEqual(ToolsConfig.getToolPath('GCC'), undefined);
