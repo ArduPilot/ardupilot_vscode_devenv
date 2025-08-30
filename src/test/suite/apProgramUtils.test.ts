@@ -269,13 +269,13 @@ suite('apProgramUtils Test Suite', () => {
 			const empyResult = results.find(r => r.packageName === 'empy');
 			assert.ok(empyResult);
 			// Our fake script returns installed for empy
-			assert.strictEqual(empyResult!.result.available, true);
+			assert.strictEqual(empyResult.result.available, true);
 
 			const pymavlinkResult = results.find(r => r.packageName === 'pymavlink');
 			assert.ok(pymavlinkResult);
 			// Our fake script returns installed for pymavlink; accept both outcomes
 			// depending on registry contents, but ensure object shape
-			assert.strictEqual(typeof pymavlinkResult!.result.available, 'boolean');
+			assert.strictEqual(typeof pymavlinkResult.result.available, 'boolean');
 		});
 	});
 
