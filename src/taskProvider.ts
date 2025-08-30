@@ -638,6 +638,14 @@ export interface ArdupilotTaskDefinition extends vscode.TaskDefinition {
 	 * custom build command (only used when override is true)
 	 */
 	customBuildCommand?: string;
+	/**
+	 * MCU target from hwdef.dat (e.g., "STM32H743xx")
+	 */
+	mcuTarget?: string;
+	/**
+	 * Flash size in KB from hwdef.dat
+	 */
+	flashSizeKB?: number;
 }
 
 export async function getFeaturesList(extensionUri: vscode.Uri): Promise<Record<string, unknown>> {
