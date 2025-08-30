@@ -25,7 +25,6 @@ import { TOOLS_REGISTRY } from './apToolsConfig';
 import { apTerminalMonitor } from './apTerminalMonitor';
 import * as fs from 'fs';
 import { readHwdefFile, getDebugConfigFromMCU, HwdefInfo, DebugConfig } from './apBuildConfig';
-import { env } from 'process';
 
 // Map vehicle types to ArduPilot binary names
 export const targetToVehicleType: { [key: string]: string } = {
@@ -1013,13 +1012,13 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 			throw new Error(`No OpenOCD target configured for ${hwdefInfo.mcuTarget}`);
 		}
 
-		let svdPath = debugConfig.svdFile ? path.join(__dirname, '..', 'resources', 'STMicro', debugConfig.svdFile) : undefined;
+		const svdPath = debugConfig.svdFile ? path.join(__dirname, '..', 'resources', 'STMicro', debugConfig.svdFile) : undefined;
 
 		// OpenOCD configuration
 		const gdbPort = 3333; // default OpenOCD GDB port
 		let openOCDHelperPath = path.join(this.extensionUri.fsPath, 'resources', 'openocd-helper.tcl');
 		let openocdScriptPath = path.join(path.dirname(openOCD.path), '../scripts');
-		let openOCDPath = openOCD.path;
+		const openOCDPath = openOCD.path;
 		if (ProgramUtils.isWSL()) {
 			// convert to using wsl path by appending \\wsl.localhost\Ubuntu
 			const wslDistro = ProgramUtils.wslDistro();
@@ -1034,12 +1033,12 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 		const openOCDArgs = [
 			'-c', `"gdb port ${gdbPort}"`,
 			'-f', `"${openOCDHelperPath}"`,
-			'-f', `"interface/stlink.cfg"`,
-			'-c', `"transport select swd"`,
+			'-f', '"interface/stlink.cfg"',
+			'-c', '"transport select swd"',
 			'-f', `"target/${debugConfig.openocdTarget}"`,
-			'-c', `"bindto 0.0.0.0"`,
-			'-c', `"init"`,
-			'-c', `"CDRTOSConfigure chibios"`,
+			'-c', '"bindto 0.0.0.0"',
+			'-c', '"init"',
+			'-c', '"CDRTOSConfigure chibios"',
 			'-s', `"${openocdScriptPath}"`
 		];
 
