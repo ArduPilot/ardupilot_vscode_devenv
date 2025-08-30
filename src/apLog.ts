@@ -18,6 +18,6 @@ export class apLog {
 	}
 
 	public log(message: string): void {
-		apLog.channel.appendLine('<' + this.name + '> ' + message);
+		apLog.channel.appendLine(`<${this?.name ?? 'unknown'}> ${message}`);
 	}
 }
