@@ -20,7 +20,7 @@ import * as fs from 'fs';
 import { apLog } from './apLog';
 import { getFeaturesList, APTaskProvider } from './taskProvider';
 import * as cp from 'child_process';
-import { targetToBin } from './apBuildConfig';
+import { targetToBin, readHwdefFile, getDebugConfigFromMCU } from './apBuildConfig';
 import { ValidateEnvironmentPanel, ValidateEnvironment } from './apEnvironmentValidator';
 import { apTerminalMonitor } from './apTerminalMonitor';
 import { ProgramUtils } from './apProgramUtils';
@@ -88,6 +88,9 @@ export class UIHooks {
 			break;
 		case 'getBuildCommands':
 			void this.getBuildCommands(message);
+			break;
+		case 'getDebugInfo':
+			void this.getDebugInfo(message);
 			break;
 		case 'close':
 			this._panel.dispose();
@@ -575,5 +578,51 @@ export class UIHooks {
 				error: `Error generating build commands: ${error}`
 			});
 		}
+	}
+
+	@FireAndForget({ apLog: UIHooks.logger, showErrorPopup: true })
+	public async getDebugInfo(message: Record<string, unknown>): Promise<void> {
+		const board = message.board as string;
+		const target = message.target as string;
+
+		UIHooks.log(`DEBUG_INFO: Getting debug info for board: ${board}`);
+
+		let debugInfo = null;
+		if (board) {
+			try {
+				UIHooks.log(`DEBUG_INFO: Starting readHwdefFile for ${board}`);
+				const hwdefInfo = await readHwdefFile(board);
+				UIHooks.log(`DEBUG_INFO: readHwdefFile result: ${JSON.stringify(hwdefInfo)}`);
+
+				if (hwdefInfo.mcuTarget) {
+					UIHooks.log(`DEBUG_INFO: Starting getDebugConfigFromMCU for ${hwdefInfo.mcuTarget}`);
+					const debugConfig = getDebugConfigFromMCU(hwdefInfo.mcuTarget, hwdefInfo.flashSizeKB, this._extensionUri);
+					UIHooks.log(`DEBUG_INFO: getDebugConfigFromMCU result: ${JSON.stringify(debugConfig)}`);
+
+					debugInfo = {
+						board: board,
+						target: target,
+						mcuTarget: hwdefInfo.mcuTarget,
+						flashSizeKB: hwdefInfo.flashSizeKB,
+						openocdTarget: debugConfig.openocdTarget,
+						jlinkDevice: debugConfig.jlinkDevice,
+						svdFile: debugConfig.svdFile
+					};
+					UIHooks.log(`DEBUG_INFO: Debug info for ${board}: ${JSON.stringify(debugInfo)}`);
+				} else {
+					UIHooks.log(`DEBUG_INFO: No MCU info found in hwdef.dat for board: ${board}`);
+				}
+			} catch (error) {
+				UIHooks.log(`DEBUG_INFO: Error reading debug info for ${board}: ${error}`);
+				if (error instanceof Error) {
+					UIHooks.log(`DEBUG_INFO: Error stack: ${error.stack}`);
+				}
+			}
+		}
+
+		this._panel.webview.postMessage({
+			command: 'getDebugInfo',
+			debugInfo: debugInfo
+		});
 	}
 }
