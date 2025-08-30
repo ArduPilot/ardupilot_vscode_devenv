@@ -152,6 +152,10 @@
               "waffile": {
                 "type": "string",
                 "description": "Path to waf build script"
+              },
+              "board": {
+                "type": "string",
+                "description": "Board name for hardware debugging"
               }
             }
           }
