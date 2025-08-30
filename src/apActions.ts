@@ -440,13 +440,58 @@ export class apActionItem extends vscode.TreeItem {
 	}
 
 	private uploadFirmware(): void {
+		apActionItem.log(`upload firmware for ${this.label}`);
 		if (!activeConfiguration) {
 			vscode.window.showErrorMessage('No active configuration selected');
 			return;
 		}
-		if (activeLaunchConfig) {
-			vscode.debug.startDebugging(undefined, activeLaunchConfig);
+
+		// Find the upload task for the current configuration
+		const configName = (activeConfiguration.definition as ArdupilotTaskDefinition).configName;
+		if (!configName) {
+			vscode.window.showErrorMessage('Active configuration missing configName');
+			return;
 		}
+
+		const uploadTaskName = `${configName}-upload`;
+
+		// Get all tasks and find the upload task
+		vscode.tasks.fetchTasks().then(tasks => {
+			const uploadTask = tasks.find(task =>
+				task.definition.type === 'ardupilot' &&
+				(task.definition as ArdupilotTaskDefinition).configName === uploadTaskName
+			);
+
+			if (!uploadTask) {
+				vscode.window.showErrorMessage(`Upload task not found: ${uploadTaskName}`);
+				return;
+			}
+
+			// Execute the upload task
+			vscode.tasks.executeTask(uploadTask).then(taskExecution => {
+				if (!taskExecution) {
+					vscode.window.showErrorMessage('Failed to start upload task execution');
+					return;
+				}
+
+				// Create a task execution finished listener
+				const disposable = vscode.tasks.onDidEndTaskProcess(e => {
+					if (e.execution === taskExecution) {
+						disposable.dispose();  // Clean up the listener
+
+						if (e.exitCode === 0) {
+							vscode.window.showInformationMessage(`Upload successful for ${this.label}`);
+						} else {
+							vscode.window.showErrorMessage(`Upload failed for ${this.label}`);
+						}
+					}
+				});
+			}, (error: unknown) => {
+				vscode.window.showErrorMessage(`Failed to execute upload task: ${error}`);
+			});
+		}, (error: unknown) => {
+			vscode.window.showErrorMessage(`Failed to fetch tasks: ${error}`);
+		});
 	}
 
 	@FireAndForget({ apLog: apActionItem.logger, showErrorPopup: true })
@@ -506,6 +551,7 @@ export class apActionItem extends vscode.TreeItem {
 
 		const simVehiclePath = path.join(workspaceRoot, 'Tools', 'autotest', 'sim_vehicle.py');
 
+		
 		if (!fs.existsSync(simVehiclePath)) {
 			vscode.window.showErrorMessage('sim_vehicle.py not found. Please ensure ArduPilot is properly cloned.');
 			return;
