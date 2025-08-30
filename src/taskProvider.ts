@@ -20,13 +20,12 @@ import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
-import { apTerminalMonitor } from './apTerminalMonitor';
 import { TOOLS_REGISTRY } from './apToolsConfig';
 import { isVehicleTarget } from './apCommonUtils';
 
 /**
  * Custom execution class for ArduPilot build tasks
- * Manages dedicated terminals and monitors output using terminal shell execution APIs
+ * Uses direct child_process.spawn with Python extension integration
  */
 class APCustomExecution extends vscode.CustomExecution {
 	public static readonly TERMINAL_NAME_PREFIX = 'ArduPilot Build';
@@ -36,14 +35,12 @@ class APCustomExecution extends vscode.CustomExecution {
 	constructor(
 		private definition: ArdupilotTaskDefinition,
 		private taskCommand: string,
-		private buildDir: string,
 		private env: { [key: string]: string }
 	) {
 		super(async (): Promise<vscode.Pseudoterminal> => {
 			return new APBuildPseudoterminal(
 				this.definition,
 				this.taskCommand,
-				this.buildDir,
 				this.env
 			);
 		});
@@ -52,25 +49,37 @@ class APCustomExecution extends vscode.CustomExecution {
 
 /**
  * Pseudoterminal implementation for ArduPilot build tasks
- * Handles terminal creation, command execution, and output monitoring using apTerminalMonitor
+ * Uses direct child_process.spawn with pseudoterminal-like behavior
  */
 class APBuildPseudoterminal implements vscode.Pseudoterminal {
 	private writeEmitter = new vscode.EventEmitter<string>();
 	private closeEmitter = new vscode.EventEmitter<number>();
-	private buildCompletionEmitter = new vscode.EventEmitter<{ success: boolean }>();
 	private static log = new apLog('APBuildPseudoterminal');
-	private terminalMonitor: apTerminalMonitor | undefined;
-	private buildCompleted = false;
-	private buildSuccess = false;
+	private childProcess: cp.ChildProcess | null = null;
 	private commandFinished = false;
 
 	onDidWrite: vscode.Event<string> = this.writeEmitter.event;
 	onDidClose: vscode.Event<number> = this.closeEmitter.event;
 
+	/*
+	 * Process terminal output to handle carriage returns and formatting properly
+	 */
+	private processTerminalOutput(text: string): string {
+		// Preserve carriage returns (\r) so in-line updates work correctly
+		// Normalize lone LFs to CRLFs so VS Code renders newlines properly
+		// 1) Collapse existing CRLF to LF, then
+		// 2) Convert all LFs back to CRLF
+		// This keeps standalone CR characters intact
+		return text
+			.replace(/\r\n/g, '\n')
+			.replace(/\n/g, '\r\n')
+			// Remove sequences of whitespace followed by "../../" to make paths workspace-root-relative
+			.replace(/(^|\s+)\.\.\/\.\.\//gm, '$1');
+	}
+
 	constructor(
 		private definition: ArdupilotTaskDefinition,
 		private taskCommand: string,
-		private buildDir: string,
 		private env: { [key: string]: string }
 	) {}
 
@@ -78,79 +87,28 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 		this.writeEmitter.fire('Starting ArduPilot build task...\r\n');
 		APBuildPseudoterminal.log.log(`Opening pseudoterminal for task: ${this.definition.configName}`);
 
-		// Set up terminal monitoring with apTerminalMonitor
-		this.setupTerminalMonitoring();
-		if (!this.terminalMonitor) {
-			this.writeEmitter.fire('Error: Terminal monitor could not be initialized.\r\n');
-			return;
+		// Integrate Python extension for venv activation
+		const activateCommand = await ProgramUtils.getPythonActivateCommand();
+		if (activateCommand) {
+			this.taskCommand = `${activateCommand} && ${this.taskCommand}`;
+			APBuildPseudoterminal.log.log(`Updated command with Python activation: ${activateCommand}`);
 		}
 
-		await this.terminalMonitor.createTerminal({
-			env: this.env,
-			cwd: this.buildDir
-		}, true); // we dispose existing terminal and start again
-
-		// Execute the build command
+		// Execute the build command directly with spawn
 		this.executeBuildCommand();
 	}
 
 	close(): void {
 		APBuildPseudoterminal.log.log(`Closing pseudoterminal for task: ${this.definition.configName}`);
 
-		// Clean up terminal monitoring (fire-and-forget async dispose)
-		if (this.terminalMonitor) {
-			this.terminalMonitor.dispose().catch(error => {
-				APBuildPseudoterminal.log.log(`Error during terminal monitor dispose: ${error}`);
-			});
-			this.terminalMonitor = undefined;
+		// Clean up child process if still running
+		if (this.childProcess && !this.childProcess.killed) {
+			APBuildPseudoterminal.log.log('Terminating child process');
+			this.childProcess.kill('SIGTERM');
 		}
-
-		// Dispose emitters
-		this.buildCompletionEmitter.dispose();
 
 		this.writeEmitter.fire('Build task completed.\r\n');
 		this.closeEmitter.fire(0);
-	}
-
-	private setupTerminalMonitoring(): void {
-		const terminalName = `${APCustomExecution.TERMINAL_NAME_PREFIX}: ${this.definition.configName}`;
-
-		// Create terminal monitor instance
-		this.terminalMonitor = new apTerminalMonitor(terminalName);
-
-		// Set up text callback for real-time output
-		this.terminalMonitor.addTextCallback((text) => {
-			const trimmedOutput = text.trim();
-			if (trimmedOutput) {
-				// Write to pseudoterminal
-				this.writeEmitter.fire(`${text}\r\n`);
-
-				// Check for build completion messages
-				this.detectBuildCompletion(trimmedOutput);
-
-				// Redirect to extension logger
-				apLog.channel.appendLine(`[BUILD] ${trimmedOutput}`);
-			}
-		});
-
-		APBuildPseudoterminal.log.log('Terminal monitoring setup completed with apTerminalMonitor');
-	}
-
-	private detectBuildCompletion(output: string): void {
-		// Check for success message
-		if (output.includes('finished successfully') && !output.includes('configure')) {
-			this.buildCompleted = true;
-			this.buildSuccess = true;
-			APBuildPseudoterminal.log.log(`Build success detected for task: ${this.definition.configName}`);
-			this.buildCompletionEmitter.fire({ success: true });
-		}
-		// Check for failure message
-		else if (output.includes('Build failed')) {
-			this.buildCompleted = true;
-			this.buildSuccess = false;
-			APBuildPseudoterminal.log.log(`Build failure detected for task: ${this.definition.configName}`);
-			this.buildCompletionEmitter.fire({ success: false });
-		}
 	}
 
 	private handleBuildCompletion(result?: { exitCode: number }): void {
@@ -159,91 +117,121 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 		}
 		this.commandFinished = true;
 
-		let finalExitCode = result?.exitCode || 0;
-		let buildStatus = 'UNKNOWN';
+		const exitCode = result?.exitCode || 0;
+		const buildStatus = exitCode === 0 ? 'SUCCESS ✅' : 'FAILED ❌';
 
-		if (this.buildCompleted) {
-			// Use detected build status from output messages
-			finalExitCode = this.buildSuccess ? 0 : 1;
-			buildStatus = this.buildSuccess ? 'SUCCESS ✅' : 'FAILED ❌';
-			APBuildPseudoterminal.log.log(`Build status determined from output: ${buildStatus}`);
-		} else if (result) {
-			// Fall back to exit code if available
-			buildStatus = finalExitCode === 0 ? 'SUCCESS ✅' : 'FAILED ❌';
-			APBuildPseudoterminal.log.log(`Build status determined from exit code: ${buildStatus}`);
-		}
-
-		this.writeEmitter.fire(`Build completed with exit code: ${result?.exitCode || 0}\r\n`);
+		this.writeEmitter.fire(`Build completed with exit code: ${exitCode}\r\n`);
 
 		// Log completion info
 		apLog.channel.appendLine('[BUILD] ======== Build Completed ========');
 		apLog.channel.appendLine(`[BUILD] Task: ${this.definition.configName}`);
-		apLog.channel.appendLine(`[BUILD] Exit code: ${result?.exitCode || 0}`);
-		apLog.channel.appendLine(`[BUILD] Detected status: ${this.buildCompleted ? (this.buildSuccess ? 'SUCCESS' : 'FAILED') : 'NOT_DETECTED'}`);
-		apLog.channel.appendLine(`[BUILD] Final status: ${buildStatus}`);
+		apLog.channel.appendLine(`[BUILD] Exit code: ${exitCode}`);
+		apLog.channel.appendLine(`[BUILD] Status: ${buildStatus}`);
 		apLog.channel.appendLine('[BUILD] ===================================');
 
-		// Close the pseudoterminal with the determined exit code
-		this.closeEmitter.fire(finalExitCode);
+		// Close the pseudoterminal with the exit code
+		this.closeEmitter.fire(exitCode);
 	}
 
 	private executeBuildCommand(): void {
-		if (!this.terminalMonitor) {
-			this.writeEmitter.fire('Error: No terminal or terminal monitor available for build execution\r\n');
-			this.closeEmitter.fire(1);
-			return;
-		}
-
-		if (!this.terminalMonitor) {
-			this.writeEmitter.fire('Error: Terminal monitor was closed during initialization delay\r\n');
-			this.closeEmitter.fire(1);
-			return;
-		}
-
 		APBuildPseudoterminal.log.log(`Executing build command: ${this.taskCommand}`);
 		this.writeEmitter.fire(`Executing: ${this.taskCommand}\r\n`);
 
-		// Set up listener for build completion detection
-		const buildCompletionListener = this.buildCompletionEmitter.event((completion) => {
-			APBuildPseudoterminal.log.log(`Build completion emitted: ${completion.success ? 'SUCCESS' : 'FAILED'}`);
-			// Handle build completion immediately when detected
-			this.handleBuildCompletion({ exitCode: completion.success ? 0 : 1 });
-		});
-
-		// Use the terminalMonitor.runCommand method for better command lifecycle tracking
-		this.terminalMonitor.runCommand(this.taskCommand)
-			.then(async result => {
-				APBuildPseudoterminal.log.log(`Shell execution ended with exit code: ${result.exitCode}`);
-				// Only handle completion if it wasn't already handled by the emitter
-				if (!this.commandFinished) {
-					this.handleBuildCompletion(result);
-				}
-			})
-			.catch(error => {
-				const errorMsg = error instanceof Error ? error.message : String(error);
-				APBuildPseudoterminal.log.log(`Build command failed: ${errorMsg}`);
-
-				// Check if we detected build completion despite the error
-				if (this.buildCompleted && !this.commandFinished) {
-					APBuildPseudoterminal.log.log('Build completion detected despite runCommand error, using detected status');
-					this.handleBuildCompletion({ exitCode: this.buildSuccess ? 0 : 1 });
-				} else if (!this.commandFinished) {
-					this.writeEmitter.fire(`Error: ${errorMsg}\r\n`);
-					this.closeEmitter.fire(1);
-				}
-			})
-			.finally(() => {
-				buildCompletionListener.dispose();
-			});
-
-		APBuildPseudoterminal.log.log('Build command initiated');
-
-		// Log build start info immediately when command is initiated
+		// Log build start info
 		apLog.channel.appendLine('[BUILD] ======== Build Started ========');
 		apLog.channel.appendLine(`[BUILD] Task: ${this.definition.configName}`);
 		apLog.channel.appendLine(`[BUILD] Command: ${this.taskCommand}`);
-		apLog.channel.appendLine(`[BUILD] Working Directory: ${this.buildDir}`);
+		const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]?.uri.fsPath;
+		apLog.channel.appendLine(`[BUILD] Working Directory: ${workspaceRoot ?? process.cwd()}`);
 		apLog.channel.appendLine('[BUILD] ================================');
+
+		// Enhanced environment for better terminal behavior
+		const terminalEnv = {
+			...this.env,
+			TERM: 'xterm-256color',
+			FORCE_COLOR: '1',
+			COLORTERM: 'truecolor',
+			COLUMNS: '120',
+			LINES: '30',
+			// Additional environment variables to ensure color output
+			// Additional environment variables to ensure color output
+			NO_COLOR: undefined, // Remove any NO_COLOR setting
+			CLICOLOR_FORCE: '1'
+		};
+
+		// Use spawn with shell and inherit stdio for proper terminal behavior
+		this.childProcess = cp.spawn(this.taskCommand, [], {
+			cwd: workspaceRoot,
+			env: terminalEnv,
+			shell: true,
+			stdio: ['ignore', 'pipe', 'pipe'],
+			// Enable proper terminal behavior
+			detached: false
+		});
+
+		if (!this.childProcess) {
+			this.writeEmitter.fire('Error: Failed to spawn build process\r\n');
+			this.closeEmitter.fire(1);
+			return;
+		}
+
+		// Handle stdout output
+		this.childProcess.stdout?.on('data', (data: Buffer) => {
+			// Use utf8 encoding explicitly to preserve ANSI escape sequences
+			const text = data.toString('utf8');
+			// Process text to handle carriage returns properly for pseudoterminal
+			const processedText = this.processTerminalOutput(text);
+			this.writeEmitter.fire(processedText);
+			// Log to extension channel (strip ANSI codes for clean logging)
+			// eslint-disable-next-line no-control-regex
+			const cleanText = text.replace(/\u001b\[[0-9;]*[mGKH]/g, '');
+			const lines = cleanText.split(/\r?\n/).filter(line => line.trim());
+			lines.forEach(line => {
+				if (line.trim()) {
+					apLog.channel.appendLine(`[BUILD] ${line.trim()}`);
+				}
+			});
+		});
+
+		// Handle stderr output
+		this.childProcess.stderr?.on('data', (data: Buffer) => {
+			// Use utf8 encoding explicitly to preserve ANSI escape sequences
+			const text = data.toString('utf8');
+			// Process text to handle carriage returns properly for pseudoterminal
+			const processedText = this.processTerminalOutput(text);
+			this.writeEmitter.fire(processedText);
+			// Log to extension channel (strip ANSI codes for clean logging)
+			// eslint-disable-next-line no-control-regex
+			const cleanText = text.replace(/\u001b\[[0-9;]*[mGKH]/g, '');
+			const lines = cleanText.split(/\r?\n/).filter(line => line.trim());
+			lines.forEach(line => {
+				if (line.trim()) {
+					apLog.channel.appendLine(`[BUILD] ${line.trim()}`);
+				}
+			});
+		});
+
+		// Handle process errors
+		this.childProcess.on('error', (error) => {
+			const errorMsg = `Process error: ${error.message}`;
+			APBuildPseudoterminal.log.log(errorMsg);
+			this.writeEmitter.fire(`${errorMsg}\r\n`);
+			if (!this.commandFinished) {
+				this.handleBuildCompletion({ exitCode: 1 });
+			}
+		});
+
+		// Handle process exit
+		this.childProcess.on('exit', (code, signal) => {
+			const exitCode = code !== null ? code : (signal ? 1 : 0);
+			APBuildPseudoterminal.log.log(`Process exited with code: ${exitCode}, signal: ${signal}`);
+
+			if (!this.commandFinished) {
+				this.handleBuildCompletion({ exitCode });
+			}
+		});
+
+		APBuildPseudoterminal.log.log('Build process spawned successfully');
 	}
 
 }
@@ -281,8 +269,8 @@ export class APTaskProvider implements vscode.TaskProvider {
 		// Generate build command
 		const buildCommand = `${await ProgramUtils.PYTHON()} ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
 
-		// Generate task command (with cd prefix for task execution and optional venv activation)
-		const taskCommand = `cd ../../ && ${configureCommand} && ${await ProgramUtils.PYTHON()} ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
+		// Generate task command without changing directories; execution CWD will be set by the runner
+		const taskCommand = `${configureCommand} && ${await ProgramUtils.PYTHON()} ${waffile} ${target}${buildOptions ? ' ' + buildOptions : ''}`;
 
 		return {
 			configureCommand,
@@ -559,11 +547,10 @@ export class APTaskProvider implements vscode.TaskProvider {
 	}
 
 	/**
-	 * Prepares environment variables with optional CC and CXX paths
-	 * Uses cached tool paths for synchronous operation
-	 * @param includeToolPaths Whether to include CC and CXX environment variables
+	 * Prepares environment variables with Python extension integration
+	 * Uses cached tool paths and Python extension API for enhanced environment setup
 	 * @param definition The task definition to determine SITL vs non-SITL builds
-	 * @returns Environment variables object
+	 * @returns Environment variables object with Python environment integration
 	 */
 	public static async prepareEnvironmentVariables(definition?: ArdupilotTaskDefinition): Promise<{ [key: string]: string }> {
 		const env: { [key: string]: string } = {};
@@ -628,12 +615,10 @@ export class APTaskProvider implements vscode.TaskProvider {
 
 		// Generate commands using shared method or use custom commands
 		let taskCommand: string;
-		let buildDir: string;
 
 		if (definition.overrideEnabled && definition.customConfigureCommand && definition.customBuildCommand) {
 			// For override mode, use custom commands and a generic build directory
 			taskCommand = `${definition.customConfigureCommand} && ${definition.customBuildCommand}`;
-			buildDir = workspaceRoot.uri.fsPath; // Use workspace root as working directory
 		} else {
 			// For standard mode, use generated commands and board-specific build directory
 			if (!definition.configure || !definition.target) {
@@ -647,20 +632,6 @@ export class APTaskProvider implements vscode.TaskProvider {
 			}
 			if (definition.nm === undefined) {
 				definition.nm = 'arm-none-eabi-nm';
-			}
-
-			buildDir = path.join(workspaceRoot.uri.fsPath, 'build', definition.configure);
-
-			// make build directory if it doesn't exist
-			if (!fs.existsSync(buildDir)) {
-				try {
-					fs.mkdirSync(buildDir, { recursive: true });
-					APTaskProvider.log.log(`Created build directory: ${buildDir}`);
-				} catch (error) {
-					APTaskProvider.log.log(`Failed to create build directory: ${error}`);
-					vscode.window.showErrorMessage(`Failed to create build directory: ${error}`);
-					return undefined;
-				}
 			}
 
 			const commands = await this.generateBuildCommands(
@@ -681,7 +652,6 @@ export class APTaskProvider implements vscode.TaskProvider {
 			new APCustomExecution(
 				definition,
 				taskCommand,
-				buildDir,
 				env
 			),
 			'$apgcc'
