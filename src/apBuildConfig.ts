@@ -17,6 +17,7 @@
 import * as vscode from 'vscode';
 import { apLog } from './apLog';
 import * as fs from 'fs';
+import * as path from 'path';
 import { apBuildConfigPanel } from './apBuildConfigPanel';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { activeConfiguration } from './apActions';
@@ -234,5 +235,263 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 
 		apBuildConfigProvider.log(`Found ${buildConfigList.length} configurations in tasks.json`);
 		return buildConfigList;
+	}
+}
+
+export interface HwdefInfo {
+	mcuTarget?: string;
+	flashSizeKB?: number;
+}
+
+/**
+ * Helper function to parse a hwdef file and extract MCU/flash info
+ * @param filePath - Absolute path to the hwdef file to parse
+ * @param result - HwdefInfo object to populate with found data
+ * @param processedFiles - Set of already processed file paths to prevent infinite loops
+ * @param workspaceRoot - Root of the workspace
+ * @param logger - Logger instance
+ * @returns Promise resolving to collected include paths for later processing
+ */
+async function parseHwdefFile(filePath: string, result: HwdefInfo, processedFiles: Set<string>, workspaceRoot: string, logger: apLog): Promise<string[]> {
+	// Skip if already processed (circular include protection)
+	if (processedFiles.has(filePath)) {
+		logger.log(`INCLUDE_DEBUG: Skipping already processed file: ${filePath}`);
+		return [];
+	}
+
+	processedFiles.add(filePath);
+	logger.log(`INCLUDE_DEBUG: Processing hwdef file: ${filePath}`);
+
+	if (!fs.existsSync(filePath)) {
+		logger.log(`INCLUDE_DEBUG: File does not exist: ${filePath}`);
+		return [];
+	}
+
+	try {
+		const hwdefContent = fs.readFileSync(filePath, 'utf8');
+		const lines = hwdefContent.split('\n');
+		const includeStatements: string[] = [];
+
+		for (const line of lines) {
+			const trimmedLine = line.trim();
+
+			// Skip empty lines and comments
+			if (!trimmedLine || trimmedLine.startsWith('#')) {
+				continue;
+			}
+
+			// Parse MCU line: "MCU STM32H7xx STM32H743xx" (only if not already found)
+			if (!result.mcuTarget && trimmedLine.startsWith('MCU ')) {
+				const parts = trimmedLine.split(/\s+/);
+				logger.log(`INCLUDE_DEBUG: MCU line found: "${trimmedLine}", parts: [${parts.join(', ')}], length: ${parts.length}`);
+				if (parts.length >= 3) {
+					result.mcuTarget = parts[2]; // Third part is the specific MCU target
+					logger.log(`INCLUDE_DEBUG: Found MCU target: ${result.mcuTarget}`);
+				}
+			}
+
+			// Parse flash size line: "FLASH_SIZE_KB 2048" (only if not already found)
+			if (!result.flashSizeKB && trimmedLine.startsWith('FLASH_SIZE_KB ')) {
+				const parts = trimmedLine.split(/\s+/);
+				if (parts.length >= 2) {
+					const flashSize = parseInt(parts[1], 10);
+					if (!isNaN(flashSize)) {
+						result.flashSizeKB = flashSize;
+						logger.log(`INCLUDE_DEBUG: Found flash size: ${result.flashSizeKB}KB`);
+					}
+				}
+			}
+
+			// Parse include statements: "include ../CubeOrange/hwdef.inc"
+			if (trimmedLine.startsWith('include ')) {
+				const parts = trimmedLine.split(/\s+/);
+				if (parts.length >= 2) {
+					const includePath = parts.slice(1).join(' ').trim(); // Handle paths with spaces
+					logger.log(`INCLUDE_DEBUG: Found include statement: "${includePath}"`);
+					includeStatements.push(includePath);
+				}
+			}
+		}
+
+		return includeStatements;
+
+	} catch (error) {
+		logger.log(`INCLUDE_DEBUG: Error reading file ${filePath}: ${error}`);
+		return [];
+	}
+}
+
+/**
+ * Reads hwdef.dat file to extract MCU target and flash size information
+ * Follows include statements to find missing information
+ * @param boardName - The board name (e.g., "CubeOrange")
+ * @returns Promise resolving to HwdefInfo with mcuTarget and flashSizeKB
+ */
+export async function readHwdefFile(boardName: string): Promise<HwdefInfo> {
+	if (!boardName) {
+		console.error('readHwdefFile: boardName is undefined or empty');
+		return {};
+	}
+
+	const logger = new apLog('readHwdefFile');
+	const result: HwdefInfo = {};
+	const processedFiles = new Set<string>();
+
+	try {
+		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
+		if (!workspaceRoot) {
+			logger.log('No workspace root available');
+			return result;
+		}
+
+		// Construct path to main hwdef.dat file
+		const hwdefPath = path.join(workspaceRoot, 'libraries', 'AP_HAL_ChibiOS', 'hwdef', boardName, 'hwdef.dat');
+		logger.log(`INCLUDE_DEBUG: Starting hwdef parsing for board: ${boardName}`);
+		logger.log(`INCLUDE_DEBUG: Main hwdef path: ${hwdefPath}`);
+
+		if (!fs.existsSync(hwdefPath)) {
+			logger.log(`hwdef.dat not found for board: ${boardName}`);
+			return result;
+		}
+
+		// Parse the main hwdef.dat file
+		const includeStatements = await parseHwdefFile(hwdefPath, result, processedFiles, workspaceRoot, logger);
+
+		logger.log(`INCLUDE_DEBUG: After main file - mcuTarget: ${result.mcuTarget}, flashSizeKB: ${result.flashSizeKB}`);
+		logger.log(`INCLUDE_DEBUG: Found ${includeStatements.length} include statements: [${includeStatements.join(', ')}]`);
+
+		// If we still need information and have include statements, process them
+		if ((!result.mcuTarget || !result.flashSizeKB) && includeStatements.length > 0) {
+			logger.log('INCLUDE_DEBUG: Missing info, processing includes...');
+
+			for (const includePath of includeStatements) {
+				// If we have all the info we need, stop processing
+				if (result.mcuTarget && result.flashSizeKB) {
+					break;
+				}
+
+				// Resolve relative path to absolute path
+				const hwdefDir = path.dirname(hwdefPath);
+				const absoluteIncludePath = path.resolve(hwdefDir, includePath);
+				logger.log(`INCLUDE_DEBUG: Resolving include "${includePath}" to: ${absoluteIncludePath}`);
+
+				// Recursively parse the included file
+				const nestedIncludes = await parseHwdefFile(absoluteIncludePath, result, processedFiles, workspaceRoot, logger);
+				logger.log(`INCLUDE_DEBUG: After processing include ${includePath} - mcuTarget: ${result.mcuTarget}, flashSizeKB: ${result.flashSizeKB}`);
+
+				// Recursively process nested includes if we still need information
+				if ((!result.mcuTarget || !result.flashSizeKB) && nestedIncludes.length > 0) {
+					logger.log(`INCLUDE_DEBUG: Processing ${nestedIncludes.length} nested includes: [${nestedIncludes.join(', ')}]`);
+
+					for (const nestedIncludePath of nestedIncludes) {
+						// If we have all the info we need, stop processing
+						if (result.mcuTarget && result.flashSizeKB) {
+							break;
+						}
+
+						// Resolve nested include path relative to the current include file
+						const includeFileDir = path.dirname(absoluteIncludePath);
+						const absoluteNestedIncludePath = path.resolve(includeFileDir, nestedIncludePath);
+						logger.log(`INCLUDE_DEBUG: Resolving nested include "${nestedIncludePath}" to: ${absoluteNestedIncludePath}`);
+
+						// Recursively parse the nested included file
+						await parseHwdefFile(absoluteNestedIncludePath, result, processedFiles, workspaceRoot, logger);
+						logger.log(`INCLUDE_DEBUG: After processing nested include ${nestedIncludePath} - mcuTarget: ${result.mcuTarget}, flashSizeKB: ${result.flashSizeKB}`);
+					}
+				}
+			}
+		}
+
+		logger.log(`INCLUDE_DEBUG: Final result for ${boardName}: mcuTarget=${result.mcuTarget}, flashSizeKB=${result.flashSizeKB}`);
+		return result;
+
+	} catch (error) {
+		logger.log(`Error reading hwdef.dat for ${boardName}: ${error}`);
+		return result;
+	}
+}
+
+export interface DebugConfig {
+	openocdTarget?: string;
+	jlinkDevice?: string;
+	svdFile?: string;
+	flashSizeKB?: number;
+}
+
+/**
+ * Gets debug configuration from stm32DebugConfig based on MCU target and flash size
+ * @param mcuTarget - MCU target from hwdef.dat (e.g., "STM32H743xx")
+ * @param flashSizeKB - Flash size in KB from hwdef.dat
+ * @returns DebugConfig with OpenOCD target, JLink device, and SVD file
+ */
+export function getDebugConfigFromMCU(mcuTarget: string, flashSizeKB: number | undefined, extensionUri: vscode.Uri): DebugConfig {
+	const log = new apLog('getDebugConfigFromMCU').log;
+
+	try {
+		// Load stm32DebugConfig from JSON file using extension path
+		const configPath = path.join(extensionUri.path, 'resources', 'stm32DebugConfig.json');
+		log(`DEBUG_CONFIG: Loading debug config from: ${configPath}`);
+		const configData = fs.readFileSync(configPath, 'utf8');
+		const stm32DebugConfig: Record<string, {
+			openocd?: { target?: string };
+			jlink?: { device?: string; devices?: { device: string; flash: string }[] };
+			svd?: string;
+		}> = JSON.parse(configData);
+
+		log(`DEBUG_CONFIG: Looking for MCU target: "${mcuTarget}"`);
+		log(`DEBUG_CONFIG: Available targets: [${Object.keys(stm32DebugConfig).slice(0, 5).join(', ')}...]`);
+
+		if (!stm32DebugConfig[mcuTarget]) {
+			log(`No debug configuration found for MCU target: ${mcuTarget}`);
+			return {};
+		}
+
+		log(`DEBUG_CONFIG: Found config for ${mcuTarget}`);
+		const config = stm32DebugConfig[mcuTarget];
+		log(`DEBUG_CONFIG: Config data: ${JSON.stringify(config, null, 2)}`);
+		const result: DebugConfig = {
+			openocdTarget: config.openocd?.target,
+			svdFile: config.svd
+		};
+
+		// Handle JLink device selection based on flash size
+		if (config.jlink) {
+			log(`DEBUG_JLINK: Processing JLink config: ${JSON.stringify(config.jlink)}`);
+			if (config.jlink.device) {
+				// Single device variant
+				result.jlinkDevice = config.jlink.device;
+				log(`Single JLink device for ${mcuTarget}: ${result.jlinkDevice}`);
+			} else if (config.jlink.devices && Array.isArray(config.jlink.devices)) {
+				// Multi-device variant - match by flash size if available
+				if (flashSizeKB !== undefined) {
+					const flashSizeStr = `${flashSizeKB}KB`;
+					result.flashSizeKB = flashSizeKB;
+					log(`DEBUG_JLINK: Looking for flash size: ${flashSizeStr} in devices: ${JSON.stringify(config.jlink.devices)}`);
+					const matchedDevice = config.jlink.devices.find((device: { device: string; flash: string }) => device.flash === flashSizeStr);
+
+					if (matchedDevice) {
+						result.jlinkDevice = matchedDevice.device;
+						log(`Matched JLink device for ${mcuTarget} with ${flashSizeStr}: ${result.jlinkDevice}`);
+					} else {
+						// Fallback to first available device
+						result.jlinkDevice = config.jlink.devices[0]?.device;
+						log(`No flash size match for ${mcuTarget} ${flashSizeStr}, using fallback: ${result.jlinkDevice}`);
+					}
+				} else {
+					// No flash size available, use first device
+					result.jlinkDevice = config.jlink.devices[0]?.device;
+					log(`No flash size available for ${mcuTarget}, using first device: ${result.jlinkDevice}`);
+				}
+			}
+		} else {
+			log(`DEBUG_JLINK: No JLink config found for ${mcuTarget}`);
+		}
+
+		log(`Debug config for ${mcuTarget}: OpenOCD=${result.openocdTarget}, JLink=${result.jlinkDevice}, SVD=${result.svdFile}`);
+		return result;
+
+	} catch (error) {
+		log(`Error getting debug config for ${mcuTarget}: ${error}`);
+		return {};
 	}
 }
