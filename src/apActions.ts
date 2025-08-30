@@ -451,53 +451,10 @@ export class apActionItem extends vscode.TreeItem {
 			vscode.window.showErrorMessage('No active configuration selected');
 			return;
 		}
-
-		// Find the upload task for the current configuration
-		const configName = (activeConfiguration.definition as ArdupilotTaskDefinition).configName;
-		if (!configName) {
-			vscode.window.showErrorMessage('Active configuration missing configName');
-			return;
+		// Launch active launch configuration (which includes upload via preLaunchTask)
+		if (activeLaunchConfig) {
+			vscode.debug.startDebugging(undefined, activeLaunchConfig);
 		}
-
-		const uploadTaskName = `${configName}-upload`;
-
-		// Get all tasks and find the upload task
-		vscode.tasks.fetchTasks().then(tasks => {
-			const uploadTask = tasks.find(task =>
-				task.definition.type === 'ardupilot' &&
-				(task.definition as ArdupilotTaskDefinition).configName === uploadTaskName
-			);
-
-			if (!uploadTask) {
-				vscode.window.showErrorMessage(`Upload task not found: ${uploadTaskName}`);
-				return;
-			}
-
-			// Execute the upload task
-			vscode.tasks.executeTask(uploadTask).then(taskExecution => {
-				if (!taskExecution) {
-					vscode.window.showErrorMessage('Failed to start upload task execution');
-					return;
-				}
-
-				// Create a task execution finished listener
-				const disposable = vscode.tasks.onDidEndTaskProcess(e => {
-					if (e.execution === taskExecution) {
-						disposable.dispose();  // Clean up the listener
-
-						if (e.exitCode === 0) {
-							vscode.window.showInformationMessage(`Upload successful for ${this.label}`);
-						} else {
-							vscode.window.showErrorMessage(`Upload failed for ${this.label}`);
-						}
-					}
-				});
-			}, (error: unknown) => {
-				vscode.window.showErrorMessage(`Failed to execute upload task: ${error}`);
-			});
-		}, (error: unknown) => {
-			vscode.window.showErrorMessage(`Failed to fetch tasks: ${error}`);
-		});
 	}
 
 	@FireAndForget({ apLog: apActionItem.logger, showErrorPopup: true })
