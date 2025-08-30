@@ -613,23 +613,28 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				return undefined;
 			}
 
-			// Check if this is an upload task and prompt user
+			// Check if this is an upload task and prompt user (never for SITL)
 			let shouldExecuteTask = true;
 			if (taskName.endsWith('-upload')) {
-				const choice = await vscode.window.showWarningMessage(
-					'This will upload firmware to the target before debugging. Do you want to proceed with the upload?',
-					{ modal: true },
-					'Run Upload & Debug',
-					'Skip Upload & Debug'
-				);
-
-				if (choice === 'Skip Upload & Debug') {
-					APLaunchConfigurationProvider.log.log('User chose to skip upload task, proceeding directly to debug');
-					shouldExecuteTask = false; // Skip task execution
+				if (apConfig.isSITL) {
+					APLaunchConfigurationProvider.log.log('SITL launch detected; skipping upload task and prompt.');
+					shouldExecuteTask = false;
 				} else {
-					// choice === 'Run Upload & Debug' or undefined (ESC pressed - default to upload)
-					APLaunchConfigurationProvider.log.log('User chose to run upload task before debugging');
-					shouldExecuteTask = true; // Execute the upload task as normal
+					const choice = await vscode.window.showWarningMessage(
+						'This will upload firmware to the target before debugging. Do you want to proceed with the upload?',
+						{ modal: true },
+						'Run Upload & Debug',
+						'Skip Upload & Debug'
+					);
+
+					if (choice === 'Skip Upload & Debug') {
+						APLaunchConfigurationProvider.log.log('User chose to skip upload task, proceeding directly to debug');
+						shouldExecuteTask = false; // Skip task execution
+					} else {
+						// choice === 'Run Upload & Debug' or undefined (ESC pressed - default to upload)
+						APLaunchConfigurationProvider.log.log('User chose to run upload task before debugging');
+						shouldExecuteTask = true; // Execute the upload task as normal
+					}
 				}
 			}
 
