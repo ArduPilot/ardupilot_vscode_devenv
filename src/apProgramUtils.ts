@@ -128,7 +128,7 @@ export class ProgramUtils {
 
 					if (fs.existsSync(activateScript)) {
 						ProgramUtils.log.log(`Found virtual environment activation script: ${activateScript}`);
-						return `source ${activateScript}`;
+						return `. ${activateScript}`;
 					}
 				}
 			}
