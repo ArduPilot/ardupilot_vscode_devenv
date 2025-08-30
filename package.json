@@ -353,7 +353,6 @@
     "test:apToolsConfig": "npm run compile && node ./out/test/runTest.js --test-suite=apToolsConfig",
     "test:apUIHooks": "npm run compile && node ./out/test/runTest.js --test-suite=apUIHooks",
     "test:apCommonUtils": "npm run compile && node ./out/test/runTest.js --test-suite=apCommonUtils",
-    "test:extension": "npm run compile && node ./out/test/runTest.js --test-suite=extension",
     "test:taskProvider": "npm run compile && node ./out/test/runTest.js --test-suite=taskProvider",
     "test:e2e": "npm run compile && node --no-force-async-hooks-checks ./out/test/runE2ECloneTest.js && node --no-force-async-hooks-checks ./out/test/runE2EBuildTest.js",
     "test:e2e:clone": "npm run compile && node --no-force-async-hooks-checks ./out/test/runE2ECloneTest.js",
