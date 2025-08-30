@@ -21,7 +21,7 @@
 </script>
 
 <vscode-label for={props.id}>{props.label}</vscode-label>
-<vscode-single-select bind:this={boardSelect} id={props.id} combobox>
+<vscode-single-select bind:this={boardSelect} id={props.id} combobox {value}>
   {#each props.boards as board}
     {#if board === value}
       <vscode-option value={board} selected>{board}</vscode-option>

@@ -8,6 +8,7 @@
   import SITLConfig from "./lib/SITLConfig.svelte";
   import FeatureViewer from "./lib/FeatureViewer.svelte";
   import CommandDisplay from "./lib/CommandDisplay.svelte";
+  import DebugInfo from "./lib/DebugInfo.svelte";
   import ErrorBoundary from "./lib/ErrorBoundary.svelte";
   import "@vscode-elements/elements/dist/vscode-form-container/index.js";
   import "@vscode-elements/elements/dist/vscode-divider/index.js";
@@ -39,6 +40,15 @@
   $effect(() => {
     if (!isEditMode && board && target) {
       generateConfigName();
+    }
+  });
+
+  // Ensure target remains valid when board changes
+  $effect(() => {
+    if (!tasksList) return;
+    const availableTargets = tasksList.getTargets(board) || [];
+    if (target && !availableTargets.includes(target)) {
+      target = "";
     }
   });
 
@@ -254,12 +264,14 @@
           id="board"
           {vscodeHooks}
         />
-        <TargetsList
-          bind:value={target}
-          targets={tasksList.getTargets(board)}
-          label="Select Target:"
-          id="target"
-        />
+        {#key board}
+          <TargetsList
+            bind:value={target}
+            targets={tasksList.getTargets(board)}
+            label="Select Target:"
+            id="target"
+          />
+        {/key}
         <ExtraConfig
           bind:value={extraConfig}
           id="extraConfig"
@@ -290,6 +302,12 @@
         bind:overrideEnabled={overrideEnabled}
         bind:customConfigureCommand={customConfigureCommand}
         bind:customBuildCommand={customBuildCommand}
+      />
+
+      <DebugInfo 
+        {vscodeHooks} 
+        {board} 
+        {target} 
       />
       
       <vscode-divider style="visibility: hidden;"></vscode-divider>
