@@ -17,13 +17,14 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as vscode from 'vscode';
-import { spawn, spawnSync } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { targetToBin } from './apBuildConfig';
 import { TOOLS_REGISTRY } from './apToolsConfig';
 import { apTerminalMonitor } from './apTerminalMonitor';
 import * as fs from 'fs';
+import { readHwdefFile, getDebugConfigFromMCU, HwdefInfo, DebugConfig } from './apBuildConfig';
 
 // Map vehicle types to ArduPilot binary names
 export const targetToVehicleType: { [key: string]: string } = {
@@ -62,6 +63,130 @@ export interface APLaunchDefinition {
 	 * is it a SITL build
 	 */
 	isSITL?: boolean;
+	/**
+	 * board name for hardware debugging
+	 */
+	board?: string;
+}
+
+/*
+ * Debug Server pseudoterminal implementation for VS Code
+ * Can be used for both JLink GDB Server and OpenOCD
+ */
+class DebugServerPseudoterminal implements vscode.Pseudoterminal {
+	private writeEmitter = new vscode.EventEmitter<string>();
+	private closeEmitter = new vscode.EventEmitter<number | void>();
+	private process: ChildProcess | undefined;
+	private dimensions: vscode.TerminalDimensions | undefined;
+	private outputBuffer: string = '';
+	private waitForTextPromise: Promise<boolean> | undefined;
+	private waitForTextResolve: ((value: boolean) => void) | undefined;
+
+	onDidWrite: vscode.Event<string> = this.writeEmitter.event;
+	onDidClose?: vscode.Event<number | void> = this.closeEmitter.event;
+
+	constructor(private serverName: string, private command: string, private args: string[], private waitForText?: string) {
+		this.outputBuffer = '';
+	}
+
+	open(initialDimensions: vscode.TerminalDimensions | undefined): void {
+		this.dimensions = initialDimensions;
+		this.writeEmitter.fire(`Starting ${this.serverName}...\r\n`);
+		this.writeEmitter.fire(`Command: ${this.command} ${this.args.join(' ')}\r\n\r\n`);
+
+		// Set up environment with proper terminal settings
+		const env = {
+			...process.env,
+			TERM: 'xterm-256color',
+			COLUMNS: this.dimensions?.columns?.toString() || '80',
+			LINES: this.dimensions?.rows?.toString() || '24'
+		};
+
+		this.process = spawn(this.command, this.args, {
+			env,
+			stdio: ['pipe', 'pipe', 'pipe']
+		});
+
+		if (this.process.stdout) {
+			this.process.stdout.on('data', (data) => {
+				// Convert output to proper terminal format
+				const output = data.toString().replace(/\n/g, '\r\n');
+				this.writeEmitter.fire(output);
+				this.handleOutput(data.toString());
+			});
+		}
+
+		if (this.process.stderr) {
+			this.process.stderr.on('data', (data) => {
+				// Convert output to proper terminal format
+				const output = data.toString().replace(/\n/g, '\r\n');
+				this.writeEmitter.fire(output);
+				this.handleOutput(data.toString());
+			});
+		}
+
+		this.process.on('exit', (code) => {
+			this.writeEmitter.fire(`\r\n${this.serverName} exited with code: ${code}\r\n`);
+			if (code === 0) {
+				// Only close terminal on successful exit
+				this.closeEmitter.fire(code);
+			} else {
+				// Keep terminal open on error for debugging
+				this.writeEmitter.fire('\r\nTerminal kept open for debugging. Press Ctrl+C or close manually.\r\n');
+			}
+		});
+
+		this.process.on('error', (error) => {
+			this.writeEmitter.fire(`\r\n${this.serverName} error: ${error.message}\r\n`);
+			this.writeEmitter.fire('\r\nTerminal kept open for debugging. Press Ctrl+C or close manually.\r\n');
+			// Don't close terminal on error - keep it open for debugging
+		});
+
+	}
+
+	private handleOutput(data: string): void {
+		this.outputBuffer += data;
+
+		// Check if we're waiting for specific text and it appears in the output
+		if (this.waitForText && this.waitForTextResolve && this.outputBuffer.includes(this.waitForText)) {
+			this.waitForTextResolve(true);
+			this.waitForTextResolve = undefined;
+			this.waitForTextPromise = undefined;
+		}
+	}
+
+	public waitForTextInOutput(timeoutMs: number = 10000): Promise<boolean> {
+		if (!this.waitForText) {
+			return Promise.resolve(true);
+		}
+
+		// If text already found in buffer, resolve immediately
+		if (this.outputBuffer.includes(this.waitForText)) {
+			return Promise.resolve(true);
+		}
+
+		// Create promise to wait for the text
+		this.waitForTextPromise = new Promise((resolve) => {
+			this.waitForTextResolve = resolve;
+		});
+
+		// Set timeout to resolve with false if text not found
+		setTimeout(() => {
+			if (this.waitForTextResolve) {
+				this.waitForTextResolve(false);
+				this.waitForTextResolve = undefined;
+				this.waitForTextPromise = undefined;
+			}
+		}, timeoutMs);
+
+		return this.waitForTextPromise;
+	}
+
+	close(): void {
+		if (this.process) {
+			this.process.kill('SIGTERM');
+		}
+	}
 }
 
 export class APLaunchConfigurationProvider implements vscode.DebugConfigurationProvider {
@@ -69,11 +194,12 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	private static activeSessions: Set<string> = new Set();
 	private tmuxSessionName: string | undefined;
 	private debugSessionTerminal: apTerminalMonitor | undefined;
-	private workspaceFolder: vscode.WorkspaceFolder;
 	private simVehicleCommand: string | null = null; // The exact sim_vehicle.py command executed
+	private debugServerTerminal: vscode.Terminal | undefined; // For JLink/OpenOCD pseudoterminal
+	private extensionUri: vscode.Uri;
 
-	constructor(workspaceFolder: vscode.WorkspaceFolder) {
-		this.workspaceFolder = workspaceFolder;
+	constructor(private _extensionUri: vscode.Uri) {
+		this.extensionUri = _extensionUri;
 		// Register a debug session termination listener
 		vscode.debug.onDidTerminateDebugSession(this.handleDebugSessionTermination.bind(this));
 	}
@@ -734,17 +860,8 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					return cppDebugConfig;
 				}
 			} else {
-				// For physical board builds, run the upload command
-				this.debugSessionTerminal = new apTerminalMonitor('ArduPilot Upload');
-				await this.debugSessionTerminal.createTerminal();
-				await this.debugSessionTerminal.runCommand(`cd ${workspaceRoot}`);
-
-				const uploadCommand = `${await ProgramUtils.PYTHON()} ${apConfig.waffile} ${apConfig.target} --upload`;
-				APLaunchConfigurationProvider.log.log(`Running upload command: ${uploadCommand}`);
-
-				this.debugSessionTerminal.runCommand(uploadCommand).catch(error => {
-					APLaunchConfigurationProvider.log.log(`Failed to run upload command: ${error}`);
-				});
+				// Hardware debugging
+				return await this.setupHardwareDebugging(workspaceRoot, apConfig);
 			}
 
 			// If we're here and we're not debugging, return undefined
@@ -753,6 +870,472 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 		} catch (error) {
 			vscode.window.showErrorMessage(`Error in APLaunch: ${error}`);
 			return undefined;
+		}
+	}
+
+	/*
+	 * Set up hardware debugging for physical boards
+	 * @param workspaceRoot - The workspace root directory
+	 * @param config - The launch configuration
+	 * @returns Debug configuration for cortex-debug
+	 */
+	private async setupHardwareDebugging(workspaceRoot: string, config: APLaunchDefinition): Promise<vscode.DebugConfiguration | undefined> {
+		if (!config.board) {
+			vscode.window.showErrorMessage('Board name is required for hardware debugging.');
+			return undefined;
+		}
+
+		// Get hardware definition info for the board
+		const hwdefInfo = await readHwdefFile(config.board);
+		if (!hwdefInfo.mcuTarget || !hwdefInfo.flashSizeKB) {
+			vscode.window.showErrorMessage(`Incomplete debug information for board: ${config.board}. MCU target: ${hwdefInfo.mcuTarget}, Flash size: ${hwdefInfo.flashSizeKB}`);
+			return undefined;
+		}
+
+		// Get debug configuration from MCU target and flash size
+		const debugConfig = getDebugConfigFromMCU(hwdefInfo.mcuTarget, hwdefInfo.flashSizeKB, this.extensionUri);
+		if (!debugConfig.openocdTarget && !debugConfig.jlinkDevice) {
+			vscode.window.showErrorMessage(`No debug configuration found for MCU target: ${hwdefInfo.mcuTarget}`);
+			return undefined;
+		}
+
+		APLaunchConfigurationProvider.log.log(`Hardware debug info: MCU=${hwdefInfo.mcuTarget}, Flash=${hwdefInfo.flashSizeKB}KB, OpenOCD=${debugConfig.openocdTarget}, JLink=${debugConfig.jlinkDevice}, SVD=${debugConfig.svdFile}`);
+
+		// Determine which debugger to use
+		const debuggerType = await this.selectDebuggerType();
+		if (!debuggerType) {
+			return undefined;
+		}
+
+		// Get the ELF file path
+		const elfFile = path.join(workspaceRoot, 'build', config.board, targetToBin[config.target]);
+		if (!fs.existsSync(elfFile)) {
+			vscode.window.showErrorMessage(`ELF file not found: ${elfFile}. Please build the firmware first.`);
+			return undefined;
+		}
+
+		if (debuggerType === 'openocd') {
+			return await this.createOpenOCDDebugConfig(workspaceRoot, config, hwdefInfo, debugConfig, elfFile);
+		} else {
+			return await this.createJLinkDebugConfig(workspaceRoot, config, hwdefInfo, debugConfig, elfFile);
+		}
+	}
+
+	/*
+	 * Select debugger type (OpenOCD or JLink)
+	 * @returns Selected debugger type or undefined if cancelled
+	 */
+	private async selectDebuggerType(): Promise<'openocd' | 'jlink' | undefined> {
+		// Check available debuggers
+		const openOCD = await ProgramUtils.findProgram(TOOLS_REGISTRY.OPENOCD);
+		const jLink = await ProgramUtils.findProgram(TOOLS_REGISTRY.JLINK);
+
+		const availableDebuggers: {label: string, value: 'openocd' | 'jlink', description: string}[] = [];
+
+		if (openOCD.available) {
+			availableDebuggers.push({ label: 'STLink/OpenOCD', value: 'openocd', description: 'Use STLink debugger via OpenOCD' });
+		}
+
+		if (jLink.available) {
+			availableDebuggers.push({ label: 'JLink', value: 'jlink', description: 'Use JLink debugger' });
+		}
+
+		if (availableDebuggers.length === 0) {
+			vscode.window.showErrorMessage('No debuggers available. Please install OpenOCD or JLink tools.');
+			return undefined;
+		}
+
+		if (availableDebuggers.length === 1) {
+			APLaunchConfigurationProvider.log.log(`Using only available debugger: ${availableDebuggers[0].value}`);
+			return availableDebuggers[0].value;
+		}
+
+		// Ask user to choose
+		const selected = await vscode.window.showQuickPick(availableDebuggers, {
+			placeHolder: 'Select a debugger to use',
+			title: 'ArduPilot Hardware Debugger Selection'
+		});
+
+		return selected?.value;
+	}
+
+	/*
+	 * Create OpenOCD debug configuration
+	 * @param workspaceRoot - Workspace root directory
+	 * @param config - Launch configuration
+	 * @param hwdefInfo - Hardware definition information from hwdef.dat
+	 * @param debugConfig - Debug configuration from getDebugConfigFromMCU
+	 * @param elfFile - Path to ELF file
+	 * @returns OpenOCD debug configuration
+	 */
+	private async createOpenOCDDebugConfig(
+		workspaceRoot: string,
+		config: APLaunchDefinition,
+		hwdefInfo: HwdefInfo,
+		debugConfig: DebugConfig,
+		elfFile: string
+	): Promise<vscode.DebugConfiguration> {
+		const openOCD = await ProgramUtils.findProgram(TOOLS_REGISTRY.OPENOCD);
+		if (!openOCD.available || !openOCD.path) {
+			throw new Error('OpenOCD not found');
+		}
+
+		if (!debugConfig.openocdTarget) {
+			throw new Error(`No OpenOCD target configured for ${hwdefInfo.mcuTarget}`);
+		}
+
+		const svdPath = debugConfig.svdFile ? path.join(__dirname, '..', 'resources', 'STMicro', debugConfig.svdFile) : undefined;
+
+		// OpenOCD configuration
+		const gdbPort = 3333; // default OpenOCD GDB port
+		const openOCDHelperPath = path.join(this.extensionUri.fsPath, 'resources', 'openocd-helper.tcl');
+		const openocdScriptPath = path.join(path.dirname(openOCD.path), '../scripts');
+
+		// Warn user that firmware must be flashed separately
+		const flashMessage = `Please ensure firmware has been flashed to ${config.board} before debugging. Use the build and upload actions to flash firmware first.`;
+		vscode.window.showWarningMessage(flashMessage);
+		APLaunchConfigurationProvider.log.log(`HARDWARE_DEBUG: ${flashMessage}`);
+
+		// Start OpenOCD server for debugging using pseudoterminal (expects firmware already flashed)
+		const openOCDArgs = [
+			'-c', `gdb port ${gdbPort}`,
+			'-f', `${openOCDHelperPath}`,
+			'-f', 'interface/jlink.cfg',
+			'-c', 'transport select swd',
+			'-f', `target/${debugConfig.openocdTarget}`,
+			'-c', 'bindto 0.0.0.0',
+			'-c', 'init',
+			'-c', 'CDRTOSConfigure chibios',
+			'-s', `${openocdScriptPath}`
+		];
+
+		APLaunchConfigurationProvider.log.log(`Starting OpenOCD for debugging with args: ${openOCDArgs.join(' ')}`);
+		await this.startDebugServerTerminal('OpenOCD Server', openOCD.path, openOCDArgs, 'Listening on port 3333 for gdb connections');
+
+		// for wsl platform use wslIP
+		let gdbTarget = 'localhost:3333';
+		if (ProgramUtils.isWSL()) {
+			gdbTarget = `${ProgramUtils.wslIP()}:3333`;
+		}
+
+		// Create cortex-debug configuration with memory access enablement
+		const cortexDebugConfig: vscode.DebugConfiguration = {
+			type: 'cortex-debug',
+			request: 'attach',
+			name: `Debug ${config.target} on ${config.board} (OpenOCD)`,
+			cwd: workspaceRoot,
+			executable: elfFile,
+			servertype: 'external',
+			gdbTarget,
+		};
+
+		if (svdPath && fs.existsSync(svdPath)) {
+			cortexDebugConfig.svdPath = svdPath;
+			APLaunchConfigurationProvider.log.log(`Using SVD file: ${svdPath}`);
+		}
+
+		// Find ARM GDB and related tools
+		const armGdb = await ProgramUtils.findProgram(TOOLS_REGISTRY.ARM_GDB);
+		if (armGdb.available && armGdb.path) {
+			cortexDebugConfig.gdbPath = armGdb.path;
+		}
+
+		// Find ARM GCC toolchain for objdump and nm
+		const armGcc = await ProgramUtils.findProgram(TOOLS_REGISTRY.ARM_GCC);
+		if (armGcc.available && armGcc.path) {
+			const gccDir = path.dirname(armGcc.path);
+			cortexDebugConfig.objdumpPath = path.join(gccDir, 'arm-none-eabi-objdump');
+			cortexDebugConfig.nmPath = path.join(gccDir, 'arm-none-eabi-nm');
+		} else {
+			// Fallback to system PATH
+			cortexDebugConfig.objdumpPath = 'arm-none-eabi-objdump';
+			cortexDebugConfig.nmPath = 'arm-none-eabi-nm';
+		}
+
+		const message = `Starting hardware debug session for ${config.board} using OpenOCD (${debugConfig.openocdTarget})`;
+		vscode.window.showInformationMessage(message);
+		APLaunchConfigurationProvider.log.log(message);
+
+		return cortexDebugConfig;
+	}
+
+	/*
+	 * Get platform-specific RTOSPlugin file for JLink
+	 * @returns RTOSPlugin file path or undefined if not available
+	 */
+	private getRTOSPluginPath(): string | undefined {
+		const platform = os.platform();
+		let pluginFileName: string;
+
+		switch (platform) {
+		case 'win32':
+			pluginFileName = 'RTOSPlugin_ChibiOS-windows-x64.dll';
+			break;
+		case 'linux':
+			pluginFileName = 'libRTOSPlugin_ChibiOS-linux-x86_64.so';
+			break;
+		case 'darwin':
+			pluginFileName = 'libRTOSPlugin_ChibiOS-macos-universal.so';
+			break;
+		default:
+			APLaunchConfigurationProvider.log.log(`RTOS_PLUGIN: Unsupported platform: ${platform}`);
+			return undefined;
+		}
+
+		const pluginPath = path.join(this.extensionUri.fsPath, 'resources', 'JLinkRTOSPlugins', pluginFileName);
+
+		// Check if the plugin file exists
+		if (fs.existsSync(pluginPath)) {
+			APLaunchConfigurationProvider.log.log(`RTOS_PLUGIN: Found plugin for ${platform}: ${pluginPath}`);
+			return pluginPath;
+		} else {
+			APLaunchConfigurationProvider.log.log(`RTOS_PLUGIN: Plugin file not found: ${pluginPath}`);
+			return undefined;
+		}
+	}
+
+	/*
+	 * Check and approve macOS RTOSPlugin using Python ctypes loading test and Security & Privacy preferences
+	 * @param pluginPath - Path to the RTOSPlugin file
+	 * @returns Promise<boolean> - true if plugin can be loaded or manual approval succeeded, false otherwise
+	 */
+	private async checkAndApproveMacOSPlugin(pluginPath: string): Promise<boolean> {
+		const platform = os.platform();
+		if (platform !== 'darwin') {
+			// Not macOS, no plugin verification needed
+			return true;
+		}
+
+		try {
+			APLaunchConfigurationProvider.log.log(`PLUGIN_CHECK: Testing library loading for: ${pluginPath}`);
+
+			// Warn user about potential delete request before running Python test
+			const warningMessage = 'Testing RTOS Plugin loading... IMPORTANT: If macOS asks you to delete the .so file, please ignore that request and click "Cancel" or "Keep".';
+			vscode.window.showWarningMessage(warningMessage);
+
+			// Test if the plugin can be loaded using Python ctypes
+			const pythonScript = `
+import ctypes
+try:
+    lib = ctypes.CDLL('${pluginPath}')
+    print('Library loaded successfully')
+except OSError as e:
+    print(f'Failed to load library: {e}')
+`;
+
+			const pythonPath = await ProgramUtils.PYTHON();
+			const loadTestResult = spawnSync(pythonPath, ['-c', pythonScript], {
+				encoding: 'utf8',
+				timeout: 15000
+			});
+
+			if (loadTestResult.status === 0 && loadTestResult.stdout.includes('Library loaded successfully')) {
+				APLaunchConfigurationProvider.log.log(`PLUGIN_CHECK: Plugin can be loaded successfully: ${pluginPath}`);
+				return true;
+			}
+
+			APLaunchConfigurationProvider.log.log(`PLUGIN_CHECK: Plugin cannot be loaded, opening Security & Privacy preferences: ${pluginPath}`);
+			APLaunchConfigurationProvider.log.log(`PLUGIN_CHECK: Python loading test output: ${loadTestResult.stderr || loadTestResult.stdout}`);
+
+			// Show user notification about manual approval process
+			const message = 'ArduPilot RTOS Plugin needs to be approved for debugging. The Security & Privacy preferences will open. Please scroll down and click "Allow Anyway" for libRTOSPlugin_ChibiOS-macos-universal.so, then click "Continue" in this dialog when done.';
+			const continueButton = 'Continue';
+			const cancelButton = 'Cancel';
+
+			// Open Security & Privacy preferences
+			APLaunchConfigurationProvider.log.log('PLUGIN_CHECK: Opening Security & Privacy preferences');
+			const openResult = spawnSync('open', ['x-apple.systempreferences:com.apple.preference.security?Privacy_Security'], {
+				encoding: 'utf8',
+				timeout: 5000
+			});
+
+			if (openResult.status !== 0) {
+				APLaunchConfigurationProvider.log.log(`PLUGIN_CHECK: Failed to open Security & Privacy preferences: ${openResult.stderr}`);
+			}
+
+			// Ask user to manually approve and wait for their confirmation
+			const userChoice = await vscode.window.showInformationMessage(message, continueButton, cancelButton);
+
+			if (userChoice !== continueButton) {
+				APLaunchConfigurationProvider.log.log('PLUGIN_CHECK: User cancelled plugin approval process');
+				return false;
+			}
+
+			APLaunchConfigurationProvider.log.log('PLUGIN_CHECK: User indicated they have approved the plugin, verifying...');
+
+			// Verify the manual approval worked by testing library loading again
+			const verifyResult = spawnSync(pythonPath, ['-c', pythonScript], {
+				encoding: 'utf8',
+				timeout: 15000
+			});
+
+			if (verifyResult.status === 0 && verifyResult.stdout.includes('Library loaded successfully')) {
+				APLaunchConfigurationProvider.log.log(`PLUGIN_CHECK: Plugin successfully approved and library can now be loaded: ${pluginPath}`);
+				vscode.window.showInformationMessage('RTOS Plugin approved successfully');
+				return true;
+			} else {
+				APLaunchConfigurationProvider.log.log(`PLUGIN_CHECK: Plugin approval failed or library still cannot be loaded: ${verifyResult.stderr || verifyResult.stdout}`);
+				vscode.window.showErrorMessage('Plugin approval failed. Please ensure you clicked "Allow Anyway" in Security & Privacy preferences. Debugging will continue without RTOS support.');
+				return false;
+			}
+
+		} catch (error) {
+			APLaunchConfigurationProvider.log.log(`PLUGIN_CHECK: Error during plugin verification or approval process: ${error}`);
+			vscode.window.showErrorMessage(`Error during RTOS Plugin approval process: ${error}`);
+			return false;
+		}
+	}
+
+	/*
+	 * Create JLink debug configuration
+	 * @param workspaceRoot - Workspace root directory
+	 * @param config - Launch configuration
+	 * @param hwdefInfo - Hardware definition information from hwdef.dat
+	 * @param debugConfig - Debug configuration from getDebugConfigFromMCU
+	 * @param elfFile - Path to ELF file
+	 * @returns JLink debug configuration
+	 */
+	private async createJLinkDebugConfig(
+		workspaceRoot: string,
+		config: APLaunchDefinition,
+		hwdefInfo: HwdefInfo,
+		debugConfig: DebugConfig,
+		elfFile: string
+	): Promise<vscode.DebugConfiguration> {
+		const jLink = await ProgramUtils.findProgram(TOOLS_REGISTRY.JLINK);
+		if (!jLink.available || !jLink.path) {
+			throw new Error('JLink GDB Server not found');
+		}
+
+		if (!debugConfig.jlinkDevice) {
+			throw new Error(`No JLink device configured for ${hwdefInfo.mcuTarget}`);
+		}
+
+		const jlinkDevice = debugConfig.jlinkDevice;
+		const svdPath = debugConfig.svdFile ? path.join(__dirname, '..', 'resources', 'STMicro', debugConfig.svdFile) : undefined;
+
+		// Get platform-specific RTOSPlugin
+		const rtosPluginPath = this.getRTOSPluginPath();
+		let rtosPluginEnabled = false;
+		if (rtosPluginPath) {
+			// Check and approve the plugin on macOS if needed
+			const pluginApproved = await this.checkAndApproveMacOSPlugin(rtosPluginPath);
+			if (pluginApproved) {
+				rtosPluginEnabled = true;
+				APLaunchConfigurationProvider.log.log(`RTOS_PLUGIN: Using ChibiOS RTOS plugin: ${rtosPluginPath}`);
+			} else {
+				APLaunchConfigurationProvider.log.log('RTOS_PLUGIN: Plugin approval failed, continuing without RTOS support');
+			}
+		} else {
+			APLaunchConfigurationProvider.log.log('RTOS_PLUGIN: No RTOS plugin available, continuing without RTOS support');
+		}
+
+		// Start JLink GDB Server using external server management with pseudoterminal
+		const gdbPort = 2331; // Default JLink GDB port
+		const jlinkArgs = [
+			'-singlerun',
+			'-device', jlinkDevice,
+			'-if', 'SWD',
+			'-speed', 'auto',
+			'-port', gdbPort.toString(),
+			'-nogui',
+			'-nolocalhostonly'
+		];
+
+		// Add RTOS plugin if available and approved
+		if (rtosPluginEnabled && rtosPluginPath) {
+			jlinkArgs.push('-rtos', rtosPluginPath);
+			APLaunchConfigurationProvider.log.log(`Configuring RTOS plugin: ${rtosPluginPath}`);
+		}
+
+		// Start JLink GDB Server in pseudoterminal and wait for it to be ready
+		await this.startDebugServerTerminal('JLink GDB Server', jLink.path, jlinkArgs, 'Waiting for GDB connection');
+
+		// for wsl platform use wslIP
+		let gdbTarget = `localhost:${gdbPort}`;
+		if (ProgramUtils.isWSL()) {
+			gdbTarget = `${ProgramUtils.wslIP()}:${gdbPort}`;
+		}
+		APLaunchConfigurationProvider.log.log('Using JLink GDB Server with external server management');
+		const cortexDebugConfig: vscode.DebugConfiguration = {
+			type: 'cortex-debug',
+			request: 'attach',
+			name: `Debug ${config.target} on ${config.board} (JLink External)`,
+			cwd: workspaceRoot,
+			executable: elfFile,
+			servertype: 'external',
+			gdbTarget,
+			postResetCommands: [
+				'interpreter-exec console "monitor halt"',
+				'interpreter-exec console "monitor reset"'
+			],
+			resetToEntryPoint: 'main',
+			objdumpPath: '',
+			nmPath: ''
+		};
+
+		if (svdPath && fs.existsSync(svdPath)) {
+			cortexDebugConfig.svdPath = svdPath;
+			APLaunchConfigurationProvider.log.log(`Using SVD file: ${svdPath}`);
+		}
+
+		// Find ARM GDB and related tools
+		const armGdb = await ProgramUtils.findProgram(TOOLS_REGISTRY.ARM_GDB);
+		if (armGdb.available && armGdb.path) {
+			cortexDebugConfig.gdbPath = armGdb.path;
+		}
+
+		// Find ARM GCC toolchain for objdump and nm
+		const armGcc = await ProgramUtils.findProgram(TOOLS_REGISTRY.ARM_GCC);
+		if (armGcc.available && armGcc.path) {
+			const gccDir = path.dirname(armGcc.path);
+			cortexDebugConfig.objdumpPath = path.join(gccDir, 'arm-none-eabi-objdump');
+			cortexDebugConfig.nmPath = path.join(gccDir, 'arm-none-eabi-nm');
+		} else {
+			// Fallback to system PATH
+			cortexDebugConfig.objdumpPath = 'arm-none-eabi-objdump';
+			cortexDebugConfig.nmPath = 'arm-none-eabi-nm';
+		}
+
+		const message = `Starting hardware debug session for ${config.board} using JLink (${jlinkDevice})`;
+		vscode.window.showInformationMessage(message);
+		APLaunchConfigurationProvider.log.log(message);
+
+		return cortexDebugConfig;
+	}
+
+	/*
+	 * Create a debug server terminal using pseudoterminal for external server management
+	 * @param serverName - Display name for the server (e.g., "JLink GDB Server", "OpenOCD")
+	 * @param command - Command to execute
+	 * @param args - Arguments for the command
+	 * @returns VS Code Terminal running the debug server
+	 */
+	private async startDebugServerTerminal(serverName: string, command: string, args: string[], waitForText?: string): Promise<void> {
+		// Close existing debug server terminal if any
+		if (this.debugServerTerminal) {
+			this.debugServerTerminal.dispose();
+		}
+
+		// Create new pseudoterminal for the debug server
+		const pty = new DebugServerPseudoterminal(serverName, command, args, waitForText);
+		this.debugServerTerminal = vscode.window.createTerminal({ name: serverName, pty });
+
+		// Show the terminal
+		this.debugServerTerminal.show();
+
+		// Wait for specific text or timeout
+		if (waitForText) {
+			APLaunchConfigurationProvider.log.log(`Waiting for "${waitForText}" in ${serverName} output...`);
+			const found = await pty.waitForTextInOutput(10000); // 10 second timeout
+			if (found) {
+				APLaunchConfigurationProvider.log.log(`Found "${waitForText}" - ${serverName} is ready`);
+			} else {
+				APLaunchConfigurationProvider.log.log(`Timeout waiting for "${waitForText}" - continuing anyway`);
+			}
+		} else {
+			// Fallback: Give the server a moment to start
+			await new Promise(resolve => setTimeout(resolve, 2000));
 		}
 	}
 }

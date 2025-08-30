@@ -90,7 +90,7 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	apExtensionContext.apTaskProvider = vscode.tasks.registerTaskProvider(APTaskProvider.ardupilotTaskType, new APTaskProvider(workspaceRoot.uri.fsPath, _context.extensionUri));
 
 	// Register the APLaunch debug type
-	const apLaunchProvider = new APLaunchConfigurationProvider(workspaceRoot);
+	const apLaunchProvider = new APLaunchConfigurationProvider(_context.extensionUri);
 	_context.subscriptions.push(
 		vscode.debug.registerDebugConfigurationProvider('apLaunch', apLaunchProvider)
 	);
