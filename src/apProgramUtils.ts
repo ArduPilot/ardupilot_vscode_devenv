@@ -109,6 +109,35 @@ export class ProgramUtils {
 	public static async PYTHON() : Promise<string> {
 		return (await ProgramUtils.findProgram(TOOLS_REGISTRY.PYTHON))?.path || 'python';
 	}
+
+	/**
+	 * Gets the Python virtual environment activation command if available
+	 * @returns Promise resolving to activation command string or null if not in venv
+	 */
+	public static async getPythonActivateCommand(): Promise<string | null> {
+		try {
+			const pythonApi = await PythonExtension.api();
+			const activeEnvPath = pythonApi.environments.getActiveEnvironmentPath();
+
+			if (activeEnvPath) {
+				const environment = await pythonApi.environments.resolveEnvironment(activeEnvPath);
+
+				if (environment?.environment?.type === 'VirtualEnvironment') {
+					const venvPath = environment.environment.folderUri?.fsPath || '';
+					const activateScript = path.join(venvPath, 'bin', 'activate');
+
+					if (fs.existsSync(activateScript)) {
+						ProgramUtils.log.log(`Found virtual environment activation script: ${activateScript}`);
+						return `source ${activateScript}`;
+					}
+				}
+			}
+		} catch (error) {
+			ProgramUtils.log.log(`Failed to get Python environment info: ${error}`);
+		}
+
+		return null;
+	}
 	/**
 	 * Finds a program in the system path and returns information about it
 	 * @param command The command to check
