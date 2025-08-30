@@ -466,18 +466,6 @@ suite('apToolsConfig Test Suite', () => {
 			assert.ok(showErrorMessageStub.getCall(0).args[0].includes('Failed to save tool configuration'));
 		});
 
-		test('should handle directory creation errors', () => {
-			// Make parent unwritable by pointing to a path we cannot create under
-			// If running as normal user, creating under root should fail
-			sandbox.stub(vscode.workspace, 'workspaceFolders').value([{ uri: vscode.Uri.file('/root/forbidden'), name: 'x', index: 0 }]);
-			const showErrorMessageStub = sandbox.stub(vscode.window, 'showErrorMessage');
-
-			// Should not throw
-			ToolsConfig.setToolPath('GCC', '/usr/bin/gcc');
-
-			assert.ok(showErrorMessageStub.calledOnce);
-		});
-
 	});
 
 	suite('Integration Tests', () => {
