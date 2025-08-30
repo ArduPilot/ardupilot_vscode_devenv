@@ -279,7 +279,7 @@ export const TOOLS_REGISTRY = {
 		description: 'Install GDB for ARM debugging',
 		paths: {
 			linux: ['gdb-multiarch', 'arm-none-eabi-gdb'],
-			darwin: ['arm-none-eabi-gdb']
+			darwin: ['gdb']
 		},
 		installCommands: {
 			linux: { type: 'command', command: 'sudo apt-get update && sudo apt-get install -y gdb-multiarch' },
