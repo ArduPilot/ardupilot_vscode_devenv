@@ -17,6 +17,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { apLog } from './apLog';
 import { APTaskProvider, ArdupilotTaskDefinition } from './taskProvider';
 import { ProgramUtils } from './apProgramUtils';
@@ -560,15 +561,18 @@ export class apActionItem extends vscode.TreeItem {
 		// This will set CC/CXX appropriately based on SITL vs non-SITL builds
 		const terminalEnv = await APTaskProvider.prepareEnvironmentVariables(config);
 
-		// Run the SITL simulation using sim_vehicle.py
-		const terminal = vscode.window.createTerminal({
-			name: 'ArduPilot SITL',
-			env: terminalEnv
-		});
-		terminal.sendText(`cd ${workspaceRoot}`);
-		const simVehicleCommand = `python ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${config.simVehicleCommand || ''}`;
-		terminal.sendText(simVehicleCommand);
-		terminal.show();
+		// Launch SITL using apTerminalMonitor
+		const sitlMonitor = new apTerminalMonitor('ArduPilot SITL');
+		await sitlMonitor.createTerminal({ env: terminalEnv });
+		await sitlMonitor.runCommand(`cd ${workspaceRoot}`, { nonblocking: true });
+		const pythonPath = await ProgramUtils.PYTHON();
+
+		let simVehicleCommand = `${pythonPath} ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${config.simVehicleCommand || ''}`;
+		if (os.platform() === 'darwin') {
+			simVehicleCommand = `DISPLAY=1 ${simVehicleCommand}`;
+		}
+		void sitlMonitor.runCommand(simVehicleCommand, { nonblocking: true });
+		sitlMonitor.show();
 	}
 
 	private configure(): void {
