@@ -485,6 +485,12 @@ export class ValidateEnvironmentPanel {
 			installMethod = 'darwin' in installCommands ? installCommands.darwin : undefined;
 		}
 
+		// In E2E tests, skip installing OpenOCD to avoid privileged or long-running operations
+		if (process.env.E2E_TEST_MODE && toolId === 'OPENOCD') {
+			ValidateEnvironmentPanel.log.log(`E2E_TEST_MODE detected: skipping installation for ${toolName}`);
+			return Promise.resolve();
+		}
+
 		return new Promise<void>((resolve, reject) => {
 			if (installMethod && installMethod.type === 'command') {
 				// Use terminal installation with monitoring
