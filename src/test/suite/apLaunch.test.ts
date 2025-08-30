@@ -212,9 +212,24 @@ suite('apLaunch Test Suite', () => {
 				isCustomPath: false
 			});
 
-			// Mock file system operations
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+			// Create the actual test file instead of mocking fs
+			const testFilePath = path.join(workspaceFolder.uri.fsPath, 'Tools', 'autotest', 'run_in_terminal_window.sh');
+			const testDir = path.dirname(testFilePath);
+
+			// Ensure directory exists
+			if (!fs.existsSync(testDir)) {
+				fs.mkdirSync(testDir, { recursive: true });
+			}
+
+			// Write test file with TMUX_PREFIX
+			fs.writeFileSync(testFilePath, '#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+
+			// Clean up file after test
+			sandbox.stub().callsFake(() => {
+				if (fs.existsSync(testFilePath)) {
+					fs.unlinkSync(testFilePath);
+				}
+			});
 			sandbox.stub(vscode.window, 'createTerminal').returns(createMockTerminal());
 
 			const config = {
@@ -568,8 +583,24 @@ suite('apLaunch Test Suite', () => {
 				path: '/usr/bin/tmux',
 				isCustomPath: false
 			});
-			sandbox.stub(fs, 'existsSync').returns(true);
-			sandbox.stub(fs, 'readFileSync').returns('#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+			// Create the actual test file instead of mocking fs
+			const testFilePath = path.join(workspaceFolder.uri.fsPath, 'Tools', 'autotest', 'run_in_terminal_window.sh');
+			const testDir = path.dirname(testFilePath);
+
+			// Ensure directory exists
+			if (!fs.existsSync(testDir)) {
+				fs.mkdirSync(testDir, { recursive: true });
+			}
+
+			// Write test file with TMUX_PREFIX
+			fs.writeFileSync(testFilePath, '#!/bin/bash\nTMUX_PREFIX="$1"\nshift\nexec "$@"');
+
+			// Clean up file after test
+			sandbox.stub().callsFake(() => {
+				if (fs.existsSync(testFilePath)) {
+					fs.unlinkSync(testFilePath);
+				}
+			});
 			sandbox.stub(vscode.window, 'createTerminal').returns(createMockTerminal());
 
 			// Test multiple vehicle types that should exist in targetToBin
