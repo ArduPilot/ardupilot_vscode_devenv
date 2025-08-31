@@ -287,6 +287,17 @@
         "title": "Run SITL Simulation",
         "icon": "$(run)"
       }
+      ,
+      {
+        "command": "apActions.clean",
+        "title": "Clean Build Artifacts",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "apActions.distclean",
+        "title": "Distclean Build Artifacts",
+        "icon": "$(clear-all)"
+      }
     ],
     "menus": {
       "view/title": [

@@ -22,6 +22,7 @@ import { apLog } from './apLog';
 import { ProgramUtils } from './apProgramUtils';
 import { TOOLS_REGISTRY } from './apToolsConfig';
 import { isVehicleTarget } from './apCommonUtils';
+import { setCleanTask, setDistCleanTask } from './apActions';
 
 /**
  * Custom execution class for ArduPilot build tasks
@@ -411,7 +412,48 @@ export class APTaskProvider implements vscode.TaskProvider {
 	}
 
 	public provideTasks(): Thenable<vscode.Task[]> | undefined {
-		return undefined;
+		return (async () => {
+			const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+			if (!workspaceRoot) {
+				return [];
+			}
+
+			const waffile = path.join(workspaceRoot.uri.fsPath, 'waf');
+			const pythonPath = await ProgramUtils.PYTHON();
+
+			const definitions: ArdupilotTaskDefinition[] = [
+				{
+					type: 'ardupilot',
+					configName: 'ardupilot-clean',
+					overrideEnabled: true,
+					customConfigureCommand: `${pythonPath} ${waffile} clean`,
+					customBuildCommand: 'true'
+				},
+				{
+					type: 'ardupilot',
+					configName: 'ardupilot-distclean',
+					overrideEnabled: true,
+					customConfigureCommand: `${pythonPath} ${waffile} distclean`,
+					customBuildCommand: 'true'
+				}
+			];
+
+			const tasks: vscode.Task[] = [];
+			for (const def of definitions) {
+				const task = await APTaskProvider.createTask(def);
+				if (task) {
+					tasks.push(task);
+				}
+			}
+
+			// Set preset clean/distclean tasks for direct execution in apActions
+			const cleanTask = tasks.find(t => t.definition?.type === 'ardupilot' && t.name === 'ardupilot-clean');
+			const distcleanTask = tasks.find(t => t.definition?.type === 'ardupilot' && t.name === 'ardupilot-distclean');
+			setCleanTask(cleanTask);
+			setDistCleanTask(distcleanTask);
+
+			return tasks;
+		})();
 	}
 
 	public static async getOrCreateBuildConfig(board: string, target: string, configName: string, configureOptions?: string, simVehicleCommand?: string, overrideEnabled?: boolean, customConfigureCommand?: string, customBuildCommand?: string): Promise<vscode.Task | undefined> {
