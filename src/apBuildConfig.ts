@@ -116,8 +116,8 @@ export class apBuildConfig extends vscode.TreeItem {
 			apBuildConfig.log(`Error saving active configuration: ${error}`);
 		});
 
-		// Refresh the tree view to update UI
-		vscode.commands.executeCommand('apBuildConfig.refreshEntry');
+		// Soft refresh the tree view to update UI without recreating tasks
+		this._buildProvider.refreshSoft();
 	}
 
 	delete(): void {
@@ -144,6 +144,9 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 	private _onDidChangeTreeData: vscode.EventEmitter<apBuildConfig | undefined> = new vscode.EventEmitter<apBuildConfig | undefined>();
 	readonly onDidChangeTreeData: vscode.Event<apBuildConfig | undefined> = this._onDidChangeTreeData.event;
 	static log = new apLog('buildConfig').log;
+	static noCreate = false;
+	private softRefreshFlag = false;
+	private taskCache: Map<string, vscode.Task> = new Map();
 
 	constructor(private workspaceRoot: string | undefined, public context: vscode.ExtensionContext) {
 		apBuildConfigProvider.log('apBuildConfigProvider constructor');
@@ -154,13 +157,6 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 				this.refresh();
 			}
 		});
-
-		// Refresh when apActions updates the active configuration
-		context.subscriptions.push(
-			vscode.commands.registerCommand('apActions.configChanged', () => {
-				this.refresh();
-			})
-		);
 
 		// Watch for changes to tasks.json to auto-refresh build configurations
 		if (this.workspaceRoot) {
@@ -195,6 +191,13 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 		this._onDidChangeTreeData.fire(undefined);
 	}
 
+	// Soft refresh that reuses cached tasks without recreating them
+	refreshSoft(): void {
+		apBuildConfigProvider.log('refreshSoft');
+		this.softRefreshFlag = true;
+		this._onDidChangeTreeData.fire(undefined);
+	}
+
 	// add option
 	add(): void {
 		apBuildConfigProvider.log('addOption');
@@ -206,6 +209,10 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 		if (!this.workspaceRoot) {
 			return [];
 		}
+
+		// Capture and reset soft refresh flag for this run
+		const useCacheOnly = this.softRefreshFlag;
+		this.softRefreshFlag = false;
 
 		// Get all configurations from tasks.json instead of scanning build folders
 		const taskConfiguration = vscode.workspace.workspaceFolders
@@ -222,8 +229,20 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 
 		for (const taskDef of ardupilotTasks) {
 			try {
-				// Create a VS Code task from the task definition
-				const task = await APTaskProvider.createTask(taskDef);
+				let task: vscode.Task | undefined;
+				if (useCacheOnly) {
+					// Reuse existing task if available
+					task = this.taskCache.get(taskDef.configName);
+					if (!task) {
+						apBuildConfigProvider.log(`Soft refresh: no cached task for ${taskDef.configName}, skipping create.`);
+					}
+				} else {
+					// Create a VS Code task from the task definition and cache it
+					task = await APTaskProvider.createTask(taskDef);
+					if (task) {
+						this.taskCache.set(taskDef.configName, task);
+					}
+				}
 				if (task) {
 					// Use configName for display
 					const displayName = taskDef.configName;
@@ -232,6 +251,14 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 				}
 			} catch (err) {
 				apBuildConfigProvider.log(`Error processing task ${taskDef.configName}: ${err}`);
+			}
+		}
+
+		// Prune cache entries that no longer exist in tasks.json
+		const currentConfigNames = new Set(ardupilotTasks.map(t => t.configName));
+		for (const cachedName of Array.from(this.taskCache.keys())) {
+			if (!currentConfigNames.has(cachedName)) {
+				this.taskCache.delete(cachedName);
 			}
 		}
 
