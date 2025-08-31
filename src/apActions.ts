@@ -288,7 +288,7 @@ export class apActionItem extends vscode.TreeItem {
 	}
 
 	private buildFirmware(): void {
-		apActionItem.log(`build firmware for ${this.label}`);
+		apActionItem.log(`build firmware for ${activeConfiguration?.definition?.configName}`);
 		if (!activeConfiguration) {
 			return;
 		}
@@ -304,9 +304,9 @@ export class apActionItem extends vscode.TreeItem {
 					disposable.dispose();  // Clean up the listener
 
 					if (e.exitCode === 0) {
-						vscode.window.showInformationMessage(`Build successful for ${this.label}`);
+						vscode.window.showInformationMessage(`Build successful for ${activeConfiguration?.definition?.configName}`);
 					} else {
-						vscode.window.showErrorMessage(`Build failed for ${this.label}`);
+						vscode.window.showErrorMessage(`Build failed for ${activeConfiguration?.definition?.configName}`);
 					}
 				}
 			});
