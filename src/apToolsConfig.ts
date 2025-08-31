@@ -18,6 +18,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { apLog } from './apLog';
+import { getVSCodeCommand } from './apCommonUtils';
 
 /**
  * Interface for tool path configurations
@@ -34,11 +35,12 @@ interface ToolsConfigFile {
 }
 
 /**
- * Type for install method - either a command or a URL
+ * Type for install method - either a command, URL, or extension
  */
 export type InstallMethod =
     | { type: 'command'; command: string }
-    | { type: 'url'; url: string };
+    | { type: 'url'; url: string }
+    | { type: 'extension'; extensionId: string | { code: string; cursor: string } };
 
 /**
  * Interface for consolidated tool information
@@ -331,6 +333,22 @@ export const TOOLS_REGISTRY = {
 			versionRegex: /lsusb\s+(\S+)/
 		}
 	},
+	CPPTOOLS: {
+		name: 'C/C++ Tools Extension',
+		description: 'VS Code C/C++ extension for IntelliSense, debugging, and code browsing',
+		optional: true,
+		webUrl: 'https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools',
+		paths: {
+			linux: ['code', 'cursor'],
+			darwin: ['code', 'cursor'],
+			wsl: ['code', 'cursor']
+		},
+		installCommands: {
+			linux: { type: 'extension', extensionId: { code: 'ms-vscode.cpptools', cursor: 'anysphere.cpptools' } },
+			darwin: { type: 'extension', extensionId: { code: 'ms-vscode.cpptools', cursor: 'anysphere.cpptools' } },
+			wsl: { type: 'extension', extensionId: { code: 'ms-vscode.cpptools', cursor: 'anysphere.cpptools' } }
+		}
+	},
 } as const;
 
 /**
@@ -539,6 +557,35 @@ export class ToolsRegistryHelpers {
 			key,
 			...info
 		}));
+	}
+
+	/**
+	 * Get the appropriate extension ID for a tool based on current platform and IDE
+	 */
+	static getExtensionId(toolInfo: ToolInfo): string | null {
+		const platform = process.platform;
+		const isWSL = process.platform === 'linux' && process.env.WSL_DISTRO_NAME;
+		let installMethod: InstallMethod | undefined;
+
+		if (isWSL && toolInfo.installCommands && 'wsl' in toolInfo.installCommands) {
+			installMethod = toolInfo.installCommands.wsl;
+		} else if (platform === 'linux' && toolInfo.installCommands && 'linux' in toolInfo.installCommands) {
+			installMethod = toolInfo.installCommands.linux;
+		} else if (platform === 'darwin' && toolInfo.installCommands && 'darwin' in toolInfo.installCommands) {
+			installMethod = toolInfo.installCommands.darwin;
+		}
+
+		if (!installMethod || installMethod.type !== 'extension') {
+			return null;
+		}
+
+		const extensionId = installMethod.extensionId;
+		if (typeof extensionId === 'string') {
+			return extensionId;
+		}
+
+		const currentIde = getVSCodeCommand();
+		return extensionId[currentIde as keyof typeof extensionId];
 	}
 
 }

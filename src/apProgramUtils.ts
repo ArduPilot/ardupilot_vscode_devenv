@@ -509,4 +509,52 @@ export class ProgramUtils {
 		}
 	}
 
+	/**
+	 * Installs a VS Code extension using the VS Code API
+	 * @param extensionId - The ID of the extension to install
+	 * @returns Promise resolving to true if installation was successful, false otherwise
+	 */
+	public static async installVSCodeExtension(extensionId: string): Promise<boolean> {
+		this.log.log(`Installing VS Code extension: ${extensionId}`);
+
+		try {
+			// Use VS Code's built-in extension installation command
+			await vscode.commands.executeCommand('workbench.extensions.installExtension', extensionId);
+			this.log.log(`Successfully installed extension: ${extensionId}`);
+			return true;
+		} catch (error) {
+			this.log.log(`Failed to install extension ${extensionId}: ${error}`);
+			return false;
+		}
+	}
+
+	/**
+	 * Checks if a VS Code extension is installed and returns version information
+	 * @param extensionId - The ID of the extension to check
+	 * @returns Promise resolving to object with installation status and version
+	 */
+	public static async isVSCodeExtensionInstalled(extensionId: string): Promise<{ installed: boolean; version?: string }> {
+		try {
+			// Get all installed extensions
+			const extensions = vscode.extensions.all;
+			const extension = extensions.find(ext => ext.id === extensionId);
+
+			if (extension) {
+				return {
+					installed: true,
+					version: extension.packageJSON.version
+				};
+			} else {
+				return {
+					installed: false
+				};
+			}
+		} catch (error) {
+			this.log.log(`Error checking if extension ${extensionId} is installed: ${error}`);
+			return {
+				installed: false
+			};
+		}
+	}
+
 }

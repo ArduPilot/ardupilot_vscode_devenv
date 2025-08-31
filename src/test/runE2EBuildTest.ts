@@ -49,7 +49,6 @@ async function main() {
 
 		// Install required extensions
 		await installExtension(vscodeExecutablePath, 'marus25.cortex-debug');
-		await installExtension(vscodeExecutablePath, 'ms-vscode.cpptools');
 		await installExtension(vscodeExecutablePath, 'ms-python.python');
 
 		// Set environment variable to run only build tests

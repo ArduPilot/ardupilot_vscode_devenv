@@ -96,6 +96,23 @@ export function FireAndForget(options: FireAndForgetOptions) {
 }
 
 /*
+ * Get the appropriate VS Code command (cursor or code) based on what's available
+ * @returns 'cursor' if running in Cursor, 'code' if running in VS Code
+ */
+export function getVSCodeCommand(): string {
+	// Use VS Code's built-in appName property for reliable detection
+	const appName = vscode.env.appName;
+
+	// Cursor's appName typically includes "Cursor"
+	if (appName.toLowerCase().includes('cursor')) {
+		return 'cursor';
+	}
+
+	// Default to VS Code
+	return 'code';
+}
+
+/*
  * Convenience function to execute an inline async function in fire-and-forget mode
  *
  * This allows you to wrap and immediately execute async code without decorators,
