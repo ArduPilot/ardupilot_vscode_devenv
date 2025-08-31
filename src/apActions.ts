@@ -61,6 +61,8 @@ export function setActiveConfiguration(task: vscode.Task): void {
 		return;
 	}
 	activeConfiguration = task;
+	// Notify other views that configuration changed - prefer soft refresh in listeners
+	vscode.commands.executeCommand('apActions.configChanged');
 	// After successful build, create matching launch configuration
 	if (activeConfiguration && activeConfiguration.definition) {
 		const taskDef = activeConfiguration.definition as ArdupilotTaskDefinition;
