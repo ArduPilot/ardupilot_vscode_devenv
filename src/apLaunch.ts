@@ -198,6 +198,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	private simVehicleCommand: string | null = null; // The exact sim_vehicle.py command executed
 	private debugServerTerminal: vscode.Terminal | undefined; // For JLink/OpenOCD pseudoterminal
 	private extensionUri: vscode.Uri;
+	private attachedDebug: boolean = false;
 
 	constructor(private _extensionUri: vscode.Uri) {
 		this.extensionUri = _extensionUri;
@@ -278,27 +279,40 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	}
 
 	/*
-	 * Send graceful shutdown signal to sim_vehicle.py process
-	 * @param pid - Process ID of sim_vehicle.py
-	 * @returns true if signal was sent successfully, false otherwise
+	 * Find ArduPilot process PID by binary path/name
+	 * @param binaryPath - Full path to the ArduPilot binary
+	 * @returns PID of the ArduPilot process or null if not found
 	 */
-	private sendGracefulShutdownSignal(pid: number): boolean {
+	private findArduPilotProcessByBinary(binaryPath: string): { pid: number; etime?: string; cmd: string }[] | null {
 		try {
-			APLaunchConfigurationProvider.log.log(`DEBUG: Sending SIGTERM to sim_vehicle.py process ${pid}`);
+			// Build a list of running ArduPilot PIDs and let user choose
+			const binaryName = path.basename(binaryPath);
+			let pidList: number[] = [];
+			try {
+				const pgrepResult = spawnSync('pgrep', ['-f', binaryName], { encoding: 'utf8' });
+				if (pgrepResult.status === 0 && pgrepResult.stdout) {
+					pidList = pgrepResult.stdout.trim().split('\n').filter(l => l.trim() !== '').map(l => parseInt(l, 10)).filter(n => !isNaN(n));
+				}
+			} catch { /* ignore */ }
 
-			// Send SIGINT signal for graceful shutdown
-			const result = spawnSync('kill', ['-INT', pid.toString()]);
-
-			if (result.status === 0) {
-				APLaunchConfigurationProvider.log.log(`DEBUG: Successfully sent SIGINT to process ${pid}`);
-				return true;
-			} else {
-				APLaunchConfigurationProvider.log.log(`DEBUG: Failed to send SIGINT to process ${pid} (exit code: ${result.status})`);
-				return false;
+			const candidates: { pid: number; etime?: string; cmd: string }[] = [];
+			for (const pid of pidList) {
+				const ps = spawnSync('ps', ['-p', pid.toString(), '-o', 'pid=,etime=,args='], { encoding: 'utf8' });
+				if (ps.status === 0 && ps.stdout) {
+					const line = ps.stdout.trim();
+					const parts = line.split(/\s+/, 3);
+					const pidNum = parseInt(parts[0], 10);
+					const etime = parts[1];
+					const cmd = parts.slice(2).join(' ');
+					if (!isNaN(pidNum) && (cmd.includes(binaryName) || cmd.includes(binaryPath))) {
+						candidates.push({ pid: pidNum, etime, cmd });
+					}
+				}
 			}
+			return candidates;
 		} catch (error) {
-			APLaunchConfigurationProvider.log.log(`DEBUG: Error sending signal to process ${pid}: ${error}`);
-			return false;
+			APLaunchConfigurationProvider.log.log(`DEBUG: Error finding ArduPilot process: ${error}`);
+			return null;
 		}
 	}
 
@@ -452,15 +466,6 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	}
 
 	/*
-	 * Unregister a tmux session from tracking
-	 * @param sessionName - Name of the tmux session to unregister
-	 */
-	private static unregisterSession(sessionName: string): void {
-		APLaunchConfigurationProvider.activeSessions.delete(sessionName);
-		APLaunchConfigurationProvider.log.log(`DEBUG: Unregistered tmux session: ${sessionName}`);
-	}
-
-	/*
 	 * Clean up all tracked tmux sessions
 	 * This method is called during extension deactivation
 	 */
@@ -518,6 +523,10 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	}
 
 	private async handleDebugSessionTermination(session: vscode.DebugSession) {
+		if (this.attachedDebug) {
+			// we are attached to the process that's all
+			return;
+		}
 		// Only handle termination of our own debug sessions (SITL) - both cppdbg (Linux) and lldb (macOS)
 		if ((session.configuration.type === 'cppdbg' || session.configuration.type === 'lldb') && this.tmuxSessionName && this.debugSessionTerminal) {
 			APLaunchConfigurationProvider.log.log(`DEBUG: Debug session terminated for type '${session.configuration.type}', cleaning up tmux session: ${this.tmuxSessionName}`);
@@ -697,6 +706,101 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				// Find the binary path for the vehicle (use base type for targetToBin lookup)
 				const binaryPath = path.join(workspaceRoot, 'build', 'sitl', targetToBin[vehicleBaseType]);
 				APLaunchConfigurationProvider.log.log(`Debug binary path: ${binaryPath}`);
+
+				// Detect existing running ArduPilot binary and prompt user
+				const existingArduPidList = this.findArduPilotProcessByBinary(binaryPath);
+				if (existingArduPidList && existingArduPidList.length !== 0) {
+					APLaunchConfigurationProvider.log.log(`DEBUG: Detected existing ArduPilot binary process (PIDs ${existingArduPidList.join(', ')}).`);
+
+					APLaunchConfigurationProvider.log.log('DEBUG: User chose to attach to existing ArduPilot process.');
+					// No TCP connection required; proceed to attach directly
+					const isMacOS = os.platform() === 'darwin';
+					if (isMacOS) {
+						// Ensure CodeLLDB is available
+						if (!(await this.ensureCodeLLDBAvailable())) {
+							return undefined;
+						}
+					}
+					interface ProcessQuickPickItem extends vscode.QuickPickItem { pid: number }
+					const processPickList = existingArduPidList.map(c => ({
+						label: `PID ${c.pid}`,
+						description: c.etime ? `uptime ${c.etime}` : '',
+						detail: c.cmd,
+						pid: c.pid
+					} as ProcessQuickPickItem));
+					processPickList.push({
+						label: 'Kill all and Start new',
+					} as ProcessQuickPickItem);
+					const selection = await vscode.window.showQuickPick(
+						processPickList,
+						{ placeHolder: 'Select ArduPilot process to attach' }
+					);
+					const skipAttach = !selection || selection.label == 'Kill all and Start new';
+					if (isMacOS && !skipAttach) {
+						this.attachedDebug = true;
+						const lldbAttachConfig = {
+							type: 'lldb',
+							request: 'attach',
+							name: `Debug ${vehicleType} SITL`,
+							program: binaryPath,
+							pid: (selection as ProcessQuickPickItem).pid,
+							waitFor: false,
+							stopOnEntry: true,
+							initCommands: [
+								'setting set target.max-string-summary-length 10000'
+							]
+						};
+						APLaunchConfigurationProvider.log.log(`DEBUG: Attaching LLDB to PID ${(selection as ProcessQuickPickItem).pid}`);
+						return lldbAttachConfig;
+					} else if (!skipAttach) {
+						this.attachedDebug = true;
+						const gdb = await ProgramUtils.findProgram(TOOLS_REGISTRY.GDB);
+						if (!gdb.available) {
+							vscode.window.showErrorMessage('GDB not found. Please install GDB to attach to SITL.');
+							return undefined;
+						}
+						const cppAttachConfig = {
+							type: 'cppdbg',
+							request: 'attach',
+							name: `Debug ${vehicleType} SITL`,
+							program: binaryPath,
+							processId: (selection as ProcessQuickPickItem).pid,
+							cwd: workspaceRoot,
+							MIMode: 'gdb',
+							miDebuggerPath: gdb.path,
+							setupCommands: [
+								{ description: 'Enable pretty-printing for gdb', text: '-enable-pretty-printing', ignoreFailures: true },
+								{ description: 'Set Disassembly Flavor to Intel', text: '-gdb-set disassembly-flavor intel', ignoreFailures: true }
+							]
+						};
+						APLaunchConfigurationProvider.log.log(`DEBUG: Attaching GDB to PID ${(selection as ProcessQuickPickItem).pid}`);
+						return cppAttachConfig;
+					}
+
+					APLaunchConfigurationProvider.log.log('DEBUG: User chose to kill existing ArduPilot process and start new. Attempting graceful shutdown...');
+					for (const existingArduPid of existingArduPidList) {
+						// Try graceful SIGINT first
+						spawnSync('kill', ['-INT', existingArduPid.pid.toString()]);
+						await new Promise(resolve => setTimeout(resolve, 2000));
+						// Recheck if ArduPilot binary is still running
+						const stillRunningList = this.findArduPilotProcessByBinary(binaryPath);
+						if (stillRunningList && existingArduPid.pid in stillRunningList.map(c => c.pid)) {
+							const killChoice = await vscode.window.showWarningMessage(
+								'Graceful shutdown failed. Force kill the existing ArduPilot process?',
+								{ modal: true },
+								'Force Kill',
+								'Cancel'
+							);
+							if (killChoice !== 'Force Kill') {
+								APLaunchConfigurationProvider.log.log('DEBUG: User cancelled after failed graceful shutdown.');
+								return undefined;
+							}
+							spawnSync('kill', ['-9', existingArduPid.toString()]);
+							APLaunchConfigurationProvider.log.log(`DEBUG: Sent SIGKILL to ArduPilot PID ${existingArduPid}`);
+							await new Promise(resolve => setTimeout(resolve, 1000));
+						}
+					}
+				}
 
 				// Generate a unique tmux session name
 				this.tmuxSessionName = `ardupilot_sitl_${vehicleType}_${Date.now()}`;
@@ -1373,5 +1477,32 @@ except OSError as e:
 			// Fallback: Give the server a moment to start
 			await new Promise(resolve => setTimeout(resolve, 2000));
 		}
+	}
+
+	/*
+	 * Ensure CodeLLDB (vadimcn.vscode-lldb) is installed and active on macOS
+	 */
+	private async ensureCodeLLDBAvailable(): Promise<boolean> {
+		const codelldbExtension = vscode.extensions.getExtension('vadimcn.vscode-lldb');
+		if (!codelldbExtension) {
+			const message = 'CodeLLDB extension is required for debugging on macOS. Would you like to install it?';
+			const installButton = 'Install CodeLLDB';
+			const cancelButton = 'Cancel';
+			const choice = await vscode.window.showErrorMessage(message, installButton, cancelButton);
+			if (choice === installButton) {
+				await vscode.commands.executeCommand('workbench.extensions.search', 'vadimcn.vscode-lldb');
+			}
+			return false;
+		}
+		if (!codelldbExtension.isActive) {
+			try {
+				APLaunchConfigurationProvider.log.log('DEBUG: Activating CodeLLDB extension...');
+				await codelldbExtension.activate();
+			} catch (error) {
+				vscode.window.showErrorMessage(`Failed to activate CodeLLDB extension: ${error}`);
+				return false;
+			}
+		}
+		return true;
 	}
 }
