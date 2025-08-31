@@ -703,55 +703,67 @@ export class APTaskProvider implements vscode.TaskProvider {
 			return undefined;
 		}
 
-		// Use configName for task label
-		const task_name = definition.configName;
+		const progressTitle = `Preparing Task: ${definition.configName}...`;
+		let createdTask: vscode.Task | undefined;
 
-		// Prepare environment variables - with or without CC/CXX paths
-		const env = await this.prepareEnvironmentVariables(definition);
+		const runCreate = async (): Promise<void> => {
+			// Use configName for task label
+			const task_name = definition.configName;
 
-		// Generate commands using shared method or use custom commands
-		let taskCommand: string;
+			// Prepare environment variables - with or without CC/CXX paths
+			const env = await this.prepareEnvironmentVariables(definition);
 
-		if (definition.overrideEnabled && definition.customConfigureCommand && definition.customBuildCommand) {
-			// For override mode, use custom commands and a generic build directory
-			taskCommand = `${definition.customConfigureCommand} && ${definition.customBuildCommand}`;
-		} else {
-			// For standard mode, use generated commands and board-specific build directory
-			if (!definition.configure || !definition.target) {
-				APTaskProvider.log.log('Missing configure or target for non-override task');
-				return undefined;
+			// Generate commands using shared method or use custom commands
+			let taskCommand: string;
+
+			if (definition.overrideEnabled && definition.customConfigureCommand && definition.customBuildCommand) {
+				// For override mode, use custom commands and a generic build directory
+				taskCommand = `${definition.customConfigureCommand} && ${definition.customBuildCommand}`;
+			} else {
+				// For standard mode, use generated commands and board-specific build directory
+				if (!definition.configure || !definition.target) {
+					APTaskProvider.log.log('Missing configure or target for non-override task');
+					createdTask = undefined;
+					return;
+				}
+
+				if (definition.waffile === undefined) {
+					// use the waf file from the workspace
+					definition.waffile = workspaceRoot.uri.fsPath + '/waf';
+				}
+				if (definition.nm === undefined) {
+					definition.nm = 'arm-none-eabi-nm';
+				}
+
+				const commands = await this.generateBuildCommands(
+					definition.configure,
+					definition.target,
+					definition.configureOptions || '',
+					definition.buildOptions || '',
+					workspaceRoot.uri.fsPath
+				);
+				taskCommand = commands.taskCommand;
 			}
 
-			if (definition.waffile === undefined) {
-				// use the waf file from the workspace
-				definition.waffile = workspaceRoot.uri.fsPath + '/waf';
-			}
-			if (definition.nm === undefined) {
-				definition.nm = 'arm-none-eabi-nm';
-			}
-
-			const commands = await this.generateBuildCommands(
-				definition.configure,
-				definition.target,
-				definition.configureOptions || '',
-				definition.buildOptions || '',
-				workspaceRoot.uri.fsPath
-			);
-			taskCommand = commands.taskCommand;
-		}
-
-		return new vscode.Task(
-			definition,
-			vscode.TaskScope.Workspace,
-			task_name,
-			'ardupilot',
-			new APCustomExecution(
+			createdTask = new vscode.Task(
 				definition,
-				taskCommand,
-				env
-			),
-			'$apgcc'
-		);
+				vscode.TaskScope.Workspace,
+				task_name,
+				'ardupilot',
+				new APCustomExecution(
+					definition,
+					taskCommand,
+					env
+				),
+				'$apgcc'
+			);
+		};
+
+		await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: progressTitle, cancellable: false }, async () => {
+			await runCreate();
+		});
+
+		return createdTask;
 	}
 
 	public static delete(taskName: string): void {
