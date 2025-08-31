@@ -374,7 +374,8 @@ export const PYTHON_PACKAGES_REGISTRY = {
 	PYSERIAL: { name: 'pyserial', description: 'Serial communication library' },
 	SETUPTOOLS: { name: 'setuptools', description: 'Python package development utilities (provides pkg_resources)' },
 	MAVPROXY: { name: 'mavproxy', description: 'MAVLink proxy for communication' },
-	GNUREADLINE: { name: 'gnureadline', description: 'GNU Readline library for command-line editing' }
+	GNUREADLINE: { name: 'gnureadline', description: 'GNU Readline library for command-line editing' },
+	INTELHEX: { name: 'intelhex', description: 'Intel HEX file format support' }
 } as const;
 
 /**
