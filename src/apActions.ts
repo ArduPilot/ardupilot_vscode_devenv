@@ -597,8 +597,13 @@ export class apActionItem extends vscode.TreeItem {
 	}
 
 	private configure(): void {
-		// Show quick pick to select a configuration
-		void this._actionsProvider.showConfigurationSelector();
+		// Show quick current active configuration
+		if (activeConfiguration && activeConfiguration.definition) {
+			const def = activeConfiguration.definition as ArdupilotTaskDefinition;
+			vscode.window.showInformationMessage(`Active configuration: ${def.configName}`);
+		} else {
+			vscode.window.showInformationMessage('No active configuration selected');
+		}
 	}
 }
 
@@ -639,7 +644,6 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 	refresh(): void {
 		this.log('Refreshing actions view');
 		this._onDidChangeTreeData.fire(undefined);
-		vscode.commands.executeCommand('apBuildConfig.refreshEntry');
 	}
 
 	getTreeItem(element: apActionItem): vscode.TreeItem {
@@ -680,61 +684,6 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 		if (arduPilotTasks.length > 0) {
 			setActiveConfiguration(arduPilotTasks[0]);
 			this.log(`Using default configuration: ${activeConfiguration?.definition.configName}`);
-			this.refresh();
-		}
-	}
-
-	@FireAndForget({ apLog: apActionsProvider.logger, showErrorPopup: true })
-	async showConfigurationSelector(): Promise<void> {
-		// Fetch all available tasks
-		const tasks = await vscode.tasks.fetchTasks();
-		const arduPilotTasks = tasks.filter(task =>
-			task.definition.type === 'ardupilot' && !apActionsProvider.isUtilityTask(task)
-		);
-
-		if (arduPilotTasks.length === 0) {
-			vscode.window.showInformationMessage('No Ardupilot configurations found. Create one using the Build Configurations view.');
-			return;
-		}
-
-		// Create quick pick items
-		const quickPickItems = arduPilotTasks.map(task => {
-			const isActive = activeConfiguration &&
-				activeConfiguration.definition.configName === task.definition.configName;
-
-			return {
-				label: task.definition.configName,
-				description: isActive ? '(Active)' : '',
-				task: task
-			};
-		});
-
-		// Show quick pick
-		const selected = await vscode.window.showQuickPick(quickPickItems, {
-			placeHolder: 'Select an Ardupilot configuration to activate',
-			title: 'Ardupilot Configurations'
-		});
-
-		if (selected) {
-			// Set the selected task as active
-			setActiveConfiguration(selected.task);
-			this.log(`Set active configuration to: ${selected.label}`);
-
-			// Save the selection to workspace settings if workspace is available
-			if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-				try {
-					await vscode.workspace.getConfiguration('ardupilot').update(
-						'activeConfiguration',
-						selected.label,
-						vscode.ConfigurationTarget.Workspace
-					);
-				} catch (error) {
-					this.log(`Error saving active configuration: ${error}`);
-				}
-			} else {
-				this.log('No workspace available to save active configuration');
-			}
-
 			this.refresh();
 		}
 	}
