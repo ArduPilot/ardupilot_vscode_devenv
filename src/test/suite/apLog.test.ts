@@ -234,7 +234,7 @@ suite('apLog Test Suite', () => {
 				throw new Error('Failed to create channel');
 			};
 
-			// Should not throw when accessing channel
+			// Should throw when accessing channel since apLog doesn't handle errors
 			assert.throws(() => apLog.channel, Error);
 
 			// Restore original mock
@@ -251,7 +251,7 @@ suite('apLog Test Suite', () => {
 
 			const logger = new apLog('errorTest');
 
-			// Should not throw when logging
+			// Should throw when logging since apLog doesn't handle errors
 			assert.throws(() => logger.log('Test message'), Error);
 
 			// Restore original method
@@ -261,6 +261,9 @@ suite('apLog Test Suite', () => {
 
 	suite('Static Channel Property', () => {
 		test('should maintain channel state across test runs', () => {
+			// Reset channel to ensure clean state
+			(apLog as any)._channel = undefined;
+
 			// First access
 			const channel1 = apLog.channel;
 
@@ -274,6 +277,9 @@ suite('apLog Test Suite', () => {
 		});
 
 		test('should handle concurrent access to channel', () => {
+			// Reset channel to ensure clean state
+			(apLog as any)._channel = undefined;
+
 			// Simulate concurrent access
 			const channels: vscode.OutputChannel[] = [];
 			for (let i = 0; i < 10; i++) {
