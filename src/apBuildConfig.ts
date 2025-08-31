@@ -158,6 +158,13 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 			}
 		});
 
+		// Refresh when apActions updates the active configuration
+		context.subscriptions.push(
+			vscode.commands.registerCommand('apActions.configChanged', () => {
+				this.refreshSoft();
+			})
+		);
+
 		// Watch for changes to tasks.json to auto-refresh build configurations
 		if (this.workspaceRoot) {
 			const tasksJsonPattern = new vscode.RelativePattern(this.workspaceRoot, '.vscode/tasks.json');
