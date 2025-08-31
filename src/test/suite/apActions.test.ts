@@ -166,7 +166,7 @@ suite('apActions Test Suite', () => {
 			assert.strictEqual(actionsProvider.context, mockContext);
 		});
 
-		test('should return configure action when no active configuration', async () => {
+		test('should return configure and distclean when no active configuration', async () => {
 			// Ensure no active configuration
 			const originalActiveConfig = activeConfiguration;
 			(global as any).activeConfiguration = undefined;
@@ -174,8 +174,10 @@ suite('apActions Test Suite', () => {
 			try {
 				const children = await actionsProvider.getChildren();
 				assert.ok(Array.isArray(children));
-				assert.strictEqual(children.length, 1);
-				assert.strictEqual(children[0].action, 'configure');
+				assert.strictEqual(children.length, 2);
+				const actions = children.map(c => c.action);
+				assert.ok(actions.includes('configure'));
+				assert.ok(actions.includes('distclean'));
 				assert.ok(children[0].label.includes('Select Configuration'));
 			} finally {
 				// Restore original active configuration
@@ -389,22 +391,18 @@ suite('apActions Test Suite', () => {
 			}
 		});
 
-		test('should call apBuildConfig.refreshEntry command', async () => {
-			// Mock vscode.commands.executeCommand using sandbox
-			let commandExecuted = false;
-			let commandName = '';
+		test('should not invoke Build Config refresh on actions refresh', async () => {
+			let buildConfigRefreshed = false;
 			assert.ok(apExtensionContext.apBuildConfigProviderInstance);
 			sandbox.stub(apExtensionContext.apBuildConfigProviderInstance, 'refresh').callsFake(async () => {
-				commandExecuted = true;
-				commandName = 'apBuildConfig.refreshEntry';
+				buildConfigRefreshed = true;
 			});
 
 			// Call refresh
 			actionsProvider.refresh();
 
-			// Verify the command was executed
-			assert.strictEqual(commandExecuted, true);
-			assert.strictEqual(commandName, 'apBuildConfig.refreshEntry');
+			// Verify Build Config refresh was NOT invoked
+			assert.strictEqual(buildConfigRefreshed, false);
 		});
 
 		test('should handle multiple refresh calls', async () => {
@@ -993,22 +991,19 @@ suite('apActions Test Suite', () => {
 			assert.strictEqual(eventFired, true);
 		});
 
-		test('should execute refresh command', () => {
-			let commandExecuted = false;
-
-			// Mock vscode.commands.executeCommand using sandbox
+		test('should not execute Build Config refresh', () => {
+			let buildConfigRefreshed = false;
 			assert.ok(apExtensionContext.apBuildConfigProviderInstance);
 			sandbox.stub(apExtensionContext.apBuildConfigProviderInstance, 'refresh').callsFake(() => {
-				commandExecuted = true;
+				buildConfigRefreshed = true;
 			});
 
 			mockProvider.refresh();
-			assert.strictEqual(commandExecuted, true);
+			assert.strictEqual(buildConfigRefreshed, false);
 		});
 
 		test('should handle multiple refresh calls', () => {
 			let fireCount = 0;
-			let commandCount = 0;
 
 			// Mock the event emitter using sandbox
 			sandbox.stub(mockProvider as any, '_onDidChangeTreeData').value({
@@ -1017,19 +1012,11 @@ suite('apActions Test Suite', () => {
 				})
 			});
 
-			// Mock vscode.commands.executeCommand using sandbox
-			assert.ok(apExtensionContext.apBuildConfigProviderInstance);
-			sandbox.stub(apExtensionContext.apBuildConfigProviderInstance, 'refresh').callsFake(() => {
-				commandCount++;
-				return Promise.resolve();
-			});
-
 			mockProvider.refresh();
 			mockProvider.refresh();
 			mockProvider.refresh();
 
 			assert.strictEqual(fireCount, 3);
-			assert.strictEqual(commandCount, 3);
 		});
 	});
 });
