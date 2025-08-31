@@ -383,7 +383,6 @@
   },
   "extensionDependencies": [
     "marus25.cortex-debug",
-    "ms-vscode.cpptools",
     "ms-python.python"
   ]
 }

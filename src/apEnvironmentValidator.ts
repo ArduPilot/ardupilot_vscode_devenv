@@ -300,6 +300,21 @@ export class ValidateEnvironmentPanel {
 					continue;
 				}
 
+				// Special handling for VS Code extensions
+				const extensionId = apToolsConfig.ToolsRegistryHelpers.getExtensionId(toolInfo);
+				if (extensionId) {
+					toolChecks.push({
+						key: toolKey,
+						toolInfo,
+						promise: this._checkVSCodeExtension(toolInfo).catch((error: unknown) => ({
+							available: false,
+							isCustomPath: false,
+							info: error instanceof Error ? error.message : String(error)
+						}))
+					});
+					continue;
+				}
+
 				// Standard tool validation using registry
 				toolChecks.push({
 					key: toolKey,
@@ -491,6 +506,18 @@ export class ValidateEnvironmentPanel {
 			return Promise.resolve();
 		}
 
+		// Handle extension installation methods
+		if (installMethod && installMethod.type === 'extension') {
+			const actualExtensionId = apToolsConfig.ToolsRegistryHelpers.getExtensionId(toolInfo);
+			if (actualExtensionId) {
+				return ValidateEnvironmentPanel.installVSCodeExtension(actualExtensionId, toolName, instance);
+			} else {
+				const errorMsg = `No extension ID found for ${toolName}`;
+				vscode.window.showErrorMessage(errorMsg);
+				return Promise.reject(new Error(errorMsg));
+			}
+		}
+
 		return new Promise<void>((resolve, reject) => {
 			if (installMethod && installMethod.type === 'command') {
 				// Use terminal installation with monitoring
@@ -610,6 +637,43 @@ export class ValidateEnvironmentPanel {
 
 				ValidateEnvironment.log.log(`Failed to open VS Code with WSL: ${error}`);
 			});
+	}
+
+	private _checkVSCodeExtension(toolInfo: apToolsConfig.ToolInfo): Promise<ProgramInfo> {
+		return new Promise((resolve, reject) => {
+			void (async () => {
+				try {
+					// Get the appropriate extension ID for the current environment
+					const extensionId = apToolsConfig.ToolsRegistryHelpers.getExtensionId(toolInfo);
+
+					if (!extensionId) {
+						reject(new Error('No extension installation method found for this tool'));
+						return;
+					}
+
+					// Check if the extension is installed using ProgramUtils
+					const extensionInfo = await ProgramUtils.isVSCodeExtensionInstalled(extensionId);
+
+					if (extensionInfo.installed) {
+						const versionInfo = extensionInfo.version ? ` (v${extensionInfo.version})` : '';
+						resolve({
+							available: true,
+							version: extensionInfo.version,
+							info: `✅ ${toolInfo.name} extension is installed${versionInfo}`,
+							isCustomPath: false
+						});
+					} else {
+						resolve({
+							available: false,
+							info: `❌ ${toolInfo.name} extension is not installed`,
+							isCustomPath: false
+						});
+					}
+				} catch (error) {
+					reject(error);
+				}
+			})();
+		});
 	}
 
 	private _checkCCache(): Promise<ProgramInfo> {
@@ -1203,6 +1267,39 @@ export class ValidateEnvironmentPanel {
 			vscode.window.showInformationMessage(
 				`Opening ${envCheckName} fix page. ${envCheckInfo.description}`
 			);
+		}
+	}
+
+	/**
+	 * Installs a VS Code extension using the VS Code API
+	 * @param extensionId - The ID of the extension to install (can be string or IDE-specific object)
+	 * @param extensionName - The display name of the extension
+	 * @param instance - ValidateEnvironmentPanel instance for auto-refresh
+	 * @returns Promise that resolves on successful installation or rejects on failure
+	 */
+	public static async installVSCodeExtension(extensionId: string, extensionName: string, instance: ValidateEnvironmentPanel): Promise<void> {
+		vscode.window.showInformationMessage(
+			`Installing ${extensionName}...`
+		);
+
+		// The extensionId parameter should already be a resolved string from getExtensionId()
+		const actualExtensionId = extensionId;
+
+		// Use ProgramUtils to install the extension
+		const success = await ProgramUtils.installVSCodeExtension(actualExtensionId);
+
+		if (success) {
+			vscode.window.showInformationMessage(`${extensionName} installed successfully!`);
+
+			// Auto-refresh validation after successful installation
+			setTimeout(() => {
+				void instance._validateEnvironment();
+			}, 1000); // Small delay to ensure installation has completed
+		} else {
+			const errorMsg = `Failed to install ${extensionName}`;
+			ValidateEnvironmentPanel.log.log(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			throw new Error(errorMsg);
 		}
 	}
 

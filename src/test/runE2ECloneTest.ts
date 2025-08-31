@@ -50,7 +50,6 @@ async function main() {
 
 		// Install required extensions
 		await installExtension(vscodeExecutablePath, 'marus25.cortex-debug');
-		await installExtension(vscodeExecutablePath, 'ms-vscode.cpptools');
 		await installExtension(vscodeExecutablePath, 'ms-python.python');
 		// create tmp folder ardupilot-e2e
 		const tempDir = path.join(os.tmpdir(), 'ardupilot-e2e');
