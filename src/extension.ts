@@ -120,6 +120,8 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	vscode.commands.registerCommand('apActions.upload', (item: apActionItem) => item.performAction());
 	vscode.commands.registerCommand('apActions.run', (item: apActionItem) => item.performAction());
 	vscode.commands.registerCommand('apActions.configure', (item: apActionItem) => item.performAction());
+	vscode.commands.registerCommand('apActions.clean', (item: apActionItem) => item.performAction());
+	vscode.commands.registerCommand('apActions.distclean', (item: apActionItem) => item.performAction());
 
 	// Command to set active configuration from outside apActions
 	vscode.commands.registerCommand('apActions.setActiveConfiguration', (task: vscode.Task) => {

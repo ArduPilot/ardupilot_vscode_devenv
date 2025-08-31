@@ -42,9 +42,22 @@ interface LaunchConfiguration {
 export let activeConfiguration: vscode.Task | undefined;
 export let activeLaunchConfig: LaunchConfiguration | null;
 
+// Optional pre-set tasks for clean and distclean
+let presetCleanTask: vscode.Task | undefined;
+let presetDistcleanTask: vscode.Task | undefined;
+
+export function setCleanTask(task: vscode.Task | undefined): void {
+	presetCleanTask = task;
+}
+
+export function setDistCleanTask(task: vscode.Task | undefined): void {
+	presetDistcleanTask = task;
+}
+
 // Function to update the active configuration
 export function setActiveConfiguration(task: vscode.Task): void {
-	if (task.name.endsWith('-upload')) {
+	// Ignore utility tasks from becoming active configurations
+	if (task.name.endsWith('-upload') || task.name === 'ardupilot-clean' || task.name === 'ardupilot-distclean') {
 		return;
 	}
 	activeConfiguration = task;
@@ -224,6 +237,12 @@ export class apActionItem extends vscode.TreeItem {
 		case 'configure':
 			this.iconPath = new vscode.ThemeIcon('gear');
 			break;
+		case 'clean':
+			this.iconPath = new vscode.ThemeIcon('trash');
+			break;
+		case 'distclean':
+			this.iconPath = new vscode.ThemeIcon('clear-all');
+			break;
 		default:
 			this.iconPath = new vscode.ThemeIcon('symbol-event');
 		}
@@ -259,6 +278,12 @@ export class apActionItem extends vscode.TreeItem {
 		case 'configure':
 			this.configure();
 			break;
+		case 'clean':
+			void this.runCleanTask();
+			break;
+		case 'distclean':
+			void this.runDistcleanTask();
+			break;
 		}
 	}
 
@@ -287,6 +312,40 @@ export class apActionItem extends vscode.TreeItem {
 			});
 		});
 
+	}
+
+	private async runCleanTask(): Promise<void> {
+		await this.runPresetTask(presetCleanTask, 'Clean');
+	}
+
+	private async runDistcleanTask(): Promise<void> {
+		await this.runPresetTask(presetDistcleanTask, 'Distclean');
+	}
+
+	private async runPresetTask(task: vscode.Task | undefined, label: string): Promise<void> {
+		try {
+			if (!task) {
+				vscode.window.showErrorMessage(`${label} task is not set.`);
+				return;
+			}
+			const execution = await vscode.tasks.executeTask(task);
+			await new Promise<void>((resolve) => {
+				const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
+					if (e.execution === execution) {
+						disposable.dispose();
+						if (e.exitCode === 0) {
+							vscode.window.showInformationMessage(`${label} completed successfully`);
+						} else {
+							vscode.window.showErrorMessage(`${label} failed with exit code ${e.exitCode}`);
+						}
+						resolve();
+					}
+				});
+			});
+		} catch (error) {
+			apActionItem.log(`Error running ${label}: ${error}`);
+			vscode.window.showErrorMessage(`Failed to run ${label}: ${error}`);
+		}
 	}
 
 	static createMatchingLaunchConfig(configName: string, configure: string, target: string, simVehicleCommand: string, board?: string): LaunchConfiguration | null {
@@ -549,6 +608,10 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 	readonly onDidChangeTreeData: vscode.Event<apActionItem | undefined> = this._onDidChangeTreeData.event;
 	private static logger = new apLog('apActionsProvider');
 	private log = apActionsProvider.logger.log;
+	private static isUtilityTask(task: vscode.Task): boolean {
+		const name = (task.definition && (task.definition as ArdupilotTaskDefinition).configName) || task.name;
+		return name === 'ardupilot-clean' || name === 'ardupilot-distclean';
+	}
 
 	public context: vscode.ExtensionContext;
 
@@ -593,7 +656,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 			// Try to find this task
 			const tasks = await vscode.tasks.fetchTasks();
 			const arduPilotTasks = tasks.filter(task =>
-				task.definition.type === 'ardupilot'
+				task.definition.type === 'ardupilot' && !apActionsProvider.isUtilityTask(task)
 			);
 
 			const matchingTask = arduPilotTasks.find(task =>
@@ -611,7 +674,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 		// If no saved configuration, try to use the first available configuration
 		const tasks = await vscode.tasks.fetchTasks();
 		const arduPilotTasks = tasks.filter(task =>
-			task.definition.type === 'ardupilot'
+			task.definition.type === 'ardupilot' && !apActionsProvider.isUtilityTask(task)
 		);
 
 		if (arduPilotTasks.length > 0) {
@@ -626,7 +689,7 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 		// Fetch all available tasks
 		const tasks = await vscode.tasks.fetchTasks();
 		const arduPilotTasks = tasks.filter(task =>
-			task.definition.type === 'ardupilot'
+			task.definition.type === 'ardupilot' && !apActionsProvider.isUtilityTask(task)
 		);
 
 		if (arduPilotTasks.length === 0) {
@@ -725,6 +788,13 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 					`Debug firmware for ${def.configName}`,
 					activeConfiguration
 				));
+				actionItems.push(new apActionItem(
+					this,
+					'Clean',
+					vscode.TreeItemCollapsibleState.None,
+					'clean',
+					'Clean build artifacts'
+				));
 
 				// Add Upload action for hardware configurations or Run for SITL
 				if (isSITL) {
@@ -749,6 +819,15 @@ export class apActionsProvider implements vscode.TreeDataProvider<apActionItem> 
 				}
 			}
 		}
+
+		// Add Distclean actions always (independent of activeConfiguration)
+		actionItems.push(new apActionItem(
+			this,
+			'Distclean',
+			vscode.TreeItemCollapsibleState.None,
+			'distclean',
+			'Full clean of ArduPilot build outputs'
+		));
 
 		return Promise.resolve(actionItems);
 	}
