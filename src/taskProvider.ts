@@ -61,6 +61,57 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 	onDidWrite: vscode.Event<string> = this.writeEmitter.event;
 	onDidClose: vscode.Event<number> = this.closeEmitter.event;
 
+	/**
+	 * Handle user input from the terminal
+	 * This method is called by VS Code when the user types in the terminal
+	 */
+	handleInput(data: string): void {
+		// Handle Ctrl+C (SIGINT) - ASCII code 3
+		if (data === '\x03') {
+			APBuildPseudoterminal.log.log('Received Ctrl+C, terminating build process');
+			this.writeEmitter.fire('\r\n^C\r\n');
+
+			if (this.childProcess && !this.childProcess.killed) {
+				// Send SIGINT to the child process
+				this.childProcess.kill('SIGINT');
+
+				// Give it a moment to handle the signal gracefully
+				setTimeout(() => {
+					if (this.childProcess && !this.childProcess.killed) {
+						// If still running, force kill with SIGTERM
+						APBuildPseudoterminal.log.log('Force killing build process with SIGTERM');
+						this.childProcess.kill('SIGTERM');
+					}
+				}, 2000);
+			}
+
+			// Mark as finished and close with exit code 130 (standard for SIGINT)
+			if (!this.commandFinished) {
+				this.handleBuildCompletion({ exitCode: 130 });
+			}
+			return;
+		}
+
+		// Handle other input by forwarding to child process if it's still running
+		if (this.childProcess && !this.childProcess.killed && this.childProcess.stdin) {
+			this.childProcess.stdin.write(data);
+		}
+	}
+
+	/**
+	 * Handle terminal dimension changes
+	 * This method is called by VS Code when the terminal is resized
+	 */
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	setDimensions(dimensions: vscode.TerminalDimensions): void {
+		// Send SIGWINCH signal to notify the child process of dimension changes
+		// This is particularly useful for processes that need to know terminal size
+		// Note: dimensions parameter is available for future use if needed
+		if (this.childProcess && !this.childProcess.killed) {
+			this.childProcess.kill('SIGWINCH');
+		}
+	}
+
 	/*
 	 * Process terminal output to handle carriage returns and formatting properly
 	 */
@@ -106,6 +157,9 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 			APBuildPseudoterminal.log.log('Terminating child process');
 			this.childProcess.kill('SIGTERM');
 		}
+
+		// Mark as finished to prevent duplicate handling
+		this.commandFinished = true;
 
 		this.writeEmitter.fire('Build task completed.\r\n');
 		this.closeEmitter.fire(0);
@@ -164,7 +218,7 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 			cwd: workspaceRoot,
 			env: terminalEnv,
 			shell: true,
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['pipe', 'pipe', 'pipe'],
 			// Enable proper terminal behavior
 			detached: false
 		});
