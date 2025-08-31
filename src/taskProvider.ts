@@ -792,7 +792,6 @@ export class APTaskProvider implements vscode.TaskProvider {
 	public async resolveTask(task: vscode.Task): Promise<vscode.Task | undefined> {
 		const taskDef = task.definition;
 		if (taskDef) {
-			// Note: resolveTask cannot be async, so we return the task without CC/CXX environment variables
 			// Full environment variables will be set when the task is actually executed
 			return APTaskProvider.createTask(taskDef as ArdupilotTaskDefinition);
 		}

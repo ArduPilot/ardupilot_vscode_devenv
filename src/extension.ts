@@ -128,7 +128,6 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 		if (activeConfiguration !== task) {
 			setActiveConfiguration(task);
 			apExtensionContext.actionsProvider?.refresh();
-			vscode.commands.executeCommand('apActions.configChanged');
 		}
 	});
 

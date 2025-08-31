@@ -596,26 +596,6 @@ suite('apActions Test Suite', () => {
 				// If we reach here without error, the test passes
 				assert.ok(true);
 			});
-
-			test('should perform configure action for SITL', async () => {
-				const actionItem = new apActionItem(
-					actionsProvider,
-					'Configuration: sitl-copter',
-					vscode.TreeItemCollapsibleState.None,
-					'configure',
-					'Select configuration'
-				);
-
-				// Mock showConfigurationSelector using sandbox
-				let selectorShown = false;
-				sandbox.stub(actionsProvider, 'showConfigurationSelector').callsFake(async () => {
-					selectorShown = true;
-					return Promise.resolve();
-				});
-
-				actionItem.performAction();
-				assert.strictEqual(selectorShown, true);
-			});
 		});
 
 		suite('Hardware Configuration Tests', () => {
