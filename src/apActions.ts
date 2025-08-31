@@ -524,7 +524,7 @@ export class apActionItem extends vscode.TreeItem {
 		const terminalEnv = await APTaskProvider.prepareEnvironmentVariables(config);
 
 		// Launch SITL using apTerminalMonitor
-		const sitlMonitor = new apTerminalMonitor('ArduPilot SITL');
+		const sitlMonitor = new apTerminalMonitor('ArduPilot Run SITL');
 		await sitlMonitor.createTerminal({ env: terminalEnv });
 		await sitlMonitor.runCommand(`cd ${workspaceRoot}`, { nonblocking: true });
 		const pythonPath = await ProgramUtils.PYTHON();
