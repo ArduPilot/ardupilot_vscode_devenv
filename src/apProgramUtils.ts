@@ -124,7 +124,7 @@ export class ProgramUtils {
 
 				if (environment?.environment?.type === 'VirtualEnvironment') {
 					const venvPath = environment.environment.folderUri?.fsPath || '';
-					const activateScript = path.join(venvPath, 'bin', 'activate');
+					const activateScript = path.join(path.dirname(venvPath), 'activate');
 
 					if (fs.existsSync(activateScript)) {
 						ProgramUtils.log.log(`Found virtual environment activation script: ${activateScript}`);
