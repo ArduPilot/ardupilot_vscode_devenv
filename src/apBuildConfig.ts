@@ -222,10 +222,16 @@ export class apBuildConfigProvider implements vscode.TreeDataProvider<apBuildCon
 		this.softRefreshFlag = false;
 
 		// Get all configurations from tasks.json instead of scanning build folders
-		const taskConfiguration = vscode.workspace.workspaceFolders
-			? vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri)
-			: vscode.workspace.getConfiguration('tasks');
-		const tasks = taskConfiguration.get('tasks') as Array<ArdupilotTaskDefinition> || [];
+		let tasks: Array<ArdupilotTaskDefinition> = [];
+		try {
+			const taskConfiguration = vscode.workspace.workspaceFolders
+				? vscode.workspace.getConfiguration('tasks', vscode.workspace.workspaceFolders[0].uri)
+				: vscode.workspace.getConfiguration('tasks');
+			tasks = taskConfiguration.get('tasks') as Array<ArdupilotTaskDefinition> || [];
+		} catch {
+			// Fallback for tests or environments where configuration isn't accessible
+			tasks = [];
+		}
 
 		const buildConfigList: apBuildConfig[] = [];
 
