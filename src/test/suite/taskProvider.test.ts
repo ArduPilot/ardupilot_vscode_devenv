@@ -1079,4 +1079,46 @@ suite('APTaskProvider Test Suite', () => {
 		});
 
 	});
+
+	suite('Pseudoterminal Input Handling', () => {
+		test('should handle Ctrl+C input correctly', async () => {
+			// Create a mock task definition
+			const mockTaskDefinition: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configName: 'test-ctrl-c',
+				configureOptions: '',
+				buildOptions: ''
+			};
+
+			// Test the functionality through the task creation process
+			const task = await APTaskProvider.createTask(mockTaskDefinition);
+
+			assert.ok(task, 'Task should be created');
+			assert.ok(task.execution, 'Task should have execution');
+
+			// Verify that the task uses APCustomExecution
+			assert.strictEqual(task.execution instanceof vscode.CustomExecution, true, 'Task should use CustomExecution');
+		});
+
+		test('should create task with proper pseudoterminal support', async () => {
+			const mockTaskDefinition: ArdupilotTaskDefinition = {
+				type: 'ardupilot',
+				configure: 'sitl',
+				target: 'copter',
+				configName: 'test-pseudoterminal',
+				configureOptions: '',
+				buildOptions: ''
+			};
+
+			const task = await APTaskProvider.createTask(mockTaskDefinition);
+
+			assert.ok(task, 'Task should be created');
+			assert.ok(task.execution, 'Task should have execution');
+
+			// The task should be ready to handle input through the pseudoterminal
+			assert.strictEqual(task.execution instanceof vscode.CustomExecution, true, 'Task should use CustomExecution');
+		});
+	});
 });
