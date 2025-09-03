@@ -118,17 +118,21 @@ export class ProgramUtils {
 		try {
 			const pythonApi = await PythonExtension.api();
 			const activeEnvPath = pythonApi.environments.getActiveEnvironmentPath();
-
 			if (activeEnvPath) {
 				const environment = await pythonApi.environments.resolveEnvironment(activeEnvPath);
 
 				if (environment?.environment?.type === 'VirtualEnvironment') {
 					const venvPath = environment.environment.folderUri?.fsPath || '';
-					const activateScript = path.join(path.dirname(venvPath), 'activate');
-
-					if (fs.existsSync(activateScript)) {
-						ProgramUtils.log.log(`Found virtual environment activation script: ${activateScript}`);
-						return `. ${activateScript}`;
+					// venvPath can either point to python itself or the venv root directory
+					// we look for the activate script in both places
+					if (fs.existsSync(path.join(venvPath, 'bin', 'activate'))) {
+						ProgramUtils.log.log(`Found virtual environment activation script: ${path.join(venvPath, 'bin', 'activate')}`);
+						return `. ${path.join(venvPath, 'bin', 'activate')}`;
+					} else if (fs.existsSync(path.join(path.dirname(venvPath), 'activate'))) {
+						ProgramUtils.log.log(`Found virtual environment activation script: ${path.join(path.dirname(venvPath), 'activate')}`);
+						return `. ${path.join(path.dirname(venvPath), 'activate')}`;
+					} else {
+						ProgramUtils.log.log(`Virtual environment activation script not found in ${venvPath}`);
 					}
 				}
 			}
