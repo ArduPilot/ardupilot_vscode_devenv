@@ -157,7 +157,7 @@ export const TOOLS_REGISTRY = {
 		installCommands: {
 			linux: {
 				type: 'command',
-				command: 'sudo mkdir -p /opt/openocd-ardupilot && cd /tmp && ARCH=$(uname -m | sed \'s/x86_64/x86_64/;s/aarch64/aarch64/\') && DOWNLOAD_URL=$(curl -s https://api.github.com/repos/bugobliterator/openocd/releases/latest | grep "browser_download_url.*linux-${ARCH}.tar.gz" | cut -d \'"\' -f 4) && curl -L -o openocd.tar.gz $DOWNLOAD_URL && sudo tar -xzf openocd.tar.gz -C /opt/openocd-ardupilot && rm openocd.tar.gz'
+				command: 'sudo apt install gzip libftdi1 libftdi1-2 libhidapi-hidraw0 libjaylink0 && sudo mkdir -p /opt/openocd-ardupilot && cd /tmp && ARCH=$(uname -m | sed \'s/x86_64/x86_64/;s/aarch64/aarch64/\') && DOWNLOAD_URL=$(curl -s https://api.github.com/repos/bugobliterator/openocd/releases/latest | grep "browser_download_url.*linux-${ARCH}.tar.gz" | cut -d \'"\' -f 4) && curl -L -o openocd.tar.gz $DOWNLOAD_URL && sudo tar -xzf openocd.tar.gz -C /opt/openocd-ardupilot && rm openocd.tar.gz'
 			},
 			darwin: {
 				type: 'command',
