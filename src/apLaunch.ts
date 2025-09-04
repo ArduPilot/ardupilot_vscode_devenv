@@ -283,7 +283,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	 * @param binaryPath - Full path to the ArduPilot binary
 	 * @returns PID of the ArduPilot process or null if not found
 	 */
-	private findArduPilotProcessByBinary(binaryPath: string): { pid: number; etime?: string; cmd: string }[] | null {
+	private findArduPilotProcessByBinary(binaryPath: string): { pid: number; etime?: string; cmd: string; args: string }[] | null {
 		try {
 			// Build a list of running ArduPilot PIDs and let user choose
 			const binaryName = path.basename(binaryPath);
@@ -295,17 +295,27 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				}
 			} catch { /* ignore */ }
 
-			const candidates: { pid: number; etime?: string; cmd: string }[] = [];
+			const candidates: { pid: number; etime?: string; cmd: string; args: string }[] = [];
 			for (const pid of pidList) {
 				const ps = spawnSync('ps', ['-p', pid.toString(), '-o', 'pid=,etime=,args='], { encoding: 'utf8' });
+				APLaunchConfigurationProvider.log.log(`DEBUG: ps output: ${JSON.stringify(ps, null, 2)}`);
 				if (ps.status === 0 && ps.stdout) {
 					const line = ps.stdout.trim();
-					const parts = line.split(/\s+/, 3);
-					const pidNum = parseInt(parts[0], 10);
-					const etime = parts[1];
-					const cmd = parts.slice(2).join(' ');
+					const m = line.match(/^\s*([0-9]+)\s+(\S+)\s+(.*)$/);
+					if (!m) {
+						continue;
+					}
+					const pidNum = parseInt(m[1], 10);
+					const etime = m[2];
+					const cmd = m[3];
+					// Extract arguments only (without the executable path) by slicing after binaryPath
+					let argsOnly = '';
+					const idxBinary = cmd.indexOf(binaryPath);
+					if (idxBinary !== -1) {
+						argsOnly = cmd.slice(idxBinary + binaryPath.length).trimStart();
+					}
 					if (!isNaN(pidNum) && (cmd.includes(binaryName) || cmd.includes(binaryPath))) {
-						candidates.push({ pid: pidNum, etime, cmd });
+						candidates.push({ pid: pidNum, etime, cmd, args: argsOnly });
 					}
 				}
 			}
@@ -727,7 +737,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 				// Detect existing running ArduPilot binary and prompt user
 				const existingArduPidList = this.findArduPilotProcessByBinary(binaryPath);
 				if (existingArduPidList && existingArduPidList.length !== 0) {
-					APLaunchConfigurationProvider.log.log(`DEBUG: Detected existing ArduPilot binary process (PIDs ${existingArduPidList.join(', ')}).`);
+					APLaunchConfigurationProvider.log.log(`DEBUG: Detected existing ArduPilot binary process (PIDs ${existingArduPidList.map(p => p.pid).join(', ')}).`);
 
 					APLaunchConfigurationProvider.log.log('DEBUG: User chose to attach to existing ArduPilot process.');
 					// No TCP connection required; proceed to attach directly
@@ -741,7 +751,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					interface ProcessQuickPickItem extends vscode.QuickPickItem { pid: number }
 					const processPickList = existingArduPidList.map(c => ({
 						label: `PID ${c.pid}`,
-						description: c.etime ? `uptime ${c.etime}` : '',
+						description: c.args || '(no args)',
 						detail: c.cmd,
 						pid: c.pid
 					} as ProcessQuickPickItem));
@@ -750,9 +760,12 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					} as ProcessQuickPickItem);
 					const selection = await vscode.window.showQuickPick(
 						processPickList,
-						{ placeHolder: 'Select ArduPilot process to attach' }
+						{ placeHolder: 'Select ArduPilot process to attach', matchOnDescription: true, matchOnDetail: true }
 					);
-					const skipAttach = !selection || selection.label == 'Kill all and Start new';
+					if (!selection) {
+						return undefined;
+					}
+					const skipAttach = selection.label == 'Kill all and Start new';
 					if (isMacOS && !skipAttach) {
 						this.attachedDebug = true;
 						const lldbAttachConfig = {
