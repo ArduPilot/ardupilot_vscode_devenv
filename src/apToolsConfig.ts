@@ -262,8 +262,8 @@ export const TOOLS_REGISTRY = {
 		name: 'ARM GCC Toolchain',
 		description: 'Download and install ARM GCC toolchain version 10',
 		paths: {
-			linux: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-gcc'],
-			darwin: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-gcc', '/Applications/ARM/bin/arm-none-eabi-gcc']
+			linux: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-gcc', 'arm-none-eabi-gcc'],
+			darwin: ['/opt/gcc-arm-none-eabi/bin/arm-none-eabi-gcc', '/Applications/ARM/bin/arm-none-eabi-gcc', 'arm-none-eabi-gcc']
 		},
 		installCommands: {
 			linux: {
