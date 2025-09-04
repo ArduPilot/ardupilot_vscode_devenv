@@ -647,11 +647,13 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 
 					if (choice === 'Skip Upload & Debug') {
 						APLaunchConfigurationProvider.log.log('User chose to skip upload task, proceeding directly to debug');
-						shouldExecuteTask = false; // Skip task execution
-					} else {
-						// choice === 'Run Upload & Debug' or undefined (ESC pressed - default to upload)
+						shouldExecuteTask = false;
+					} else if (choice === 'Run Upload & Debug') {
 						APLaunchConfigurationProvider.log.log('User chose to run upload task before debugging');
-						shouldExecuteTask = true; // Execute the upload task as normal
+						shouldExecuteTask = true;
+					} else {
+						APLaunchConfigurationProvider.log.log('User cancelled upload prompt; aborting launch');
+						return undefined;
 					}
 				}
 			} else if (apConfig.isSITL && taskType === 'ardupilot') {
@@ -665,11 +667,13 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 
 				if (choice === 'Skip Build & Debug') {
 					APLaunchConfigurationProvider.log.log('User chose to skip SITL build, proceeding directly to debug');
-					shouldExecuteTask = false; // Skip build execution
-				} else {
-					// choice === 'Build & Debug' or undefined (ESC pressed - default to build)
+					shouldExecuteTask = false;
+				} else if (choice === 'Build & Debug') {
 					APLaunchConfigurationProvider.log.log('User chose to build before debugging SITL');
-					shouldExecuteTask = true; // Execute the build task as normal
+					shouldExecuteTask = true;
+				} else {
+					APLaunchConfigurationProvider.log.log('User cancelled SITL build prompt; aborting launch');
+					return undefined;
 				}
 			}
 
