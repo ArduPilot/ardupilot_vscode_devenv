@@ -644,6 +644,23 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 						shouldExecuteTask = true; // Execute the upload task as normal
 					}
 				}
+			} else if (apConfig.isSITL && taskType === 'ardupilot') {
+				// For SITL, ask if the user wants to build before debugging (mirrors upload prompt UX)
+				const choice = await vscode.window.showWarningMessage(
+					'This will build SITL before debugging. Do you want to proceed with the build?',
+					{ modal: true },
+					'Build & Debug',
+					'Skip Build & Debug'
+				);
+
+				if (choice === 'Skip Build & Debug') {
+					APLaunchConfigurationProvider.log.log('User chose to skip SITL build, proceeding directly to debug');
+					shouldExecuteTask = false; // Skip build execution
+				} else {
+					// choice === 'Build & Debug' or undefined (ESC pressed - default to build)
+					APLaunchConfigurationProvider.log.log('User chose to build before debugging SITL');
+					shouldExecuteTask = true; // Execute the build task as normal
+				}
 			}
 
 			// Execute the task and wait for it to complete (only if not skipping)
