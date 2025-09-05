@@ -40,6 +40,7 @@ interface LaunchConfiguration {
 
 // Store the currently active build configuration
 export let activeConfiguration: vscode.Task | undefined;
+export let activeUploadTask: vscode.Task | undefined;
 export let activeLaunchConfig: LaunchConfiguration | null;
 
 // Optional pre-set tasks for clean and distclean
@@ -66,7 +67,13 @@ export function setActiveConfiguration(task: vscode.Task): void {
 	// After successful build, create matching launch configuration
 	if (activeConfiguration && activeConfiguration.definition) {
 		const taskDef = activeConfiguration.definition as ArdupilotTaskDefinition;
-
+		const isSITL = taskDef.configure?.toLowerCase().startsWith('sitl') ?? false;
+		if (!isSITL)	{
+			// find appropriate upload task
+			vscode.tasks.fetchTasks().then(tasks => {
+				activeUploadTask = tasks.find(task => task.name === `${activeConfiguration?.name}-upload`);
+			});
+		}
 		// Only create launch config and update properties for non-override tasks
 		if (!taskDef.overrideEnabled && taskDef.configure && taskDef.target) {
 			activeLaunchConfig = apActionItem.createMatchingLaunchConfig(
@@ -533,9 +540,10 @@ export class apActionItem extends vscode.TreeItem {
 			vscode.window.showErrorMessage('No active configuration selected');
 			return;
 		}
-		// Launch active launch configuration (which includes upload via preLaunchTask)
-		if (activeLaunchConfig) {
-			vscode.debug.startDebugging(undefined, activeLaunchConfig);
+		if (activeUploadTask) {
+			vscode.tasks.executeTask(activeUploadTask);
+		} else {
+			vscode.window.showErrorMessage('No upload task found');
 		}
 	}
 
