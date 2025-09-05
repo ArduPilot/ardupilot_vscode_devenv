@@ -34,15 +34,11 @@ class APCustomExecution extends vscode.CustomExecution {
 	private terminalOutputDisposables: vscode.Disposable[] = [];
 
 	constructor(
-		private definition: ArdupilotTaskDefinition,
-		private taskCommand: string,
-		private env: { [key: string]: string }
+		private definition: ArdupilotTaskDefinition
 	) {
 		super(async (): Promise<vscode.Pseudoterminal> => {
 			return new APBuildPseudoterminal(
-				this.definition,
-				this.taskCommand,
-				this.env
+				this.definition
 			);
 		});
 	}
@@ -130,24 +126,15 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 	}
 
 	constructor(
-		private definition: ArdupilotTaskDefinition,
-		private taskCommand: string,
-		private env: { [key: string]: string }
+		private definition: ArdupilotTaskDefinition
 	) {}
 
 	async open(): Promise<void> {
 		this.writeEmitter.fire('Starting ArduPilot build task...\r\n');
 		APBuildPseudoterminal.log.log(`Opening pseudoterminal for task: ${this.definition.configName}`);
 
-		// Integrate Python extension for venv activation
-		const activateCommand = await ProgramUtils.getPythonActivateCommand();
-		if (activateCommand) {
-			this.taskCommand = `${activateCommand} && ${this.taskCommand}`;
-			APBuildPseudoterminal.log.log(`Updated command with Python activation: ${activateCommand}`);
-		}
-
 		// Execute the build command directly with spawn
-		this.executeBuildCommand();
+		void this.executeBuildCommand();
 	}
 
 	close(): void {
@@ -188,41 +175,84 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 		this.closeEmitter.fire(exitCode);
 	}
 
-	private executeBuildCommand(): void {
-		APBuildPseudoterminal.log.log(`Executing build command: ${this.taskCommand}`);
-		this.writeEmitter.fire(`Executing: ${this.taskCommand}\r\n`);
+	private async executeBuildCommand(): Promise<void> {
+		try {
+			const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]?.uri.fsPath;
 
-		// Log build start info
-		apLog.channel.appendLine('[BUILD] ======== Build Started ========');
-		apLog.channel.appendLine(`[BUILD] Task: ${this.definition.configName}`);
-		apLog.channel.appendLine(`[BUILD] Command: ${this.taskCommand}`);
-		const workspaceRoot = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]?.uri.fsPath;
-		apLog.channel.appendLine(`[BUILD] Working Directory: ${workspaceRoot ?? process.cwd()}`);
-		apLog.channel.appendLine('[BUILD] ================================');
+			// Prepare environment variables lazily
+			const baseEnv = await APTaskProvider.prepareEnvironmentVariables(this.definition);
 
-		// Enhanced environment for better terminal behavior
-		const terminalEnv = {
-			...this.env,
-			TERM: 'xterm-256color',
-			FORCE_COLOR: '1',
-			COLORTERM: 'truecolor',
-			COLUMNS: '120',
-			LINES: '30',
-			// Additional environment variables to ensure color output
-			// Additional environment variables to ensure color output
-			NO_COLOR: undefined, // Remove any NO_COLOR setting
-			CLICOLOR_FORCE: '1'
-		};
+			// Build the command lazily
+			let taskCommand = '';
+			if (this.definition.overrideEnabled && this.definition.customConfigureCommand && this.definition.customBuildCommand) {
+				taskCommand = `${this.definition.customConfigureCommand} && ${this.definition.customBuildCommand}`;
+			} else {
+				if (!this.definition.configure || !this.definition.target) {
+					const msg = 'Missing configure or target for non-override task';
+					APBuildPseudoterminal.log.log(msg);
+					this.writeEmitter.fire(msg + '\r\n');
+					this.closeEmitter.fire(1);
+					return;
+				}
+				const commands = await APTaskProvider.generateBuildCommands(
+					this.definition.configure,
+					this.definition.target,
+					this.definition.configureOptions || '',
+					this.definition.buildOptions || '',
+					workspaceRoot
+				);
+				taskCommand = commands.taskCommand;
+			}
 
-		// Use spawn with shell and inherit stdio for proper terminal behavior
-		this.childProcess = cp.spawn(this.taskCommand, [], {
-			cwd: workspaceRoot,
-			env: terminalEnv,
-			shell: true,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			// Enable proper terminal behavior
-			detached: false
-		});
+			// Integrate Python extension for venv activation lazily
+			const activateCommand = await ProgramUtils.getPythonActivateCommand();
+			if (activateCommand) {
+				APBuildPseudoterminal.log.log(`Updated command with Python activation: ${activateCommand}`);
+				taskCommand = `${activateCommand} && ${taskCommand}`;
+			}
+
+			APBuildPseudoterminal.log.log(`Executing build command: ${taskCommand}`);
+			this.writeEmitter.fire(`Executing: ${taskCommand}\r\n`);
+
+			// Log build start info
+			apLog.channel.appendLine('[BUILD] ======== Build Started ========');
+			apLog.channel.appendLine(`[BUILD] Task: ${this.definition.configName}`);
+			apLog.channel.appendLine(`[BUILD] Command: ${taskCommand}`);
+			apLog.channel.appendLine(`[BUILD] Working Directory: ${workspaceRoot ?? process.cwd()}`);
+			apLog.channel.appendLine('[BUILD] ================================');
+
+			// Enhanced environment for better terminal behavior
+			const terminalEnv = {
+				...baseEnv,
+				TERM: 'xterm-256color',
+				FORCE_COLOR: '1',
+				COLORTERM: 'truecolor',
+				COLUMNS: '120',
+				LINES: '30',
+				// Additional environment variables to ensure color output
+				// Additional environment variables to ensure color output
+				NO_COLOR: undefined,
+				CLICOLOR_FORCE: '1'
+			};
+
+			// Use spawn with shell and inherit stdio for proper terminal behavior
+			this.childProcess = cp.spawn(taskCommand, [], {
+				cwd: workspaceRoot,
+				env: terminalEnv,
+				shell: true,
+				stdio: ['pipe', 'pipe', 'pipe'],
+				// Enable proper terminal behavior
+				detached: false
+			});
+		} catch (error) {
+			const errorMsg = `Failed to start build: ${error instanceof Error ? error.message : String(error)}`;
+			APBuildPseudoterminal.log.log(errorMsg);
+			this.writeEmitter.fire(errorMsg + '\r\n');
+			if (!this.commandFinished) {
+				this.handleBuildCompletion({ exitCode: 1 });
+			}
+			return;
+		}
 
 		if (!this.childProcess) {
 			this.writeEmitter.fire('Error: Failed to spawn build process\r\n');
@@ -710,39 +740,19 @@ export class APTaskProvider implements vscode.TaskProvider {
 			// Use configName for task label
 			const task_name = definition.configName;
 
-			// Prepare environment variables - with or without CC/CXX paths
-			const env = await this.prepareEnvironmentVariables(definition);
-
-			// Generate commands using shared method or use custom commands
-			let taskCommand: string;
-
-			if (definition.overrideEnabled && definition.customConfigureCommand && definition.customBuildCommand) {
-				// For override mode, use custom commands and a generic build directory
-				taskCommand = `${definition.customConfigureCommand} && ${definition.customBuildCommand}`;
-			} else {
-				// For standard mode, use generated commands and board-specific build directory
+			if (!definition.overrideEnabled) {
 				if (!definition.configure || !definition.target) {
 					APTaskProvider.log.log('Missing configure or target for non-override task');
 					createdTask = undefined;
 					return;
 				}
-
+				// Set cheap defaults used elsewhere
 				if (definition.waffile === undefined) {
-					// use the waf file from the workspace
 					definition.waffile = workspaceRoot.uri.fsPath + '/waf';
 				}
 				if (definition.nm === undefined) {
 					definition.nm = 'arm-none-eabi-nm';
 				}
-
-				const commands = await this.generateBuildCommands(
-					definition.configure,
-					definition.target,
-					definition.configureOptions || '',
-					definition.buildOptions || '',
-					workspaceRoot.uri.fsPath
-				);
-				taskCommand = commands.taskCommand;
 			}
 
 			createdTask = new vscode.Task(
@@ -751,9 +761,7 @@ export class APTaskProvider implements vscode.TaskProvider {
 				task_name,
 				'ardupilot',
 				new APCustomExecution(
-					definition,
-					taskCommand,
-					env
+					definition
 				),
 				'$apgcc'
 			);
