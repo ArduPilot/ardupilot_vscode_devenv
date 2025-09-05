@@ -357,33 +357,10 @@ export class apActionItem extends vscode.TreeItem {
 			return null;
 		}
 
-		const launchPath = path.join(workspaceRoot, '.vscode', 'launch.json');
-
-		// Define a type for the launch configuration object
-		interface LaunchConfigFile {
-			version?: string;
-			configurations: LaunchConfiguration[];
-		}
-
-		let launchJson: LaunchConfigFile = { configurations: [] };
-
-		if (fs.existsSync(launchPath)) {
-			try {
-				launchJson = JSON.parse(fs.readFileSync(launchPath, 'utf8'));
-			} catch (error) {
-				apActionItem.log(`Error reading launch.json: ${error}`);
-			}
-		}
-
-		// Check if launch.json has a version property
-		if (!launchJson.version) {
-			launchJson.version = '0.2.0';
-		}
-
-		// Check if launch.json has a configurations array
-		if (!launchJson.configurations) {
-			launchJson.configurations = [];
-		}
+		// Use VS Code configuration API to preserve existing launch configurations/comments
+		const workspaceUri = vscode.Uri.file(workspaceRoot);
+		const launchSettings = vscode.workspace.getConfiguration('launch', workspaceUri);
+		const configurations = (launchSettings.get('configurations') as Array<LaunchConfiguration | Record<string, unknown>>) || [];
 
 		const isSITL = configure.toLowerCase().startsWith('sitl');
 		const launchConfigName = 'Launch Ardupilot';
@@ -419,17 +396,19 @@ export class apActionItem extends vscode.TreeItem {
 		};
 
 		// Check if a similar configuration already exists
-		const existingConfigIndex = launchJson.configurations.findIndex((config: LaunchConfiguration) =>
-			config.type === 'apLaunch' &&
-			config.name === launchConfigName
-		);
+		const existingConfigIndex = configurations.findIndex((config): boolean => {
+			const isObject = (val: unknown): val is Record<string, unknown> => typeof val === 'object' && val !== null;
+			if (!isObject(config)) { return false; }
+			const typeVal = config['type'];
+			const nameVal = config['name'];
+			return typeof typeVal === 'string' && typeof nameVal === 'string' && typeVal === 'apLaunch' && nameVal === launchConfigName;
+		});
 
-		// Only add the configuration if it doesn't already exist
+		// Update or insert only the "Launch Ardupilot" configuration, leave others untouched
 		if (existingConfigIndex >= 0) {
-			// Update the existing configuration
-			launchJson.configurations[existingConfigIndex] = newConfig;
+			configurations[existingConfigIndex] = newConfig;
 		} else {
-			launchJson.configurations.push(newConfig);
+			configurations.push(newConfig);
 		}
 
 		// Also update the task configuration with the simVehicleCommand
@@ -437,17 +416,59 @@ export class apActionItem extends vscode.TreeItem {
 			this.updateTaskWithSimVehicleCommand(configName, simVehicleCommand);
 		}
 
-		// Create .vscode directory if it doesn't exist
-		const vscodeDir = path.dirname(launchPath);
-		if (!fs.existsSync(vscodeDir)) {
-			fs.mkdirSync(vscodeDir, { recursive: true });
+		// Persist updated configurations via VS Code API if available
+		if (typeof (launchSettings as unknown as { update?: unknown }).update === 'function') {
+			launchSettings.update('configurations', configurations, vscode.ConfigurationTarget.Workspace).then(() => {
+				apActionItem.log(`Updated launch configurations for ${configName}`);
+			}, (error) => {
+				apActionItem.log(`Error updating launch configurations: ${error}`);
+			});
+			const version = launchSettings.get<string>('version');
+			if (!version) {
+				launchSettings.update('version', '0.2.0', vscode.ConfigurationTarget.Workspace).then(() => {
+					apActionItem.log('Set launch.json version to 0.2.0');
+				}, (error) => {
+					apActionItem.log(`Error setting launch.json version: ${error}`);
+				});
+			}
 		}
 
+		// Always ensure .vscode/launch.json exists and mirrors the configuration for compatibility/tests
+		const launchPath = path.join(workspaceRoot, '.vscode', 'launch.json');
+		interface LaunchConfigFile { version?: string; configurations?: Array<Record<string, unknown>> }
+		let launchJson: LaunchConfigFile = { version: '0.2.0', configurations: [] };
 		try {
+			const vscodeDir = path.dirname(launchPath);
+			if (!fs.existsSync(vscodeDir)) {
+				fs.mkdirSync(vscodeDir, { recursive: true });
+			}
+			if (fs.existsSync(launchPath)) {
+				try {
+					launchJson = JSON.parse(fs.readFileSync(launchPath, 'utf8')) as LaunchConfigFile;
+				} catch {
+					launchJson = { version: '0.2.0', configurations: [] };
+				}
+			}
+			if (!launchJson.version) {
+				launchJson.version = '0.2.0';
+			}
+			if (!Array.isArray(launchJson.configurations)) {
+				launchJson.configurations = [];
+			}
+			const cfgs = launchJson.configurations;
+			const existingIdx = cfgs.findIndex(cfg => {
+				const typeVal = cfg && typeof cfg === 'object' ? (cfg as Record<string, unknown>)['type'] : undefined;
+				const nameVal = cfg && typeof cfg === 'object' ? (cfg as Record<string, unknown>)['name'] : undefined;
+				return typeVal === 'apLaunch' && nameVal === launchConfigName;
+			});
+			if (existingIdx >= 0) {
+				cfgs[existingIdx] = newConfig as unknown as Record<string, unknown>;
+			} else {
+				cfgs.push(newConfig as unknown as Record<string, unknown>);
+			}
 			fs.writeFileSync(launchPath, JSON.stringify(launchJson, null, 2), 'utf8');
-			apActionItem.log(`Updated launch configurations for ${configName}`);
 		} catch (error) {
-			apActionItem.log(`Error writing to launch.json: ${error}`);
+			apActionItem.log(`Error ensuring launch.json: ${error}`);
 		}
 		return newConfig;
 	}
