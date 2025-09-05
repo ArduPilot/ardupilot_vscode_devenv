@@ -1159,10 +1159,9 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 		const openOCDPath = openOCD.path;
 		if (ProgramUtils.isWSL()) {
 			// convert to using wsl path by appending \\wsl.localhost\Ubuntu
-			const wslDistro = ProgramUtils.wslDistro();
-			openOCDHelperPath = `\\\\\\\\wsl.localhost\\${wslDistro}${openOCDHelperPath.replace(/\//g, '\\')}`;
-			openocdScriptPath = `\\\\\\\\wsl.localhost\\${wslDistro}${openocdScriptPath.replace(/\//g, '\\')}`;
-
+			const wslDistroPath = ProgramUtils.wslDistroPath();
+			openOCDHelperPath = `${wslDistroPath}${openOCDHelperPath.replace(/\//g, '\\')}`;
+			openocdScriptPath = `${wslDistroPath}${openocdScriptPath.replace(/\//g, '\\')}`;
 		}
 
 		APLaunchConfigurationProvider.log.log(`HARDWARE_DEBUG: Starting debug session for ${config.board}`);
@@ -1259,7 +1258,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 		if (fs.existsSync(pluginPath)) {
 			APLaunchConfigurationProvider.log.log(`RTOS_PLUGIN: Found plugin for ${platform}: ${pluginPath}`);
 			if (ProgramUtils.isWSL()) {
-				pluginPath = `\\\\\\\\wsl.localhost\\${ProgramUtils.wslDistro()}${pluginPath.replace(/\//g, '\\')}`;
+				pluginPath = `${ProgramUtils.wslDistroPath()}${pluginPath.replace(/\//g, '\\')}`;
 			}
 			return pluginPath;
 		} else {

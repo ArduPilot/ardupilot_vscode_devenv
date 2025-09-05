@@ -390,24 +390,21 @@ export class ProgramUtils {
 	}
 
 	/**
-	 * Gets the WSL distribution name
-	 * @returns The WSL distribution name, or 'Ubuntu' if not in WSL
-	 */
-	public static wslDistro(): string {
+     * Gets the WSL distribution name
+     * @returns The WSL distribution name, or 'Ubuntu' if not in WSL
+     */
+	public static wslDistroPath(): string {
 		// Get the WSL distribution name
 		try {
-			const osRelease = child_process.spawnSync('cat', ['/etc/os-release'], { stdio: 'pipe' });
-			if (osRelease.status === 0) {
-				const output = osRelease.stdout.toString();
-				const nameMatch = output.match(/^NAME="?([^"\n]+)"?/m);
-				const distroName = nameMatch ? nameMatch[1] : 'Ubuntu';
-				ProgramUtils.log.log(`WSL distribution from /etc/os-release: ${distroName}`);
-				return distroName;
+			const osLocation = child_process.execSync('cd / && pwd.exe');
+			if (osLocation) {
+				const distroPath = osLocation.toString().replace(/(\r|\n)/g,'');
+				return distroPath;
 			}
 		} catch (error) {
 			ProgramUtils.log.log(`Error reading /etc/os-release: ${error}`);
 		}
-		return 'Ubuntu';
+		return '//wsl.localhost/Ubuntu';
 	}
 
 	/**
