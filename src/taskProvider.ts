@@ -740,7 +740,15 @@ export class APTaskProvider implements vscode.TaskProvider {
 			// Use configName for task label
 			const task_name = definition.configName;
 
-			if (!definition.overrideEnabled) {
+			if (definition.overrideEnabled) {
+				// Validate that custom commands are provided for override mode
+				if (!definition.customConfigureCommand || !definition.customConfigureCommand.trim() ||
+					!definition.customBuildCommand || !definition.customBuildCommand.trim()) {
+					APTaskProvider.log.log('Missing custom commands for override-enabled task');
+					createdTask = undefined;
+					return;
+				}
+			} else {
 				if (!definition.configure || !definition.target) {
 					APTaskProvider.log.log('Missing configure or target for non-override task');
 					createdTask = undefined;
