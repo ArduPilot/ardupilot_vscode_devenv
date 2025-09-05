@@ -623,6 +623,36 @@ suite('apActions Test Suite', () => {
 			});
 
 			test('should perform upload action for hardware', async () => {
+				// Arrange: stub fetchTasks to provide an upload task matching the active configuration
+				const uploadTask: vscode.Task = {
+					definition: { type: 'ardupilot' } as ArdupilotTaskDefinition,
+					scope: vscode.TaskScope.Workspace,
+					name: 'Hardware Task-upload',
+					source: 'ardupilot',
+					execution: undefined,
+					problemMatchers: [],
+					isBackground: false,
+					presentationOptions: {},
+					group: undefined,
+					detail: undefined,
+					runOptions: {}
+				};
+
+				sandbox.stub(vscode.tasks, 'fetchTasks').resolves([uploadTask]);
+				// Re-set active configuration to trigger activeUploadTask discovery
+				setActiveConfiguration(mockHardwareTask);
+				// Allow microtasks to complete
+				await new Promise(resolve => setTimeout(resolve, 10));
+
+				// Stub executeTask to assert the upload task is invoked
+				let taskExecuted = false;
+				let executedTask: vscode.Task | undefined;
+				sandbox.stub(vscode.tasks, 'executeTask').callsFake(async (task: vscode.Task) => {
+					taskExecuted = true;
+					executedTask = task;
+					return mockTaskExecution;
+				});
+
 				const actionItem = new apActionItem(
 					actionsProvider,
 					'Upload to Board',
@@ -631,19 +661,9 @@ suite('apActions Test Suite', () => {
 					'Upload to CubeOrange'
 				);
 
-				// Mock vscode.debug.startDebugging using sandbox
-				let debugStarted = false;
-				let debugConfig: any;
-				sandbox.stub(vscode.debug, 'startDebugging').callsFake(async (folder: any, config: any) => {
-					debugStarted = true;
-					debugConfig = config;
-					return true;
-				});
-
 				actionItem.performAction();
-				assert.strictEqual(debugStarted, true);
-				assert.ok(activeLaunchConfig);
-				assert.strictEqual(debugConfig, activeLaunchConfig);
+				assert.strictEqual(taskExecuted, true);
+				assert.strictEqual(executedTask, uploadTask);
 			});
 
 			test('should not allow run action for hardware configuration', async () => {
