@@ -123,14 +123,6 @@ export class apBuildConfig extends vscode.TreeItem {
 	delete(): void {
 		// delete the folder
 		apBuildConfig.log(`delete ${this.label}`);
-		const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-		try {
-			fs.rmSync(workspaceRoot + '/build/' + this.label, { recursive: true });
-			// also remove c4che/{board}_cache.py
-			fs.unlinkSync(workspaceRoot + '/build/c4che/' + this.label + '_cache.py');
-		} catch (err) {
-			apBuildConfig.log(`Error deleting build folder: ${err}`);
-		}
 		vscode.commands.executeCommand('apBuildConfig.refreshEntry');
 		// also delete the task from tasks.json using configName
 		if (this.task && this.task.definition) {

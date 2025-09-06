@@ -801,13 +801,27 @@ export class APTaskProvider implements vscode.TaskProvider {
 		}
 
 		// Filter out the task with the matching configName
-		const newTasks = tasks.filter((task: ArdupilotTaskDefinition) => task.configName !== taskName);
+		// If it's a base task (not already an -upload task), also remove its corresponding -upload task
+		const uploadTaskName = taskName.endsWith('-upload') ? undefined : `${taskName}-upload`;
+		const newTasks = tasks.filter((task: ArdupilotTaskDefinition) => {
+			if (task.configName === taskName) {
+				return false;
+			}
+			if (uploadTaskName && task.configName === uploadTaskName) {
+				return false;
+			}
+			return true;
+		});
 
 		// Only update if we actually removed a task
 		if (newTasks.length !== tasks.length) {
 			// Update the tasks configuration
 			tasksConfig.update('tasks', newTasks, vscode.ConfigurationTarget.Workspace).then(() => {
-				APTaskProvider.log.log(`Removed task for ${taskName} from tasks.json`);
+				if (uploadTaskName && tasks.some(t => t.configName === uploadTaskName)) {
+					APTaskProvider.log.log(`Removed task for ${taskName} and its upload task ${uploadTaskName} from tasks.json`);
+				} else {
+					APTaskProvider.log.log(`Removed task for ${taskName} from tasks.json`);
+				}
 			}, (error) => {
 				APTaskProvider.log.log(`Error removing task from tasks.json: ${error}`);
 				vscode.window.showErrorMessage(`Failed to remove task from tasks.json: ${error}`);

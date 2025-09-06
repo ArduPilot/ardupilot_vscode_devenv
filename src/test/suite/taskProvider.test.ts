@@ -468,6 +468,39 @@ suite('APTaskProvider Test Suite', () => {
 			assert.strictEqual(updatedTasks[0].configName, 'CubeOrange-plane');
 		});
 
+		test('should also remove corresponding -upload task when deleting base task', () => {
+			// Arrange: include a base hardware task and its upload task
+			mockTasks.length = 0;
+			mockTasks.push(
+				{
+					type: 'ardupilot',
+					configure: 'CubeOrange',
+					target: 'plane',
+					configName: 'CubeOrange-plane',
+					configureOptions: '',
+					buildOptions: ''
+				},
+				{
+					type: 'ardupilot',
+					configure: 'CubeOrange',
+					target: 'plane',
+					configName: 'CubeOrange-plane-upload',
+					configureOptions: '',
+					buildOptions: '--upload'
+				}
+			);
+
+			APTaskProvider.delete('CubeOrange-plane');
+
+			assert.ok(mockConfiguration.update.called);
+			const updateCall = mockConfiguration.update.getCall(0);
+			assert.strictEqual(updateCall.args[0], 'tasks');
+			const updatedTasks = updateCall.args[1] as ArdupilotTaskDefinition[];
+			// Both base and upload tasks should be removed
+			assert.strictEqual(updatedTasks.find(t => t.configName === 'CubeOrange-plane'), undefined);
+			assert.strictEqual(updatedTasks.find(t => t.configName === 'CubeOrange-plane-upload'), undefined);
+		});
+
 		test('should handle non-existent task deletion gracefully', () => {
 			APTaskProvider.delete('nonexistent-config');
 
