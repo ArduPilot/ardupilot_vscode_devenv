@@ -58,8 +58,49 @@ jobs:
         id: bump
         shell: bash
         run: |
-          npm version ${{ inputs.release_type }} -m "release: v%s"
-          NEW_VERSION=$(node -p "require('./package.json').version")
+          # Get current version to calculate new version with even minor
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+          # Calculate new version based on release type, ensuring minor is always even
+          case "${{ inputs.release_type }}" in
+            "major")
+              NEW_MAJOR=$((MAJOR + 1))
+              NEW_MINOR=0
+              NEW_PATCH=0
+              ;;
+            "minor")
+              NEW_MAJOR=$MAJOR
+              NEW_MINOR=$((MINOR + 1))
+              # If new minor is odd, make it even
+              if [ $((NEW_MINOR % 2)) -ne 0 ]; then
+                NEW_MINOR=$((NEW_MINOR + 1))
+              fi
+              NEW_PATCH=0
+              ;;
+            "patch")
+              NEW_MAJOR=$MAJOR
+              NEW_MINOR=$MINOR
+              # If current minor is odd, make it even and reset patch
+              if [ $((NEW_MINOR % 2)) -ne 0 ]; then
+                NEW_MINOR=$((NEW_MINOR + 1))
+                NEW_PATCH=0
+              else
+                NEW_PATCH=$((PATCH + 1))
+              fi
+              ;;
+          esac
+
+          NEW_VERSION="$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH"
+          
+          # Set the version and create tag in one commit
+          npm version --no-git-tag-version $NEW_VERSION
+          git add package.json
+          git commit -m "release: v$NEW_VERSION"
+          git tag "v$NEW_VERSION"
+
           NEW_TAG=$(git describe --tags --abbrev=0)
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
