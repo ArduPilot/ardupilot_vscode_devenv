@@ -442,7 +442,7 @@ export class ProgramUtils {
 	private static async findCommandPath(command: string): Promise<string | undefined> {
 		try {
 			// Source rc file first to load environment, then run which/where
-			const commandToRun = `exec ${process.env.SHELL || 'bash'} -l -c "which ${command}"`;
+			const commandToRun = `exec ${process.env.SHELL || 'bash'} -c "which ${command}"`;
 
 			const result = child_process.spawnSync(commandToRun, { stdio: 'pipe', shell: true });
 			if (result.status === 0) {
