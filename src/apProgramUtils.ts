@@ -71,39 +71,131 @@ export class ProgramUtils {
 			return undefined;
 		}
 
-		for (const toolPath of paths) {
-			if (toolPath) {
-				// Check if the path is a wildcard
-				if (toolPath.includes('*')) {
-					// Expand the wildcard using glob
-					const expandedPaths = glob.sync(toolPath);
-					if (expandedPaths.length > 0) {
-						return expandedPaths[0]; // Return the first matching path
+		let toolPath: string | undefined;
+
+		for (const entry of paths) {
+			if (!entry) {
+				continue;
+			}
+			// Expand wildcards first
+			if (entry.includes('*') || entry.includes('?')) {
+				const expandedPaths = glob.sync(entry);
+				if (expandedPaths.length > 0) {
+					toolPath = expandedPaths[0];
+					break;
+				}
+			} else if (fs.existsSync(entry)) {
+				toolPath = entry;
+				break;
+			} else if (!entry.includes('/')) {
+				// use which or where to find the tool
+				try {
+					const found = await this.findCommandPath(entry);
+					if (found) {
+						toolPath = found;
+						break;
 					}
-				} else if (toolPath.includes('?')) {
-					// Expand the wildcard using glob
-					const expandedPaths = glob.sync(toolPath);
-					if (expandedPaths.length > 0) {
-						return expandedPaths[0]; // Return the first matching path
-					}
-				} else if (fs.existsSync(toolPath)) {
-					// Check if the path exists
-					return toolPath;
-				} else if (!toolPath.includes('/')) {
-					// use which or where to find the tool
-					try {
-						const found = await this.findCommandPath(toolPath);
-						if (found) {
-							return found;
-						}
-					} catch (error) {
-						// Ignore errors, continue searching
-						ProgramUtils.log.log(`Error finding tool ${toolPath}: ${error}`);
-					}
+				} catch (error) {
+					// Ignore errors, continue searching
+					ProgramUtils.log.log(`Error finding tool ${entry}: ${error}`);
 				}
 			}
 		}
-		return undefined;
+
+		if (!toolPath) {
+			return undefined;
+		}
+
+		// Resolve ccache wrapper only once on the final selected path
+		return this.resolveCompilerIfCcache(toolPath, toolInfo);
+	}
+
+	/**
+	 * If the resolved path is a ccache wrapper for compilers, try to find the underlying real compiler in PATH.
+	 * Applies only to GCC/G++/ARM_GCC tool kinds. Otherwise returns the original path.
+	 */
+	private static resolveCompilerIfCcache(resolvedPath: string, toolInfo: apToolsConfig.ToolInfo): string | undefined {
+		try {
+			const toolId = (toolInfo.id || '').toString();
+			const applies = toolId === 'GCC' || toolId === 'GPP' || toolId === 'ARM_GCC';
+			if (!applies || !resolvedPath) {
+				return resolvedPath;
+			}
+
+			const realResolved = fs.realpathSync.native(resolvedPath);
+			if (!this.isCcachePath(realResolved) && !this.isCcachePath(resolvedPath)) {
+				return resolvedPath; // not a ccache wrapper
+			}
+
+			// Determine the compiler executable name we are looking for
+			let compilerName = path.basename(resolvedPath);
+			if (toolId === 'ARM_GCC') {
+				compilerName = 'arm-none-eabi-gcc';
+			} else if (toolId === 'GCC') {
+				compilerName = 'gcc';
+			} else if (toolId === 'GPP') {
+				compilerName = 'g++';
+			}
+
+			// Prefer CCACHE_PATH if set (matches ccache behavior), otherwise fall back to PATH
+			const loginCcachePath = this.getLoginShellEnvVar('CCACHE_PATH') || process.env.CCACHE_PATH;
+			const searchPath = (loginCcachePath && loginCcachePath.length > 0)
+				? loginCcachePath
+				: (this.getLoginShellEnvVar('PATH') || process.env.PATH || '');
+			const candidates = searchPath.split(':').filter(Boolean);
+			for (const dir of candidates) {
+				// Skip known ccache directories
+				if (this.isCcacheDir(dir)) {
+					continue;
+				}
+				const candidate = path.join(dir, compilerName);
+				if (fs.existsSync(candidate)) {
+					try {
+						const realCandidate = fs.realpathSync.native(candidate);
+						if (!this.isCcachePath(realCandidate)) {
+							this.log.log(`Resolved ${compilerName} behind ccache: ${resolvedPath} -> ${realCandidate}`);
+							return realCandidate;
+						}
+					} catch {
+						// ignore and continue
+					}
+				}
+			}
+
+			// Fallback to original path if nothing better found
+			return resolvedPath;
+		} catch {
+			return resolvedPath;
+		}
+	}
+
+	/** Checks whether a path refers to a ccache binary or wrapper */
+	private static isCcachePath(p: string): boolean {
+		const lower = p.toLowerCase();
+		return lower.includes('ccache');
+	}
+
+	/** Checks whether a directory is a known ccache wrapper directory */
+	private static isCcacheDir(dir: string): boolean {
+		const lower = dir.toLowerCase();
+		if (lower.includes('ccache')) {
+			return true;
+		}
+		return false;
+	}
+
+	/** Get an environment variable value from a login shell */
+	private static getLoginShellEnvVar(varName: string): string | undefined {
+		try {
+			const shell = process.env.SHELL || 'bash';
+			const out = child_process.spawnSync(`exec ${shell} -c "printenv ${varName}"`, { stdio: 'pipe', shell: true });
+			if (out.status === 0) {
+				return out.stdout.toString().trim();
+			}
+			return undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	public static async PYTHON() : Promise<string> {
