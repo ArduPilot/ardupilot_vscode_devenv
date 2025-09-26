@@ -153,6 +153,16 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 	vscode.commands.registerCommand('connected-devices.disconnectMAVProxy',
 		(device) => apExtensionContext.connectedDevicesProvider?.disconnectDevice(device));
 
+	// Register Force Update Submodules command
+	vscode.commands.registerCommand('ardupilot.forceUpdateSubmodules', () => {
+		const forceUpdateItem = apExtensionContext.apWelcomeProviderInstance?.getForceUpdateSubmodules();
+		if (forceUpdateItem) {
+			forceUpdateItem.showProgress();
+		} else {
+			vscode.window.showErrorMessage('Force Update Submodules feature is not available.');
+		}
+	});
+
 	resolveActive(true);
 	return apExtensionContext;
 }
