@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ValidateEnvironment } from './apEnvironmentValidator';
 import { CloneArdupilot } from './apCloneArdupilot';
+import { ForceUpdateSubmodules } from './apForceUpdateSubmodules';
 import { apLog } from './apLog';
 import { apWelcomeItem } from './apWelcomeItem';
 
@@ -14,7 +15,8 @@ export class apWelcomeProvider implements vscode.TreeDataProvider<apWelcomeItem>
 		this.log.log('apWelcomeProvider constructor');
 		this.apWelcomeItems = [
 			new CloneArdupilot('Clone Ardupilot', vscode.TreeItemCollapsibleState.None),
-			new ValidateEnvironment('Validate Environment', vscode.TreeItemCollapsibleState.None)
+			new ValidateEnvironment('Validate Environment', vscode.TreeItemCollapsibleState.None),
+			new ForceUpdateSubmodules('Force Update Submodules', vscode.TreeItemCollapsibleState.None)
 		];
 	}
 
@@ -29,5 +31,12 @@ export class apWelcomeProvider implements vscode.TreeDataProvider<apWelcomeItem>
 	getChildren(): Thenable<apWelcomeItem[]> {
 		// Return both Clone Ardupilot and Validate Environment items
 		return Promise.resolve(this.apWelcomeItems);
+	}
+
+	/**
+	 * Get the ForceUpdateSubmodules instance for command execution
+	 */
+	getForceUpdateSubmodules(): ForceUpdateSubmodules | undefined {
+		return this.apWelcomeItems.find(item => item instanceof ForceUpdateSubmodules) as ForceUpdateSubmodules;
 	}
 }

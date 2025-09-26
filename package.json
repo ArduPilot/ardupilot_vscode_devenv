@@ -296,6 +296,11 @@
         "command": "apActions.distclean",
         "title": "Distclean Build Artifacts",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "ardupilot.forceUpdateSubmodules",
+        "title": "Force Update Submodules",
+        "icon": "$(sync)"
       }
     ],
     "menus": {
