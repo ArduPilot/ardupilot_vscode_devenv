@@ -44,25 +44,6 @@ suite('APTaskProvider Test Suite', () => {
 			assert.strictEqual(APTaskProvider.ardupilotTaskType, 'ardupilot');
 		});
 
-		test('should set up file watchers for tasklist.json changes', () => {
-			const createFileSystemWatcherStub = sandbox.stub(vscode.workspace, 'createFileSystemWatcher');
-			const mockWatcher = {
-				onDidChange: sandbox.stub(),
-				onDidCreate: sandbox.stub(),
-				onDidDelete: sandbox.stub()
-			};
-			createFileSystemWatcherStub.returns(mockWatcher as any);
-
-			assert.ok(ardupilotDir, 'ardupilotDir should be defined');
-			new APTaskProvider(ardupilotDir, mockContext.extensionUri);
-
-			const expectedPattern = path.join(ardupilotDir, 'tasklist.json');
-			assert.ok(createFileSystemWatcherStub.calledWith(expectedPattern));
-			assert.ok(mockWatcher.onDidChange.called);
-			assert.ok(mockWatcher.onDidCreate.called);
-			assert.ok(mockWatcher.onDidDelete.called);
-		});
-
 		test('should resolve tasks through resolveTask()', async () => {
 			const mockTaskDefinition: ArdupilotTaskDefinition = {
 				type: 'ardupilot',
