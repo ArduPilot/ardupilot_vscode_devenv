@@ -23,6 +23,7 @@ import { ProgramUtils } from './apProgramUtils';
 import { TOOLS_REGISTRY } from './apToolsConfig';
 import { isVehicleTarget } from './apCommonUtils';
 import { setCleanTask, setDistCleanTask } from './apActions';
+import { analyzeBuildOutputLine } from './lib/buildProgressParser';
 
 /**
  * Custom execution class for ArduPilot build tasks
@@ -54,6 +55,16 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 	private static log = new apLog('APBuildPseudoterminal');
 	private childProcess: cp.ChildProcess | null = null;
 	private commandFinished = false;
+	private progressStarted = false;
+	private resolveProgress: (() => void) | null = null;
+	private reportProgress: ((message: string, percent?: number) => void) | null = null;
+	private lastReportedPercent = 0;
+	private focusActionShown = false;
+	private successDetected = false;
+	private failureDetected = false;
+	private statusBarItem: vscode.StatusBarItem | null = null;
+	private focusCommandDisposable: vscode.Disposable | null = null;
+	private focusCommandId: string | null = null;
 
 	onDidWrite: vscode.Event<string> = this.writeEmitter.event;
 	onDidClose: vscode.Event<number> = this.closeEmitter.event;
@@ -125,6 +136,130 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 			.replace(/(^|\s+)\.\.\/\.\.\//gm, '$1');
 	}
 
+	private startProgressNotification(): void {
+		if (this.progressStarted) {
+			return;
+		}
+		this.progressStarted = true;
+		const title = `Building: ${this.definition.configName}`;
+		vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress, token) => {
+			// Cancel stops the build
+			token.onCancellationRequested(() => {
+				// Stop the build and close the pseudo terminal with non-zero exit
+				this.cancelBuildFromNotification();
+				if (!this.commandFinished) {
+					this.handleBuildCompletion({ exitCode: 130 });
+				}
+			});
+
+			this.reportProgress = (message: string, percent?: number) => {
+				if (typeof percent === 'number') {
+					const clamped = Math.max(0, Math.min(100, percent));
+					const delta = clamped - this.lastReportedPercent;
+					this.lastReportedPercent = clamped;
+					progress.report({ message, increment: delta });
+				} else {
+					progress.report({ message });
+				}
+			};
+
+			// Create a temporary Status Bar button to focus build output
+			this.createFocusStatusBar();
+
+			// Also show a one-time information message with a Focus action
+			if (!this.focusActionShown) {
+				this.focusActionShown = true;
+				void vscode.window.showInformationMessage('ArduPilot build started', 'Focus build output').then(selection => {
+					if (selection === 'Focus build output') {
+						this.focusBuildTerminal();
+					}
+				});
+			}
+
+			await new Promise<void>((resolve) => { this.resolveProgress = resolve; });
+			this.reportProgress = null;
+		});
+	}
+
+	private focusBuildTerminal(): void {
+		const terminals = vscode.window.terminals;
+		let target = terminals.find(t => t.name.includes(this.definition.configName));
+		if (!target) {
+			const prefix: string = (APCustomExecution as { TERMINAL_NAME_PREFIX: string }).TERMINAL_NAME_PREFIX || 'ArduPilot';
+			target = terminals.find(t => t.name.includes(prefix));
+		}
+		(target ?? terminals[0])?.show();
+	}
+
+	private createFocusStatusBar(): void {
+		if (this.statusBarItem) {
+			return;
+		}
+		this.focusCommandId = `ardupilot.focusBuildOutput.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+		this.focusCommandDisposable = vscode.commands.registerCommand(this.focusCommandId, () => {
+			this.focusBuildTerminal();
+		});
+		this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+		this.statusBarItem.text = '$(terminal) Focus Build Output';
+		this.statusBarItem.tooltip = 'Show the running build terminal';
+		this.statusBarItem.command = this.focusCommandId;
+		this.statusBarItem.show();
+	}
+
+	private cancelBuildFromNotification(): void {
+		if (this.childProcess && !this.childProcess.killed) {
+			this.childProcess.kill('SIGINT');
+			setTimeout(() => {
+				if (this.childProcess && !this.childProcess.killed) {
+					this.childProcess.kill('SIGTERM');
+				}
+			}, 2000);
+		}
+	}
+
+	private finalizeProgress(success: boolean): void {
+		if (!this.progressStarted) {
+			return;
+		}
+		const finalMsg = success ? 'Build finished successfully' : 'Build failed';
+		// Always report final percent explicitly (may go down or up)
+		this.reportProgress?.(finalMsg, success ? 100 : this.lastReportedPercent);
+		const resolve = this.resolveProgress;
+		this.resolveProgress = null;
+		if (resolve) {
+			resolve();
+		}
+		this.progressStarted = false;
+		this.lastReportedPercent = 0;
+		// Dispose focus UI
+		if (this.statusBarItem) {
+			this.statusBarItem.dispose();
+			this.statusBarItem = null;
+		}
+		if (this.focusCommandDisposable) {
+			this.focusCommandDisposable.dispose();
+			this.focusCommandDisposable = null;
+		}
+		this.focusCommandId = null;
+	}
+
+	private updateProgressFromLine(line: string): void {
+		const res = analyzeBuildOutputLine(line);
+		if (res.progress) {
+			const message = `[${res.progress.currentStep}/${res.progress.totalSteps}] ${res.progress.stepText ?? ''}`;
+			this.startProgressNotification();
+			this.reportProgress?.(message, res.progress.percentComplete);
+		}
+		if (res.isSuccess) {
+			this.successDetected = true;
+			this.finalizeProgress(true);
+		}
+		if (res.isFailure) {
+			this.failureDetected = true;
+			this.finalizeProgress(false);
+		}
+	}
+
 	constructor(
 		private definition: ArdupilotTaskDefinition
 	) {}
@@ -170,6 +305,11 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 		apLog.channel.appendLine(`[BUILD] Exit code: ${exitCode}`);
 		apLog.channel.appendLine(`[BUILD] Status: ${buildStatus}`);
 		apLog.channel.appendLine('[BUILD] ===================================');
+
+		// Finalize progress if still active
+		if (this.progressStarted && !this.successDetected && !this.failureDetected) {
+			this.finalizeProgress(exitCode === 0);
+		}
 
 		// Close the pseudoterminal with the exit code
 		this.closeEmitter.fire(exitCode);
@@ -274,6 +414,7 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 			lines.forEach(line => {
 				if (line.trim()) {
 					apLog.channel.appendLine(`[BUILD] ${line.trim()}`);
+					this.updateProgressFromLine(line.trim());
 				}
 			});
 		});
@@ -292,6 +433,7 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 			lines.forEach(line => {
 				if (line.trim()) {
 					apLog.channel.appendLine(`[BUILD] ${line.trim()}`);
+					this.updateProgressFromLine(line.trim());
 				}
 			});
 		});
@@ -323,7 +465,6 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 
 export class APTaskProvider implements vscode.TaskProvider {
 	static ardupilotTaskType = 'ardupilot';
-	private ardupilotPromise: Thenable<vscode.Task[]> | undefined = undefined;
 	private static log = new apLog('apBuildConfigPanel');
 	private static _extensionUri: vscode.Uri;
 	private log = APTaskProvider.log.log;
@@ -433,11 +574,6 @@ export class APTaskProvider implements vscode.TaskProvider {
 	}
 
 	constructor(workspaceRoot: string, extensionUri: vscode.Uri) {
-		const pattern = path.join(workspaceRoot, 'tasklist.json');
-		const fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
-		fileWatcher.onDidChange(() => this.ardupilotPromise = undefined);
-		fileWatcher.onDidCreate(() => this.ardupilotPromise = undefined);
-		fileWatcher.onDidDelete(() => this.ardupilotPromise = undefined);
 		APTaskProvider._extensionUri = extensionUri;
 	}
 
