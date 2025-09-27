@@ -187,4 +187,5 @@ export async function deactivate(): Promise<void> {
 	if (apExtensionContext.connectedDevicesProvider) {
 		apExtensionContext.connectedDevicesProvider.dispose();
 	}
+
 }

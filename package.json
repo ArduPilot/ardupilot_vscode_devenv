@@ -354,6 +354,7 @@
     "prepare": "husky",
     "package": "npm run compile && vsce package --out ardupilot-devenv.vsix",
     "test": "npm run compile && node ./out/test/runTest.js",
+    "test:apBuildProgress": "npm run compile && node ./out/test/runTest.js --test-suite=apBuildProgress",
     "test:machine": "npm run compile && node ./out/test/runTest.js",
     "test:suite": "npm run compile && node scripts/run-test-suite.js",
     "test:apActions": "npm run compile && node ./out/test/runTest.js --test-suite=apActions",
