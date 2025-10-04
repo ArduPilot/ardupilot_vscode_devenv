@@ -272,10 +272,21 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 		const normalizedProcess = normalizeCmd(processCommand);
 		const normalizedExpected = normalizeCmd(expectedCommand);
 
-		// Check if the process command contains the key parts of our expected command
-		// We look for sim_vehicle.py and the main arguments
-		return normalizedProcess.includes('sim_vehicle.py') &&
-			normalizedProcess.includes(normalizedExpected.replace(/^.*sim_vehicle\.py\s+/, ''));
+		// Extract the arguments after sim_vehicle.py from both commands
+		const simVehiclePattern = /sim_vehicle\.py\s+(.+)$/;
+		const processMatch = normalizedProcess.match(simVehiclePattern);
+		const expectedMatch = normalizedExpected.match(simVehiclePattern);
+
+		if (!processMatch || !expectedMatch) {
+			return false;
+		}
+
+		// Compare the full arguments (everything after sim_vehicle.py)
+		const processArgs = processMatch[1].trim();
+		const expectedArgs = expectedMatch[1].trim();
+
+		// Exact match of arguments
+		return processArgs === expectedArgs;
 	}
 
 	/*
@@ -762,15 +773,19 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 					processPickList.push({
 						label: 'Kill all and Start new',
 					} as ProcessQuickPickItem);
+					processPickList.push({
+						label: 'Start new without killing existing',
+					} as ProcessQuickPickItem);
 					const selection = await vscode.window.showQuickPick(
 						processPickList,
-						{ placeHolder: 'Select ArduPilot process to attach', matchOnDescription: true, matchOnDetail: true }
+						{ placeHolder: 'Select ArduPilot process to attach or start new', matchOnDescription: true, matchOnDetail: true }
 					);
 					if (!selection) {
 						return undefined;
 					}
-					const skipAttach = selection.label == 'Kill all and Start new';
-					if (isMacOS && !skipAttach) {
+					const skipAttach = selection.label === 'Kill all and Start new';
+					const startNewWithoutKilling = selection.label === 'Start new without killing existing';
+					if (isMacOS && !skipAttach && !startNewWithoutKilling) {
 						this.attachedDebug = true;
 						const lldbAttachConfig = {
 							type: 'lldb',
@@ -786,7 +801,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 						};
 						APLaunchConfigurationProvider.log.log(`DEBUG: Attaching LLDB to PID ${(selection as ProcessQuickPickItem).pid}`);
 						return lldbAttachConfig;
-					} else if (!skipAttach) {
+					} else if (!skipAttach && !startNewWithoutKilling) {
 						this.attachedDebug = true;
 						const gdb = await ProgramUtils.findProgram(TOOLS_REGISTRY.GDB);
 						if (!gdb.available) {
@@ -811,27 +826,34 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 						return cppAttachConfig;
 					}
 
-					APLaunchConfigurationProvider.log.log('DEBUG: User chose to kill existing ArduPilot process and start new. Attempting graceful shutdown...');
-					for (const existingArduPid of existingArduPidList) {
-						// Try graceful SIGINT first
-						spawnSync('kill', ['-INT', existingArduPid.pid.toString()]);
-						await new Promise(resolve => setTimeout(resolve, 2000));
-						// Recheck if ArduPilot binary is still running
-						const stillRunningList = this.findArduPilotProcessByBinary(binaryPath);
-						if (stillRunningList && existingArduPid.pid in stillRunningList.map(c => c.pid)) {
-							const killChoice = await vscode.window.showWarningMessage(
-								'Graceful shutdown failed. Force kill the existing ArduPilot process?',
-								{ modal: true },
-								'Force Kill',
-								'Cancel'
-							);
-							if (killChoice !== 'Force Kill') {
-								APLaunchConfigurationProvider.log.log('DEBUG: User cancelled after failed graceful shutdown.');
-								return undefined;
+					if (skipAttach) {
+						APLaunchConfigurationProvider.log.log('DEBUG: User chose to kill existing ArduPilot process and start new. Attempting graceful shutdown...');
+					} else if (startNewWithoutKilling) {
+						APLaunchConfigurationProvider.log.log('DEBUG: User chose to start new process without killing existing ones.');
+					}
+
+					if (skipAttach) {
+						for (const existingArduPid of existingArduPidList) {
+							// Try graceful SIGINT first
+							spawnSync('kill', ['-INT', existingArduPid.pid.toString()]);
+							await new Promise(resolve => setTimeout(resolve, 2000));
+							// Recheck if ArduPilot binary is still running
+							const stillRunningList = this.findArduPilotProcessByBinary(binaryPath);
+							if (stillRunningList && existingArduPid.pid in stillRunningList.map(c => c.pid)) {
+								const killChoice = await vscode.window.showWarningMessage(
+									'Graceful shutdown failed. Force kill the existing ArduPilot process?',
+									{ modal: true },
+									'Force Kill',
+									'Cancel'
+								);
+								if (killChoice !== 'Force Kill') {
+									APLaunchConfigurationProvider.log.log('DEBUG: User cancelled after failed graceful shutdown.');
+									return undefined;
+								}
+								spawnSync('kill', ['-9', existingArduPid.toString()]);
+								APLaunchConfigurationProvider.log.log(`DEBUG: Sent SIGKILL to ArduPilot PID ${existingArduPid}`);
+								await new Promise(resolve => setTimeout(resolve, 1000));
 							}
-							spawnSync('kill', ['-9', existingArduPid.toString()]);
-							APLaunchConfigurationProvider.log.log(`DEBUG: Sent SIGKILL to ArduPilot PID ${existingArduPid}`);
-							await new Promise(resolve => setTimeout(resolve, 1000));
 						}
 					}
 				}
