@@ -121,8 +121,12 @@ class APBuildPseudoterminal implements vscode.Pseudoterminal {
 		return text
 			.replace(/\r\n/g, '\n')
 			.replace(/\n/g, '\r\n')
-			// Remove sequences of whitespace followed by "../../" to make paths workspace-root-relative
-			.replace(/(^|\s+)\.\.\/\.\.\//gm, '$1');
+			// Remove "../../" to make paths workspace-root-relative
+			// Strip ANSI codes first, then remove the prefix
+			// eslint-disable-next-line no-control-regex
+			.replace(/\u001b\[[0-9;]*m\.\.\/\.\.\//g, (match) => match.replace(/\.\.\/\.\.\//, ''))
+			// Also handle cases without ANSI codes
+			.replace(/(?<=\s)\.\.\/\.\.\//g, '');
 	}
 
 	constructor(
