@@ -609,17 +609,33 @@ export class apActionItem extends vscode.TreeItem {
 			return;
 		}
 
+		// Prompt user for additional runtime options
+		const extraOptions = await vscode.window.showInputBox({
+			prompt: 'Enter additional SITL options (optional)',
+			placeHolder: 'e.g., -I1',
+			value: '',
+			ignoreFocusOut: true
+		});
+
+		// User cancelled the input dialog
+		if (extraOptions === undefined) {
+			return;
+		}
+
 		// Prepare environment variables using the shared method from APTaskProvider
 		// This will set CC/CXX appropriately based on SITL vs non-SITL builds
 		const terminalEnv = await APTaskProvider.prepareEnvironmentVariables(config);
 
-		// Launch SITL using apTerminalMonitor
-		const sitlMonitor = new apTerminalMonitor('ArduPilot Run SITL');
+		// Launch SITL using apTerminalMonitor with extra options in terminal name
+		const terminalName = extraOptions.trim()
+			? `ArduPilot Run SITL (${extraOptions.trim()})`
+			: 'ArduPilot Run SITL';
+		const sitlMonitor = new apTerminalMonitor(terminalName);
 		await sitlMonitor.createTerminal({ env: terminalEnv });
 		await sitlMonitor.runCommand(`cd ${workspaceRoot}`, { nonblocking: true });
 		const pythonPath = await ProgramUtils.PYTHON();
 
-		let simVehicleCommand = `${pythonPath} ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${config.simVehicleCommand || ''}`;
+		let simVehicleCommand = `${pythonPath} ${simVehiclePath} --no-rebuild -v ${vehicleType} ${additionalArgs} ${config.simVehicleCommand || ''} ${extraOptions}`;
 		if (os.platform() === 'darwin') {
 			simVehicleCommand = `DISPLAY=1 ${simVehicleCommand}`;
 		}
