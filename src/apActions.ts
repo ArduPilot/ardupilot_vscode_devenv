@@ -386,7 +386,7 @@ export class apActionItem extends vscode.TreeItem {
 			preLaunchTask = `${APTaskProvider.ardupilotTaskType}: ${configName}`;
 			apActionItem.log(`SITL target detected: ${target}, using build task as preLaunchTask`);
 		} else {
-			// For non-vehicle targets (AP_Periph, bootloaders, etc.), no preLaunchTask needed
+			// For non-vehicle targets (bootloaders, etc.), no preLaunchTask needed
 			apActionItem.log(`Non-vehicle target detected: ${target}, no preLaunchTask needed`);
 		}
 
