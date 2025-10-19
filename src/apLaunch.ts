@@ -81,12 +81,68 @@ class DebugServerPseudoterminal implements vscode.Pseudoterminal {
 	private outputBuffer: string = '';
 	private waitForTextPromise: Promise<boolean> | undefined;
 	private waitForTextResolve: ((value: boolean) => void) | undefined;
+	private waitingForUserInput: boolean = false;
 
 	onDidWrite: vscode.Event<string> = this.writeEmitter.event;
 	onDidClose?: vscode.Event<number | void> = this.closeEmitter.event;
 
 	constructor(private serverName: string, private command: string, private args: string[], private waitForText?: string) {
 		this.outputBuffer = '';
+	}
+
+	handleInput(data: string): void {
+		// If waiting for user input to close, any key will close the terminal
+		if (this.waitingForUserInput) {
+			this.writeEmitter.fire('\r\nClosing terminal...\r\n');
+			this.closeEmitter.fire(0);
+			return;
+		}
+
+		// Handle Ctrl+C (ETX character) - close immediately
+		if (data === '\x03') {
+			this.writeEmitter.fire('\r\n^C\r\n');
+			this.close();
+			return;
+		}
+
+		// Forward other input to the process stdin if available
+		if (this.process && this.process.stdin && !this.process.killed) {
+			this.process.stdin.write(data);
+		}
+	}
+
+	/*
+	 * Request terminal to close after waiting for user input
+	 * This is called when the debug session ends
+	 */
+	public async requestClose(): Promise<void> {
+		// Progressive kill: SIGTERM -> SIGINT -> SIGKILL with 500ms intervals
+		if (this.process && !this.process.killed) {
+			const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT', 'SIGKILL'];
+			for (const signal of signals) {
+				try {
+					this.process.kill(signal);
+				} catch {
+					// Ignore kill errors
+				}
+
+				// Wait 500ms
+				await new Promise(resolve => setTimeout(resolve, 500));
+
+				// Check if process was killed
+				if (this.process.killed) {
+					break;
+				}
+			}
+		}
+
+		// Set flag and display message asking user to press any key
+		this.waitingForUserInput = true;
+		this.writeEmitter.fire('\r\n');
+		this.writeEmitter.fire('='.repeat(60) + '\r\n');
+		this.writeEmitter.fire(`${this.serverName} terminated.\r\n`);
+		this.writeEmitter.fire('Press any key to close this terminal...\r\n');
+		this.writeEmitter.fire('='.repeat(60) + '\r\n');
 	}
 
 	open(initialDimensions: vscode.TerminalDimensions | undefined): void {
@@ -184,9 +240,16 @@ class DebugServerPseudoterminal implements vscode.Pseudoterminal {
 	}
 
 	close(): void {
-		if (this.process) {
-			this.process.kill('SIGTERM');
+		if (this.process && !this.process.killed) {
+			// Force kill with SIGKILL after a delay if still running
+			setTimeout(() => {
+				if (this.process && !this.process.killed) {
+					this.process.kill('SIGKILL');
+				}
+			}, 2000);
 		}
+		// Fire close event to actually close the terminal
+		this.closeEmitter.fire(0);
 	}
 }
 
@@ -197,6 +260,7 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	private debugSessionTerminal: apTerminalMonitor | undefined;
 	private simVehicleCommand: string | null = null; // The exact sim_vehicle.py command executed
 	private debugServerTerminal: vscode.Terminal | undefined; // For JLink/OpenOCD pseudoterminal
+	private debugServerPty: DebugServerPseudoterminal | undefined; // PTY instance for the debug server
 	private extensionUri: vscode.Uri;
 	private attachedDebug: boolean = false;
 
@@ -546,8 +610,26 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 	private async handleDebugSessionTermination(session: vscode.DebugSession) {
 		if (this.attachedDebug) {
 			// we are attached to the process that's all
+			// Still need to request close for debug server terminal if present
+			if (this.debugServerPty) {
+				APLaunchConfigurationProvider.log.log('DEBUG: Requesting close for debug server terminal after attached debug session');
+				await this.debugServerPty.requestClose();
+				this.debugServerPty = undefined;
+				this.debugServerTerminal = undefined;
+			}
+			this.attachedDebug = false;
 			return;
 		}
+
+		// Handle hardware debugging sessions (cortex-debug)
+		if (session.configuration.type === 'cortex-debug' && this.debugServerPty) {
+			APLaunchConfigurationProvider.log.log('DEBUG: Cortex-debug session terminated, requesting close for debug server terminal');
+			await this.debugServerPty.requestClose();
+			this.debugServerPty = undefined;
+			this.debugServerTerminal = undefined;
+			return;
+		}
+
 		// Only handle termination of our own debug sessions (SITL) - both cppdbg (Linux) and lldb (macOS)
 		if ((session.configuration.type === 'cppdbg' || session.configuration.type === 'lldb') && this.tmuxSessionName && this.debugSessionTerminal) {
 			APLaunchConfigurationProvider.log.log(`DEBUG: Debug session terminated for type '${session.configuration.type}', cleaning up tmux session: ${this.tmuxSessionName}`);
@@ -575,6 +657,14 @@ export class APLaunchConfigurationProvider implements vscode.DebugConfigurationP
 			if (tmux.path) {
 				// Kill the tmux session
 				await APLaunchConfigurationProvider.killSpecificSession(tmux.path, this.tmuxSessionName);
+			}
+
+			// Request close for debug server terminal if present
+			if (this.debugServerPty) {
+				APLaunchConfigurationProvider.log.log('DEBUG: Requesting close for debug server terminal');
+				await this.debugServerPty.requestClose();
+				this.debugServerPty = undefined;
+				this.debugServerTerminal = undefined;
 			}
 
 			// Reset the session tracking variables
@@ -1514,6 +1604,7 @@ except OSError as e:
 
 		// Create new pseudoterminal for the debug server
 		const pty = new DebugServerPseudoterminal(serverName, command, args, waitForText);
+		this.debugServerPty = pty; // Store PTY reference for later cleanup
 		this.debugServerTerminal = vscode.window.createTerminal({ name: serverName, pty });
 
 		// Show the terminal
