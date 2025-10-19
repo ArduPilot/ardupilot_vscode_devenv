@@ -130,7 +130,7 @@ jobs:
               SUITES="apBuildConfig apBuildConfigPanel apToolsConfig taskProvider"
               ;;
             "runner2-actions-execution")
-              SUITES="apActions apLaunch apProgramUtils"
+              SUITES="apActions apLaunch apProgramUtils apBuildProgress"
               ;;
             "runner3-environment-setup")
               SUITES="apCloneArdupilot apEnvironmentValidator apConnectedDevices"
@@ -153,7 +153,7 @@ jobs:
               SUITES="apBuildConfig apBuildConfigPanel apToolsConfig taskProvider"
               ;;
             "runner2-actions-execution")
-              SUITES="apActions apLaunch apProgramUtils"
+              SUITES="apActions apLaunch apProgramUtils apBuildProgress"
               ;;
             "runner3-environment-setup")
               SUITES="apCloneArdupilot apEnvironmentValidator apConnectedDevices"
