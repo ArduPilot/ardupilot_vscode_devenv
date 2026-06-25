@@ -52,13 +52,30 @@ suite('apConnectedDevices Test Suite', () => {
 			assert.strictEqual(typeof provider.onDidChangeTreeData, 'function');
 		});
 
-		test('should start auto-refresh timer on construction', () => {
+		test('should not start auto-refresh timer on construction', () => {
+			// Polling is expensive (spawns ioreg/lsusb), so it must not start until
+			// the view becomes visible via setActive(true).
 			const setTimeoutSpy = sandbox.spy(global, 'setTimeout');
 			const newProvider = new apConnectedDevices();
 
-			assert.ok(setTimeoutSpy.calledOnce);
+			assert.ok(setTimeoutSpy.notCalled, 'auto-refresh timer should not start in constructor');
+
+			newProvider.dispose();
+		});
+
+		test('should start auto-refresh timer when activated', () => {
+			const newProvider = new apConnectedDevices();
+			// Avoid actually enumerating devices during the test.
+			sandbox.stub(newProvider as any, 'getConnectedDevices').resolves([]);
+			const setTimeoutSpy = sandbox.spy(global, 'setTimeout');
+
+			newProvider.setActive(true);
+
+			assert.ok(setTimeoutSpy.calledOnce, 'auto-refresh timer should start when view becomes visible');
 			assert.strictEqual(setTimeoutSpy.firstCall.args[1], 1000); // 1 second interval
 
+			// Deactivating should stop the polling loop.
+			newProvider.setActive(false);
 			newProvider.dispose();
 		});
 	});

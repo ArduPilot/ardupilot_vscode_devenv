@@ -171,6 +171,7 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 
 	private log = new apLog('apConnectedDevices');
 	private refreshTimer: NodeJS.Timeout | undefined;
+	private isActive = false; // Whether the view is visible and polling should run
 	private isWSL = false;
 	private activeConnections: Map<string, { terminal: apTerminalMonitor | null }> = new Map();
 	private loggedDevices: Set<string> = new Set(); // Track which devices have been logged
@@ -182,14 +183,38 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 	constructor() {
 		this.log.log('apConnectedDevices constructor');
 		this.isWSL = this.checkIsWSL();
-
-		// Auto-refresh every 5 seconds
-		this.startAutoRefresh();
 	}
 
 	dispose(): void {
+		this.isActive = false;
+		this.stopAutoRefresh();
+	}
+
+	// Enable/disable device polling based on whether the view is visible.
+	// Called by the extension in response to the tree view's visibility changes
+	// so we don't continuously spawn device-enumeration processes in the
+	// background (on every VS Code window) when nobody is looking at the list.
+	public setActive(active: boolean): void {
+		if (active === this.isActive) {
+			return;
+		}
+		this.isActive = active;
+		if (active) {
+			this.log.log('Connected devices view visible - starting device polling');
+			// Refresh immediately so the view shows current devices on open,
+			// then keep polling for hot-plug changes while visible.
+			this.refresh();
+			this.startAutoRefresh();
+		} else {
+			this.log.log('Connected devices view hidden - stopping device polling');
+			this.stopAutoRefresh();
+		}
+	}
+
+	private stopAutoRefresh(): void {
 		if (this.refreshTimer) {
-			clearInterval(this.refreshTimer);
+			clearTimeout(this.refreshTimer);
+			this.refreshTimer = undefined;
 		}
 	}
 
@@ -211,7 +236,11 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 			).catch(error => {
 				this.log.log(`Error refreshing devices: ${error}`);
 			}).finally(() => {
-				this.startAutoRefresh();
+				// Only reschedule while the view is still visible; setActive(false)
+				// clears isActive so the polling loop stops cleanly.
+				if (this.isActive) {
+					this.startAutoRefresh();
+				}
 			});
 		}, 1000);
 	}
@@ -485,16 +514,16 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 						if (code === 0) {
 							parentPort.postMessage({ success: true, stdout });
 						} else {
-							parentPort.postMessage({ 
-								success: false, 
+							parentPort.postMessage({
+								success: false,
 								error: \`PowerShell exited with code \${code}: \${stderr}\`
 							});
 						}
 					});
 
 					ps.on('error', (error) => {
-						parentPort.postMessage({ 
-							success: false, 
+						parentPort.postMessage({
+							success: false,
 							error: \`PowerShell spawn error: \${error.message}\`
 						});
 					});
@@ -502,8 +531,8 @@ export class apConnectedDevices implements vscode.TreeDataProvider<ConnectedDevi
 					// Set timeout for long-running PowerShell commands
 					setTimeout(() => {
 						ps.kill();
-						parentPort.postMessage({ 
-							success: false, 
+						parentPort.postMessage({
+							success: false,
 							error: 'PowerShell command timed out after 30 seconds'
 						});
 					}, 30000);
