@@ -131,9 +131,24 @@ export async function activate(_context: vscode.ExtensionContext): Promise<APExt
 		}
 	});
 
-	// Register Connected Devices tree provider
-	apExtensionContext.connectedDevicesProvider = new apConnectedDevices();
-	vscode.window.registerTreeDataProvider('connected-devices', apExtensionContext.connectedDevicesProvider);
+	// Register Connected Devices tree provider.
+	// Use createTreeView (rather than registerTreeDataProvider) so we can observe
+	// the view's visibility and only poll for USB devices while the view is shown.
+	// Enumerating devices is expensive (e.g. spawning `ioreg` on macOS), and would
+	// otherwise run continuously in every VS Code window even when the ArduPilot
+	// view is not selected.
+	const connectedDevicesProvider = new apConnectedDevices();
+	apExtensionContext.connectedDevicesProvider = connectedDevicesProvider;
+	const connectedDevicesTreeView = vscode.window.createTreeView('connected-devices', {
+		treeDataProvider: connectedDevicesProvider
+	});
+	connectedDevicesProvider.setActive(connectedDevicesTreeView.visible);
+	connectedDevicesTreeView.onDidChangeVisibility(
+		(e) => connectedDevicesProvider.setActive(e.visible),
+		undefined,
+		_context.subscriptions
+	);
+	_context.subscriptions.push(connectedDevicesTreeView);
 
 	// Register decoration provider for connected devices
 	const connectedDeviceDecorationProvider = new ConnectedDeviceDecorationProvider();
